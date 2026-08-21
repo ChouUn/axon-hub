@@ -1,0 +1,162 @@
+package datamigrate_test
+
+import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"errors"
+	"fmt"
+	"testing"
+
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
+	"github.com/stretchr/testify/require"
+
+	"github.com/looplj/axonhub/internal/authz"
+	"github.com/looplj/axonhub/internal/ent"
+	"github.com/looplj/axonhub/internal/ent/channel"
+	"github.com/looplj/axonhub/internal/ent/enttest"
+	"github.com/looplj/axonhub/internal/ent/migrate/datamigrate"
+	"github.com/looplj/axonhub/internal/objects"
+)
+
+const (
+	dirtyUpdatedAt = "2026-08-18 00:13:11.396794292 +0800 CST m=+0.000011483"
+	cleanUpdatedAt = "2026-08-18 00:13:11.396794292 +0800 CST"
+)
+
+func updatedAtMatches(
+	t *testing.T,
+	driver *entsql.Driver,
+	id int,
+	updatedAt string,
+) int {
+	t.Helper()
+	var count int
+	err := driver.DB().QueryRowContext(
+		context.Background(),
+		"SELECT count(*) FROM channels WHERE id = ? AND updated_at = ?",
+		id,
+		updatedAt,
+	).Scan(&count)
+	require.NoError(t, err)
+	return count
+}
+
+func TestV1_0_0_Beta7_Fork_1StripsMonotonicSuffixFromUpdatedAt(t *testing.T) {
+	client := enttest.NewEntClient(
+		t,
+		"sqlite3",
+		"file:beta7-fork-1-updated-at?mode=memory&_fk=1",
+	)
+	defer client.Close()
+
+	ctx := authz.WithTestBypass(context.Background())
+	channelEntity := client.Channel.Create().
+		SetName("dirty-updated-at").
+		SetType(channel.TypeOpenai).
+		SetCredentials(objects.ChannelCredentials{APIKey: "sk-test"}).
+		SetSupportedModels([]string{"test-model"}).
+		SetDefaultTestModel("test-model").
+		SaveX(ctx)
+
+	driver := client.Driver().(*entsql.Driver)
+	_, err := driver.ExecContext(ctx,
+		"UPDATE channels SET updated_at = ? WHERE id = ?",
+		dirtyUpdatedAt,
+		channelEntity.ID,
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		0,
+		updatedAtMatches(t, driver, channelEntity.ID, cleanUpdatedAt),
+	)
+
+	require.NoError(t, datamigrate.NewV1_0_0_Beta7_Fork_1().Migrate(ctx, client))
+	require.Equal(
+		t,
+		1,
+		updatedAtMatches(t, driver, channelEntity.ID, cleanUpdatedAt),
+	)
+	require.Equal(
+		t,
+		0,
+		updatedAtMatches(t, driver, channelEntity.ID, dirtyUpdatedAt),
+	)
+}
+
+func TestV1_0_0_Beta7_Fork_1PreservesCleanUpdatedAt(t *testing.T) {
+	client := enttest.NewEntClient(
+		t,
+		"sqlite3",
+		"file:beta7-fork-1-clean-updated-at?mode=memory&_fk=1",
+	)
+	defer client.Close()
+
+	ctx := authz.WithTestBypass(context.Background())
+	channelEntity := client.Channel.Create().
+		SetName("clean-updated-at").
+		SetType(channel.TypeOpenai).
+		SetCredentials(objects.ChannelCredentials{APIKey: "sk-test"}).
+		SetSupportedModels([]string{"test-model"}).
+		SetDefaultTestModel("test-model").
+		SaveX(ctx)
+
+	driver := client.Driver().(*entsql.Driver)
+	_, err := driver.ExecContext(ctx,
+		"UPDATE channels SET updated_at = ? WHERE id = ?",
+		cleanUpdatedAt,
+		channelEntity.ID,
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, datamigrate.NewV1_0_0_Beta7_Fork_1().Migrate(ctx, client))
+	require.Equal(
+		t,
+		1,
+		updatedAtMatches(t, driver, channelEntity.ID, cleanUpdatedAt),
+	)
+}
+
+type recordingDriver struct {
+	dialect     string
+	execQueries []string
+}
+
+func (d *recordingDriver) Dialect() string { return d.dialect }
+
+func (d *recordingDriver) Close() error { return nil }
+
+func (d *recordingDriver) Tx(context.Context) (dialect.Tx, error) {
+	return nil, errors.New("unexpected tx")
+}
+
+func (d *recordingDriver) Query(context.Context, string, any, any) error {
+	return errors.New("unexpected query")
+}
+
+func (d *recordingDriver) Exec(
+	_ context.Context,
+	query string,
+	_ any,
+	value any,
+) error {
+	d.execQueries = append(d.execQueries, query)
+	result, ok := value.(*sql.Result)
+	if !ok {
+		return fmt.Errorf("expected *sql.Result, got %T", value)
+	}
+	*result = driver.RowsAffected(0)
+	return nil
+}
+
+func TestV1_0_0_Beta7_Fork_1PostgresSkipsMonotonicCleanup(t *testing.T) {
+	drv := &recordingDriver{dialect: dialect.Postgres}
+	client := ent.NewClient(ent.Driver(drv))
+	defer client.Close()
+
+	ctx := authz.WithTestBypass(context.Background())
+	require.NoError(t, datamigrate.NewV1_0_0_Beta7_Fork_1().Migrate(ctx, client))
+	require.Empty(t, drv.execQueries)
+}
