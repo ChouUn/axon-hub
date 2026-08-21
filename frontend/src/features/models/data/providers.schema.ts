@@ -80,7 +80,7 @@ export const providerModelSchema = z.object({
   last_updated: z.string().optional(),
   modalities: modelModalitiesSchema.optional(),
   open_weights: z.boolean().optional(),
-  cost: modelCostSchema.optional(),
+  cost: modelCostSchema.nullable().optional(),
   limit: modelLimitSchema.optional().nullable(),
   experimental: modelExperimentalSchema.optional(),
   display_name: z.string().optional(),
