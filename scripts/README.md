@@ -6,6 +6,18 @@
 
 ### E2E 测试脚本
 
+#### `e2e/fixtures/api-key-analytics.sql`
+
+为 API 密钥分析页面生成可重复使用的 SQLite 模拟数据。脚本会在第一个启用的项目中
+创建 3 把测试 API Key、2 个配置模板和跨日期的用量记录，用于验证费用排名、模型明细、
+模板筛选和快捷日期范围。
+
+脚本仅适用于隔离测试数据库；重复执行时只替换带 `[Analytics Seed]` 标记的数据。
+
+```bash
+sqlite3 /path/to/axonhub-test.db < scripts/e2e/fixtures/api-key-analytics.sql
+```
+
 #### `e2e/e2e-test.sh`
 一键运行完整的 E2E 测试套件。
 

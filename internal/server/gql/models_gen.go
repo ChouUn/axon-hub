@@ -58,6 +58,31 @@ type AddUserToProjectInput struct {
 	RoleIDs   []*objects.GUID `json:"roleIDs,omitempty"`
 }
 
+// Model usage aggregated within one API key
+type AnalyticsAPIKeyModelStat struct {
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	RequestCount int     `json:"requestCount"`
+	TotalTokens  int     `json:"totalTokens"`
+	Cost         float64 `json:"cost"`
+}
+
+// API key usage with nested model breakdown
+type AnalyticsAPIKeyStat struct {
+	ID           objects.GUID                `json:"id"`
+	Name         string                      `json:"name"`
+	RequestCount int                         `json:"requestCount"`
+	TotalTokens  int                         `json:"totalTokens"`
+	Cost         float64                     `json:"cost"`
+	Models       []*AnalyticsAPIKeyModelStat `json:"models"`
+}
+
+// Available API key profile template for API key analytics filtering
+type AnalyticsAPIKeyTemplate struct {
+	ID   objects.GUID `json:"id"`
+	Name string       `json:"name"`
+}
+
 // Daily aggregated statistics for the combined trend chart
 type AnalyticsDailyStat struct {
 	Date                string  `json:"date"`
@@ -97,6 +122,8 @@ type AnalyticsFilter struct {
 	ModelIDs []string `json:"modelIDs,omitempty"`
 	// Filter by API key IDs
 	APIKeyIDs []*objects.GUID `json:"apiKeyIDs,omitempty"`
+	// Filter by API key profile template IDs
+	TemplateIDs []*objects.GUID `json:"templateIDs,omitempty"`
 	// Filter by user IDs (will match through api_keys.user_id)
 	UserIDs []*objects.GUID `json:"userIDs,omitempty"`
 }

@@ -238,3 +238,15 @@ func (r *queryResolver) AnalyticsDimensionStats(ctx context.Context, filter *Ana
 
 	return dimStatsToDimensionStats(results), nil
 }
+
+// AnalyticsAPIKeyTemplates is the resolver for the analyticsAPIKeyTemplates field.
+func (r *queryResolver) AnalyticsAPIKeyTemplates(ctx context.Context) ([]*AnalyticsAPIKeyTemplate, error) {
+	ctx = authz.WithScopeDecision(ctx, scopes.ScopeReadDashboard)
+	return r.queryAnalyticsAPIKeyTemplates(ctx)
+}
+
+// AnalyticsAPIKeyStats is the resolver for the analyticsAPIKeyStats field.
+func (r *queryResolver) AnalyticsAPIKeyStats(ctx context.Context, filter *AnalyticsFilter) ([]*AnalyticsAPIKeyStat, error) {
+	ctx = authz.WithScopeDecision(ctx, scopes.ScopeReadDashboard)
+	return r.queryAnalyticsAPIKeyStats(ctx, filter)
+}

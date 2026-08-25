@@ -201,6 +201,28 @@ export default function DashboardPage() {
         <ChevronRight className='h-5 w-5 text-muted-foreground' />
       </Link>
 
+      <Link
+        to='/analytics/api-keys'
+        className={
+          'flex w-full items-center justify-between rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent/50'
+        }
+      >
+        <div className='flex items-center gap-3'>
+          <div className='flex h-8 w-8 items-center justify-center rounded-md bg-primary/10'>
+            <Key className='h-4 w-4 text-primary' />
+          </div>
+          <div>
+            <span className='text-lg font-semibold'>
+              {t('dashboard.sections.apiKeyAnalytics')}
+            </span>
+            <p className='text-sm text-muted-foreground'>
+              {t('dashboard.sections.apiKeyAnalyticsDescription')}
+            </p>
+          </div>
+        </div>
+        <ChevronRight className='h-5 w-5 text-muted-foreground' />
+      </Link>
+
       {/* 渠道分析 - 可折叠 */}
       <CollapsibleSection
         title={t('dashboard.sections.channels')}

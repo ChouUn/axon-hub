@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import { graphqlRequest } from '@/gql/graphql';
+import { useSelectedProjectId } from '@/stores/projectStore';
 
 // --- Zod Schemas ---
 
@@ -11,6 +12,7 @@ export const analyticsFilterSchema = z.object({
   channelIDs: z.array(z.string()).optional(),
   modelIDs: z.array(z.string()).optional(),
   apiKeyIDs: z.array(z.string()).optional(),
+  templateIDs: z.array(z.string()).optional(),
   userIDs: z.array(z.string()).optional(),
 });
 
@@ -53,6 +55,34 @@ export const analyticsDimensionStatSchema = z.object({
 });
 
 export type AnalyticsDimensionStat = z.infer<typeof analyticsDimensionStatSchema>;
+
+export const analyticsAPIKeyModelStatSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  requestCount: z.number(),
+  totalTokens: z.number(),
+  cost: z.number(),
+});
+
+export type AnalyticsAPIKeyModelStat = z.infer<typeof analyticsAPIKeyModelStatSchema>;
+
+export const analyticsAPIKeyStatSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  requestCount: z.number(),
+  totalTokens: z.number(),
+  cost: z.number(),
+  models: z.array(analyticsAPIKeyModelStatSchema),
+});
+
+export type AnalyticsAPIKeyStat = z.infer<typeof analyticsAPIKeyStatSchema>;
+
+export const analyticsAPIKeyTemplateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+
+export type AnalyticsAPIKeyTemplate = z.infer<typeof analyticsAPIKeyTemplateSchema>;
 
 export const analyticsMetadataSchema = z.object({
   earliestDate: z.string().nullable().optional(),
@@ -114,6 +144,34 @@ const ANALYTICS_DIMENSION_STATS_QUERY = `
   }
 `;
 
+const ANALYTICS_API_KEY_TEMPLATES_QUERY = `
+  query GetAnalyticsAPIKeyTemplates {
+    analyticsAPIKeyTemplates {
+      id
+      name
+    }
+  }
+`;
+
+const ANALYTICS_API_KEY_STATS_QUERY = `
+  query GetAnalyticsAPIKeyStats($filter: AnalyticsFilter) {
+    analyticsAPIKeyStats(filter: $filter) {
+      id
+      name
+      requestCount
+      totalTokens
+      cost
+      models {
+        id
+        name
+        requestCount
+        totalTokens
+        cost
+      }
+    }
+  }
+`;
+
 // --- Helper: convert filter to GraphQL input ---
 
 // 直接发 YYYY-MM-DD 字符串，后端用系统时区解析（同仪表盘模式）
@@ -128,6 +186,9 @@ export function toGraphQLFilter(filter: AnalyticsFilter | null): Record<string, 
   if (filter.channelIDs && filter.channelIDs.length > 0) result.channelIDs = filter.channelIDs;
   if (filter.modelIDs && filter.modelIDs.length > 0) result.modelIDs = filter.modelIDs;
   if (filter.apiKeyIDs && filter.apiKeyIDs.length > 0) result.apiKeyIDs = filter.apiKeyIDs;
+  if (filter.templateIDs && filter.templateIDs.length > 0) {
+    result.templateIDs = filter.templateIDs;
+  }
   if (filter.userIDs && filter.userIDs.length > 0) result.userIDs = filter.userIDs;
 
   return Object.keys(result).length > 0 ? result : null;
@@ -185,13 +246,72 @@ export function useAnalyticsDimensionStats(filter: AnalyticsFilter | null, dimen
     queryKey: ['analyticsDimensionStats', filter, dimension],
     queryFn: async () => {
       const gqlFilter = toGraphQLFilter(filter);
-      const data = await graphqlRequest<{ analyticsDimensionStats: AnalyticsDimensionStat[] }>(
+      const data = await graphqlRequest<{
+        analyticsDimensionStats: AnalyticsDimensionStat[];
+      }>(
         ANALYTICS_DIMENSION_STATS_QUERY,
         { filter: gqlFilter, dimension }
       );
       return data.analyticsDimensionStats.map((item) => analyticsDimensionStatSchema.parse(item));
     },
     enabled: !!dimension,
+    refetchInterval: 60000,
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useAnalyticsAPIKeyTemplates() {
+  const selectedProjectId = useSelectedProjectId();
+
+  return useQuery({
+    queryKey: ['analyticsAPIKeyTemplates', selectedProjectId],
+    queryFn: async () => {
+      const headers = selectedProjectId
+        ? { 'X-Project-ID': selectedProjectId }
+        : undefined;
+      const data = await graphqlRequest<{
+        analyticsAPIKeyTemplates: AnalyticsAPIKeyTemplate[];
+      }>(
+        ANALYTICS_API_KEY_TEMPLATES_QUERY,
+        undefined,
+        headers
+      );
+      return data.analyticsAPIKeyTemplates.map((item) =>
+        analyticsAPIKeyTemplateSchema.parse(item)
+      );
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useAnalyticsAPIKeyStats(filter: AnalyticsFilter | null) {
+  const selectedProjectId = useSelectedProjectId();
+
+  return useQuery({
+    queryKey: ['analyticsAPIKeyStats', filter, selectedProjectId],
+    queryFn: async () => {
+      const projectIDs = filter?.projectIDs?.length
+        ? filter.projectIDs
+        : selectedProjectId
+          ? [selectedProjectId]
+          : undefined;
+      const gqlFilter = toGraphQLFilter(
+        filter ? { ...filter, projectIDs } : projectIDs ? { projectIDs } : null
+      );
+      const headers = selectedProjectId
+        ? { 'X-Project-ID': selectedProjectId }
+        : undefined;
+      const data = await graphqlRequest<{
+        analyticsAPIKeyStats: AnalyticsAPIKeyStat[];
+      }>(
+        ANALYTICS_API_KEY_STATS_QUERY,
+        { filter: gqlFilter },
+        headers
+      );
+      return data.analyticsAPIKeyStats.map((item) =>
+        analyticsAPIKeyStatSchema.parse(item)
+      );
+    },
     refetchInterval: 60000,
     placeholderData: (previousData) => previousData,
   });

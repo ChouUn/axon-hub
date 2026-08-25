@@ -3,14 +3,17 @@ package gql
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"github.com/samber/lo"
 
+	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/ent/apikey"
+	"github.com/looplj/axonhub/internal/ent/apikeyprofiletemplate"
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/usagelog"
 	"github.com/looplj/axonhub/internal/objects"
@@ -43,7 +46,7 @@ func parseDateStr(dateStr string, loc *time.Location) time.Time {
 	return time.Date(y, time.Month(m), d, 0, 0, 0, 0, loc)
 }
 
-func (r *queryResolver) buildAnalyticsWhere(s *sql.Selector, filter *AnalyticsFilter, apiKeyIDs []int, hasUserFilter bool, loc *time.Location) {
+func (r *queryResolver) buildAnalyticsWhere(s *sql.Selector, filter *AnalyticsFilter, apiKeyIDs []int, hasAPIKeyFilter bool, loc *time.Location) {
 	if filter == nil {
 		return
 	}
@@ -82,20 +85,19 @@ func (r *queryResolver) buildAnalyticsWhere(s *sql.Selector, filter *AnalyticsFi
 		s.Where(sql.In(usagelog.FieldModelID, vals...))
 	}
 
-	// API key / user filtering:
+	// API key / user / template filtering:
 	// - apiKeyIDs > 0: filter by specific API keys
-	// - apiKeyIDs == 0 && hasUserFilter: user filter matched no API keys → return empty
-	// - apiKeyIDs == 0 && !hasUserFilter: no API key filter → show all
+	// - apiKeyIDs == 0 && hasAPIKeyFilter: a key-related filter matched no keys → return empty
+	// - apiKeyIDs == 0 && !hasAPIKeyFilter: no key-related filter → show all
 	if len(apiKeyIDs) > 0 {
 		s.Where(sql.InInts(usagelog.FieldAPIKeyID, apiKeyIDs...))
-	} else if hasUserFilter {
+	} else if hasAPIKeyFilter {
 		s.Where(sql.False())
 	}
 }
 
-// resolveFilterAPIKeyIDs resolves the effective API key IDs from filter.
-// When both APIKeyIDs and UserIDs are present, returns the intersection (AND logic).
-// Returns (api key IDs, whether a user filter was applied).
+// resolveFilterAPIKeyIDs resolves the effective API key IDs from explicit key,
+// user, and profile-template filters. Multiple key-related filters use AND logic.
 func (r *queryResolver) resolveFilterAPIKeyIDs(ctx context.Context, filter *AnalyticsFilter) ([]int, bool) {
 	if filter == nil {
 		return nil, false
@@ -103,13 +105,16 @@ func (r *queryResolver) resolveFilterAPIKeyIDs(ctx context.Context, filter *Anal
 
 	hasExplicitKeys := len(filter.APIKeyIDs) > 0
 	hasUserFilter := len(filter.UserIDs) > 0
+	hasTemplateFilter := len(filter.TemplateIDs) > 0
 
-	if !hasExplicitKeys && !hasUserFilter {
+	if !hasExplicitKeys && !hasUserFilter && !hasTemplateFilter {
 		return nil, false
 	}
 
-	// Resolve user IDs to API key IDs
-	var userKeyIDs []int
+	filterSets := make([][]int, 0, 3)
+	if hasExplicitKeys {
+		filterSets = append(filterSets, lo.Map(filter.APIKeyIDs, func(g *objects.GUID, _ int) int { return g.ID }))
+	}
 
 	if hasUserFilter {
 		userIDs := lo.Map(filter.UserIDs, func(g *objects.GUID, _ int) int { return g.ID })
@@ -119,31 +124,79 @@ func (r *queryResolver) resolveFilterAPIKeyIDs(ctx context.Context, filter *Anal
 		if err != nil {
 			return nil, hasUserFilter
 		}
-		userKeyIDs = lo.Map(apiKeys, func(ak *ent.APIKey, _ int) int { return ak.ID })
+		filterSets = append(filterSets, lo.Map(apiKeys, func(ak *ent.APIKey, _ int) int { return ak.ID }))
 	}
 
-	explicitKeyIDs := lo.Map(filter.APIKeyIDs, func(g *objects.GUID, _ int) int { return g.ID })
-
-	switch {
-	case hasExplicitKeys && hasUserFilter:
-		// AND logic: intersect explicit keys with user's keys
-		userKeySet := make(map[int]bool, len(userKeyIDs))
-		for _, id := range userKeyIDs {
-			userKeySet[id] = true
+	if hasTemplateFilter {
+		templateIDs := make(map[int]struct{}, len(filter.TemplateIDs))
+		for _, templateID := range filter.TemplateIDs {
+			templateIDs[templateID.ID] = struct{}{}
 		}
-		var intersection []int
-		for _, id := range explicitKeyIDs {
-			if userKeySet[id] {
-				intersection = append(intersection, id)
+
+		apiKeyQuery := r.client.APIKey.Query()
+		if projectID, ok := contexts.GetProjectID(ctx); ok {
+			apiKeyQuery = apiKeyQuery.Where(apikey.ProjectIDEQ(projectID))
+		}
+
+		apiKeys, err := apiKeyQuery.All(ctx)
+		if err != nil {
+			return nil, true
+		}
+
+		templateKeyIDs := make([]int, 0)
+		for _, apiKey := range apiKeys {
+			if apiKeyUsesTemplate(apiKey, templateIDs) {
+				templateKeyIDs = append(templateKeyIDs, apiKey.ID)
 			}
 		}
-		return intersection, true
-	case hasExplicitKeys:
-		return explicitKeyIDs, false
-	default:
-		// Only user filter
-		return userKeyIDs, true
+		filterSets = append(filterSets, templateKeyIDs)
 	}
+
+	return intersectAPIKeyIDs(filterSets...), true
+}
+
+func apiKeyUsesTemplate(apiKey *ent.APIKey, templateIDs map[int]struct{}) bool {
+	if apiKey == nil || apiKey.Profiles == nil {
+		return false
+	}
+
+	for _, profile := range apiKey.Profiles.Profiles {
+		if profile.TemplateID == nil {
+			continue
+		}
+
+		if _, ok := templateIDs[*profile.TemplateID]; ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+func intersectAPIKeyIDs(sets ...[]int) []int {
+	if len(sets) == 0 {
+		return nil
+	}
+
+	intersection := make(map[int]struct{}, len(sets[0]))
+	for _, id := range sets[0] {
+		intersection[id] = struct{}{}
+	}
+
+	for _, ids := range sets[1:] {
+		current := make(map[int]struct{}, len(ids))
+		for _, id := range ids {
+			current[id] = struct{}{}
+		}
+
+		for id := range intersection {
+			if _, ok := current[id]; !ok {
+				delete(intersection, id)
+			}
+		}
+	}
+
+	return lo.Keys(intersection)
 }
 
 func trimSpace(s string) string {
@@ -160,6 +213,140 @@ type dimStats struct {
 	OutputTokens int64   `json:"output_tokens"`
 	TotalTokens  int64   `json:"total_tokens"`
 	Cost         float64 `json:"cost"`
+}
+
+type apiKeyAnalyticsRaw struct {
+	APIKeyID     int     `json:"api_key_id"`
+	ModelID      string  `json:"model_id"`
+	RequestCount int     `json:"request_count"`
+	TotalTokens  int64   `json:"total_tokens"`
+	Cost         float64 `json:"cost"`
+}
+
+func (r *queryResolver) queryAnalyticsAPIKeyTemplates(ctx context.Context) ([]*AnalyticsAPIKeyTemplate, error) {
+	query := r.client.APIKeyProfileTemplate.Query()
+	if projectID, ok := contexts.GetProjectID(ctx); ok {
+		query = query.Where(apikeyprofiletemplate.ProjectIDEQ(projectID))
+	}
+
+	templates, err := query.Order(ent.Asc(apikeyprofiletemplate.FieldName)).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get API key profile templates: %w", err)
+	}
+
+	return lo.Map(templates, func(template *ent.APIKeyProfileTemplate, _ int) *AnalyticsAPIKeyTemplate {
+		return &AnalyticsAPIKeyTemplate{
+			ID:   objects.GUID{Type: ent.TypeAPIKeyProfileTemplate, ID: template.ID},
+			Name: template.Name,
+		}
+	}), nil
+}
+
+func (r *queryResolver) queryAnalyticsAPIKeyStats(ctx context.Context, filter *AnalyticsFilter) ([]*AnalyticsAPIKeyStat, error) {
+	loc := r.systemService.TimeLocation(ctx)
+	apiKeyIDs, hasAPIKeyFilter := r.resolveFilterAPIKeyIDs(ctx, filter)
+	var rawResults []apiKeyAnalyticsRaw
+
+	err := r.client.UsageLog.Query().
+		Where(usagelog.APIKeyIDNotNil()).
+		Modify(func(s *sql.Selector) {
+			r.buildAnalyticsWhere(s, filter, apiKeyIDs, hasAPIKeyFilter, loc)
+			if projectID, ok := contexts.GetProjectID(ctx); ok {
+				s.Where(sql.EQ(s.C(usagelog.FieldProjectID), projectID))
+			}
+
+			s.Select(
+				s.C(usagelog.FieldAPIKeyID),
+				s.C(usagelog.FieldModelID),
+				sql.As(sql.Count(s.C(usagelog.FieldID)), "request_count"),
+				sql.As(fmt.Sprintf("COALESCE(SUM(%s), 0)", s.C(usagelog.FieldTotalTokens)), "total_tokens"),
+				sql.As(fmt.Sprintf("COALESCE(SUM(%s), 0)", s.C(usagelog.FieldTotalCost)), "cost"),
+			).
+				GroupBy(s.C(usagelog.FieldAPIKeyID), s.C(usagelog.FieldModelID))
+		}).
+		Scan(ctx, &rawResults)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get API key analytics stats: %w", err)
+	}
+
+	if len(rawResults) == 0 {
+		return []*AnalyticsAPIKeyStat{}, nil
+	}
+
+	apiKeyIDsFromResults := lo.Map(rawResults, func(item apiKeyAnalyticsRaw, _ int) int { return item.APIKeyID })
+	apiKeyQuery := r.client.APIKey.Query().Where(apikey.IDIn(apiKeyIDsFromResults...))
+	if projectID, ok := contexts.GetProjectID(ctx); ok {
+		apiKeyQuery = apiKeyQuery.Where(apikey.ProjectIDEQ(projectID))
+	}
+	apiKeys, err := apiKeyQuery.All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get API keys for analytics stats: %w", err)
+	}
+
+	apiKeyNames := lo.SliceToMap(apiKeys, func(apiKey *ent.APIKey) (int, string) {
+		return apiKey.ID, apiKey.Name
+	})
+	groups := make(map[int]*AnalyticsAPIKeyStat, len(apiKeys))
+	for _, raw := range rawResults {
+		name := fmt.Sprintf("API Key #%d", raw.APIKeyID)
+		if resolvedName, ok := apiKeyNames[raw.APIKeyID]; ok {
+			name = resolvedName
+		}
+
+		group, exists := groups[raw.APIKeyID]
+		if !exists {
+			group = &AnalyticsAPIKeyStat{
+				ID:   objects.GUID{Type: ent.TypeAPIKey, ID: raw.APIKeyID},
+				Name: name,
+			}
+			groups[raw.APIKeyID] = group
+		}
+
+		group.RequestCount += raw.RequestCount
+		group.TotalTokens = safeIntFromInt64(int64(group.TotalTokens) + raw.TotalTokens)
+		group.Cost += raw.Cost
+		group.Models = append(group.Models, &AnalyticsAPIKeyModelStat{
+			ID:           raw.ModelID,
+			Name:         raw.ModelID,
+			RequestCount: raw.RequestCount,
+			TotalTokens:  safeIntFromInt64(raw.TotalTokens),
+			Cost:         raw.Cost,
+		})
+	}
+
+	results := lo.Values(groups)
+	for _, group := range results {
+		sort.SliceStable(group.Models, func(i, j int) bool {
+			left, right := group.Models[i], group.Models[j]
+			if left.RequestCount != right.RequestCount {
+				return left.RequestCount > right.RequestCount
+			}
+			if left.TotalTokens != right.TotalTokens {
+				return left.TotalTokens > right.TotalTokens
+			}
+			return left.Name < right.Name
+		})
+	}
+	sortAPIKeyStatsByCost(results)
+
+	return results, nil
+}
+
+// sortAPIKeyStatsByCost orders API keys by spend for the ranking table.
+func sortAPIKeyStatsByCost(results []*AnalyticsAPIKeyStat) {
+	sort.SliceStable(results, func(i, j int) bool {
+		left, right := results[i], results[j]
+		if left.Cost != right.Cost {
+			return left.Cost > right.Cost
+		}
+		if left.RequestCount != right.RequestCount {
+			return left.RequestCount > right.RequestCount
+		}
+		if left.TotalTokens != right.TotalTokens {
+			return left.TotalTokens > right.TotalTokens
+		}
+		return left.Name < right.Name
+	})
 }
 
 func (r *queryResolver) queryChannelStats(ctx context.Context, filter *AnalyticsFilter, apiKeyIDs []int, hasUserFilter bool, loc *time.Location) ([]dimStats, error) {

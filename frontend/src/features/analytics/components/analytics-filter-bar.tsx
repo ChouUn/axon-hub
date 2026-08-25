@@ -14,7 +14,7 @@ import { useProjects } from '@/features/projects/data/projects';
 import { AnalyticsFacetedFilter } from './analytics-faceted-filter';
 
 // Calendar Date → 'YYYY-MM-DD' 字符串（直接取本地年月日，不做时区转换）
-function formatDate(date: Date): string {
+export function formatDate(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
@@ -34,7 +34,12 @@ interface DateRangePickerProps {
   onEndChange: (date: Date | null) => void;
 }
 
-function DateRangePicker({ startDate, endDate, onStartChange, onEndChange }: DateRangePickerProps) {
+export function DateRangePicker({
+  startDate,
+  endDate,
+  onStartChange,
+  onEndChange,
+}: DateRangePickerProps) {
   const { t } = useTranslation();
   const [startOpen, setStartOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);

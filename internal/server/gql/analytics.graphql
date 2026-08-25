@@ -17,6 +17,8 @@ input AnalyticsFilter {
   modelIDs: [String!]
   "Filter by API key IDs"
   apiKeyIDs: [ID!]
+  "Filter by API key profile template IDs"
+  templateIDs: [ID!]
   "Filter by user IDs (will match through api_keys.user_id)"
   userIDs: [ID!]
 }
@@ -70,6 +72,31 @@ type AnalyticsDimensionStat {
   cost: Float!
 }
 
+"Available API key profile template for API key analytics filtering"
+type AnalyticsAPIKeyTemplate {
+  id: ID!
+  name: String!
+}
+
+"Model usage aggregated within one API key"
+type AnalyticsAPIKeyModelStat {
+  id: String!
+  name: String!
+  requestCount: Int!
+  totalTokens: Int!
+  cost: Float!
+}
+
+"API key usage with nested model breakdown"
+type AnalyticsAPIKeyStat {
+  id: ID!
+  name: String!
+  requestCount: Int!
+  totalTokens: Int!
+  cost: Float!
+  models: [AnalyticsAPIKeyModelStat!]!
+}
+
 extend type Query {
   "Get metadata for the analytics page (date range, etc.)"
   analyticsMetadata: AnalyticsMetadata!
@@ -79,4 +106,8 @@ extend type Query {
   analyticsDailyStats(filter: AnalyticsFilter): [AnalyticsDailyStat!]!
   "Get dimension breakdown statistics for pie charts and detail tables. dimension: channel | model | apiKey | user"
   analyticsDimensionStats(filter: AnalyticsFilter, dimension: String!): [AnalyticsDimensionStat!]!
+  "Get API key profile templates available to the current dashboard project"
+  analyticsAPIKeyTemplates: [AnalyticsAPIKeyTemplate!]!
+  "Get API key usage aggregated by API key and model"
+  analyticsAPIKeyStats(filter: AnalyticsFilter): [AnalyticsAPIKeyStat!]!
 }
