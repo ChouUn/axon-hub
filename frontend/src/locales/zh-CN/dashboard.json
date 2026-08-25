@@ -9,6 +9,8 @@
   "dashboard.sections.analyticsDescription": "多维度数据分析，支持自定义筛选",
   "dashboard.sections.apiKeyAnalytics": "API 密钥详情分析",
   "dashboard.sections.apiKeyAnalyticsDescription": "按 API 密钥和模型查看请求、Token 与费用明细",
+  "dashboard.sections.modelAnalytics": "模型详情分析",
+  "dashboard.sections.modelAnalyticsDescription": "按模型和渠道查看费用、成功率与性能明细",
   "dashboard.cards.requestsByTime": "请求数统计",
   "dashboard.cards.successRate": "成功率",
   "dashboard.cards.tokenStats": "词元统计",

@@ -18,6 +18,17 @@ export const analyticsFilterSchema = z.object({
 
 export type AnalyticsFilter = z.infer<typeof analyticsFilterSchema>;
 
+export const analyticsModelFilterSchema = z.object({
+  startTime: z.string().nullable().optional(),
+  endTime: z.string().nullable().optional(),
+  projectIDs: z.array(z.string()).optional(),
+  channelIDs: z.array(z.string()).optional(),
+  channelTags: z.array(z.string()).optional(),
+  modelIDs: z.array(z.string()).optional(),
+});
+
+export type AnalyticsModelFilter = z.infer<typeof analyticsModelFilterSchema>;
+
 export const analyticsOverviewSchema = z.object({
   totalTokens: z.number(),
   totalInputTokens: z.number(),
@@ -83,6 +94,37 @@ export const analyticsAPIKeyTemplateSchema = z.object({
 });
 
 export type AnalyticsAPIKeyTemplate = z.infer<typeof analyticsAPIKeyTemplateSchema>;
+
+export const analyticsModelChannelStatSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  requestCount: z.number(),
+  totalTokens: z.number(),
+  cost: z.number(),
+  costPerMillion: z.number(),
+  successRate: z.number(),
+  avgFirstTokenLatencyMs: z.number().nullable(),
+  avgOutputTokensPerSecond: z.number().nullable(),
+});
+
+export type AnalyticsModelChannelStat = z.infer<
+  typeof analyticsModelChannelStatSchema
+>;
+
+export const analyticsModelStatSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  requestCount: z.number(),
+  totalTokens: z.number(),
+  cost: z.number(),
+  costPerMillion: z.number(),
+  successRate: z.number(),
+  avgFirstTokenLatencyMs: z.number().nullable(),
+  avgOutputTokensPerSecond: z.number().nullable(),
+  channels: z.array(analyticsModelChannelStatSchema),
+});
+
+export type AnalyticsModelStat = z.infer<typeof analyticsModelStatSchema>;
 
 export const analyticsMetadataSchema = z.object({
   earliestDate: z.string().nullable().optional(),
@@ -172,10 +214,45 @@ const ANALYTICS_API_KEY_STATS_QUERY = `
   }
 `;
 
+const ANALYTICS_CHANNEL_TAGS_QUERY = `
+  query GetAnalyticsChannelTags {
+    analyticsChannelTags
+  }
+`;
+
+const ANALYTICS_MODEL_STATS_QUERY = `
+  query GetAnalyticsModelStats($filter: AnalyticsModelFilter) {
+    analyticsModelStats(filter: $filter) {
+      id
+      name
+      requestCount
+      totalTokens
+      cost
+      costPerMillion
+      successRate
+      avgFirstTokenLatencyMs
+      avgOutputTokensPerSecond
+      channels {
+        id
+        name
+        requestCount
+        totalTokens
+        cost
+        costPerMillion
+        successRate
+        avgFirstTokenLatencyMs
+        avgOutputTokensPerSecond
+      }
+    }
+  }
+`;
+
 // --- Helper: convert filter to GraphQL input ---
 
 // 直接发 YYYY-MM-DD 字符串，后端用系统时区解析（同仪表盘模式）
-export function toGraphQLFilter(filter: AnalyticsFilter | null): Record<string, unknown> | null {
+export function toGraphQLFilter(
+  filter: AnalyticsFilter | AnalyticsModelFilter | null
+): Record<string, unknown> | null {
   if (!filter) return null;
 
   const result: Record<string, unknown> = {};
@@ -184,12 +261,19 @@ export function toGraphQLFilter(filter: AnalyticsFilter | null): Record<string, 
   if (filter.endTime) result.endTime = filter.endTime;
   if (filter.projectIDs && filter.projectIDs.length > 0) result.projectIDs = filter.projectIDs;
   if (filter.channelIDs && filter.channelIDs.length > 0) result.channelIDs = filter.channelIDs;
+  if ('channelTags' in filter && filter.channelTags && filter.channelTags.length > 0) {
+    result.channelTags = filter.channelTags;
+  }
   if (filter.modelIDs && filter.modelIDs.length > 0) result.modelIDs = filter.modelIDs;
-  if (filter.apiKeyIDs && filter.apiKeyIDs.length > 0) result.apiKeyIDs = filter.apiKeyIDs;
-  if (filter.templateIDs && filter.templateIDs.length > 0) {
+  if ('apiKeyIDs' in filter && filter.apiKeyIDs && filter.apiKeyIDs.length > 0) {
+    result.apiKeyIDs = filter.apiKeyIDs;
+  }
+  if ('templateIDs' in filter && filter.templateIDs && filter.templateIDs.length > 0) {
     result.templateIDs = filter.templateIDs;
   }
-  if (filter.userIDs && filter.userIDs.length > 0) result.userIDs = filter.userIDs;
+  if ('userIDs' in filter && filter.userIDs && filter.userIDs.length > 0) {
+    result.userIDs = filter.userIDs;
+  }
 
   return Object.keys(result).length > 0 ? result : null;
 }
@@ -310,6 +394,55 @@ export function useAnalyticsAPIKeyStats(filter: AnalyticsFilter | null) {
       );
       return data.analyticsAPIKeyStats.map((item) =>
         analyticsAPIKeyStatSchema.parse(item)
+      );
+    },
+    refetchInterval: 60000,
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useAnalyticsChannelTags() {
+  const selectedProjectId = useSelectedProjectId();
+
+  return useQuery({
+    queryKey: ['analyticsChannelTags', selectedProjectId],
+    queryFn: async () => {
+      const headers = selectedProjectId
+        ? { 'X-Project-ID': selectedProjectId }
+        : undefined;
+      const data = await graphqlRequest<{ analyticsChannelTags: string[] }>(
+        ANALYTICS_CHANNEL_TAGS_QUERY,
+        undefined,
+        headers
+      );
+      return z.array(z.string()).parse(data.analyticsChannelTags);
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useAnalyticsModelStats(filter: AnalyticsModelFilter | null) {
+  const selectedProjectId = useSelectedProjectId();
+
+  return useQuery({
+    queryKey: ['analyticsModelStats', filter, selectedProjectId],
+    queryFn: async () => {
+      const projectIDs = filter?.projectIDs?.length
+        ? filter.projectIDs
+        : selectedProjectId
+          ? [selectedProjectId]
+          : undefined;
+      const gqlFilter = toGraphQLFilter(
+        filter ? { ...filter, projectIDs } : projectIDs ? { projectIDs } : null
+      );
+      const headers = selectedProjectId
+        ? { 'X-Project-ID': selectedProjectId }
+        : undefined;
+      const data = await graphqlRequest<{
+        analyticsModelStats: AnalyticsModelStat[];
+      }>(ANALYTICS_MODEL_STATS_QUERY, { filter: gqlFilter }, headers);
+      return data.analyticsModelStats.map((item) =>
+        analyticsModelStatSchema.parse(item)
       );
     },
     refetchInterval: 60000,

@@ -250,3 +250,18 @@ func (r *queryResolver) AnalyticsAPIKeyStats(ctx context.Context, filter *Analyt
 	ctx = authz.WithScopeDecision(ctx, scopes.ScopeReadDashboard)
 	return r.queryAnalyticsAPIKeyStats(ctx, filter)
 }
+
+// AnalyticsChannelTags is the resolver for the analyticsChannelTags field.
+func (r *queryResolver) AnalyticsChannelTags(ctx context.Context) ([]string, error) {
+	if err := authz.RequireScope(ctx, scopes.ScopeReadDashboard); err != nil {
+		return nil, err
+	}
+	ctx = authz.WithScopeDecision(ctx, scopes.ScopeReadDashboard)
+	return r.queryAnalyticsChannelTags(ctx)
+}
+
+// AnalyticsModelStats is the resolver for the analyticsModelStats field.
+func (r *queryResolver) AnalyticsModelStats(ctx context.Context, filter *AnalyticsModelFilter) ([]*AnalyticsModelStat, error) {
+	ctx = authz.WithScopeDecision(ctx, scopes.ScopeReadDashboard)
+	return r.queryAnalyticsModelStats(ctx, filter)
+}

@@ -4,10 +4,35 @@ import { IconFilter, IconX } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { AnalyticsFacetedFilter } from './analytics-faceted-filter';
 import { DateRangePicker, formatDate } from './analytics-filter-bar';
+import {
+  getAnalyticsQuickDateRange,
+  type AnalyticsQuickRange,
+} from '../utils/date-range';
 import type { AnalyticsAPIKeyTemplate } from '../data/analytics';
+
+export interface AnalyticsDetailFilterOption {
+  label: string;
+  value: string;
+}
+
+interface AnalyticsDetailFilterBarProps {
+  earliestDate?: string | null;
+  timezone: string;
+  startTime: string | null;
+  endTime: string | null;
+  selectedValues: string[];
+  filterTitle: string;
+  options: AnalyticsDetailFilterOption[];
+  isLoadingOptions: boolean;
+  onStartTimeChange: (time: string | null) => void;
+  onEndTimeChange: (time: string | null) => void;
+  onSelectedValuesChange: (values: string[]) => void;
+  onReset: () => void;
+}
 
 interface APIKeyAnalyticsFilterBarProps {
   earliestDate?: string | null;
+  timezone: string;
   startTime: string | null;
   endTime: string | null;
   templateIDs: string[];
@@ -19,54 +44,36 @@ interface APIKeyAnalyticsFilterBarProps {
   onReset: () => void;
 }
 
-export function APIKeyAnalyticsFilterBar({
+export function AnalyticsDetailFilterBar({
   earliestDate,
+  timezone,
   startTime,
   endTime,
-  templateIDs,
-  templates,
-  isLoadingTemplates,
+  selectedValues,
+  filterTitle,
+  options,
+  isLoadingOptions,
   onStartTimeChange,
   onEndTimeChange,
-  onTemplateIDsChange,
+  onSelectedValuesChange,
   onReset,
-}: APIKeyAnalyticsFilterBarProps) {
+}: AnalyticsDetailFilterBarProps) {
   const { t } = useTranslation();
 
-  const setQuickDay = useCallback(
-    (daysAgo: number) => {
-      const date = new Date();
-      date.setDate(date.getDate() - daysAgo);
-      date.setHours(0, 0, 0, 0);
-      const formattedDate = formatDate(date);
-      onStartTimeChange(formattedDate);
-      onEndTimeChange(formattedDate);
+  const applyQuickRange = useCallback(
+    (range: AnalyticsQuickRange) => {
+      const dates = getAnalyticsQuickDateRange(
+        range,
+        timezone,
+        earliestDate
+      );
+      onStartTimeChange(dates.startTime);
+      onEndTimeChange(dates.endTime);
     },
-    [onEndTimeChange, onStartTimeChange]
+    [earliestDate, onEndTimeChange, onStartTimeChange, timezone]
   );
 
-  const setQuickWeek = useCallback(() => {
-    const now = new Date();
-    const start = new Date(now);
-    const daysSinceMonday = (start.getDay() + 6) % 7;
-    start.setDate(start.getDate() - daysSinceMonday);
-    start.setHours(0, 0, 0, 0);
-    onStartTimeChange(formatDate(start));
-    onEndTimeChange(formatDate(now));
-  }, [onEndTimeChange, onStartTimeChange]);
-
-  const setQuickMonth = useCallback(() => {
-    const now = new Date();
-    onStartTimeChange(formatDate(new Date(now.getFullYear(), now.getMonth(), 1)));
-    onEndTimeChange(formatDate(now));
-  }, [onEndTimeChange, onStartTimeChange]);
-
-  const setAllTime = useCallback(() => {
-    onStartTimeChange(earliestDate ?? null);
-    onEndTimeChange(earliestDate ? formatDate(new Date()) : null);
-  }, [earliestDate, onEndTimeChange, onStartTimeChange]);
-
-  const hasFilters = Boolean(startTime || endTime || templateIDs.length > 0);
+  const hasFilters = Boolean(startTime || endTime || selectedValues.length > 0);
 
   return (
     <div className='space-y-3 rounded-lg border bg-card p-4'>
@@ -86,7 +93,7 @@ export function APIKeyAnalyticsFilterBar({
             variant='outline'
             size='sm'
             className='h-8 text-xs'
-            onClick={() => setQuickDay(0)}
+            onClick={() => applyQuickRange('today')}
           >
             {t('analytics.filter.today')}
           </Button>
@@ -94,23 +101,23 @@ export function APIKeyAnalyticsFilterBar({
             variant='outline'
             size='sm'
             className='h-8 text-xs'
-            onClick={() => setQuickDay(1)}
+            onClick={() => applyQuickRange('yesterday')}
           >
-            {t('analytics.apiKeyAnalytics.filter.yesterday')}
+            {t('analytics.filter.yesterday')}
           </Button>
           <Button
             variant='outline'
             size='sm'
             className='h-8 text-xs'
-            onClick={setQuickWeek}
+            onClick={() => applyQuickRange('thisWeek')}
           >
-            {t('analytics.apiKeyAnalytics.filter.thisWeek')}
+            {t('analytics.filter.thisWeek')}
           </Button>
           <Button
             variant='outline'
             size='sm'
             className='h-8 text-xs'
-            onClick={setQuickMonth}
+            onClick={() => applyQuickRange('thisMonth')}
           >
             {t('analytics.filter.thisMonth')}
           </Button>
@@ -118,23 +125,20 @@ export function APIKeyAnalyticsFilterBar({
             variant='outline'
             size='sm'
             className='h-8 text-xs'
-            onClick={setAllTime}
+            onClick={() => applyQuickRange('all')}
           >
-            {t('analytics.apiKeyAnalytics.filter.all')}
+            {t('analytics.filter.all')}
           </Button>
         </div>
       </div>
 
       <div className='flex flex-wrap items-center gap-2'>
         <AnalyticsFacetedFilter
-          title={t('analytics.apiKeyAnalytics.filter.template')}
-          options={templates.map((template) => ({
-            label: template.name,
-            value: template.id,
-          }))}
-          selectedValues={templateIDs}
-          onSelectedValuesChange={onTemplateIDsChange}
-          isLoading={isLoadingTemplates}
+          title={filterTitle}
+          options={options}
+          selectedValues={selectedValues}
+          onSelectedValuesChange={onSelectedValuesChange}
+          isLoading={isLoadingOptions}
         />
         {hasFilters && (
           <Button
@@ -149,5 +153,41 @@ export function APIKeyAnalyticsFilterBar({
         )}
       </div>
     </div>
+  );
+}
+
+export function APIKeyAnalyticsFilterBar({
+  earliestDate,
+  timezone,
+  startTime,
+  endTime,
+  templateIDs,
+  templates,
+  isLoadingTemplates,
+  onStartTimeChange,
+  onEndTimeChange,
+  onTemplateIDsChange,
+  onReset,
+}: APIKeyAnalyticsFilterBarProps) {
+  const { t } = useTranslation();
+
+  return (
+    <AnalyticsDetailFilterBar
+      earliestDate={earliestDate}
+      timezone={timezone}
+      startTime={startTime}
+      endTime={endTime}
+      selectedValues={templateIDs}
+      filterTitle={t('analytics.apiKeyAnalytics.filter.template')}
+      options={templates.map((template) => ({
+        label: template.name,
+        value: template.id,
+      }))}
+      isLoadingOptions={isLoadingTemplates}
+      onStartTimeChange={onStartTimeChange}
+      onEndTimeChange={onEndTimeChange}
+      onSelectedValuesChange={onTemplateIDsChange}
+      onReset={onReset}
+    />
   );
 }

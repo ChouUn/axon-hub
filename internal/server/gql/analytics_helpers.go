@@ -10,11 +10,13 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/samber/lo"
 
+	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/ent/apikey"
 	"github.com/looplj/axonhub/internal/ent/apikeyprofiletemplate"
 	"github.com/looplj/axonhub/internal/ent/channel"
+	"github.com/looplj/axonhub/internal/ent/requestexecution"
 	"github.com/looplj/axonhub/internal/ent/usagelog"
 	"github.com/looplj/axonhub/internal/objects"
 )
@@ -347,6 +349,518 @@ func sortAPIKeyStatsByCost(results []*AnalyticsAPIKeyStat) {
 		}
 		return left.Name < right.Name
 	})
+}
+
+type modelChannelAnalyticsRaw struct {
+	ModelID                string  `json:"model_id"`
+	ChannelID              int     `json:"channel_id"`
+	ChannelName            string  `json:"channel_name"`
+	RequestCount           int     `json:"request_count"`
+	SuccessCount           int     `json:"success_count"`
+	TotalTokens            int64   `json:"total_tokens"`
+	Cost                   float64 `json:"cost"`
+	OutputTokens           int64   `json:"output_tokens"`
+	EffectiveLatencyMs     int64   `json:"effective_latency_ms"`
+	FirstTokenLatencyMs    int64   `json:"first_token_latency_ms"`
+	FirstTokenLatencyCount int     `json:"first_token_latency_count"`
+}
+
+type modelAnalyticsAccumulator struct {
+	stat                   *AnalyticsModelStat
+	successCount           int
+	outputTokens           int64
+	effectiveLatencyMs     int64
+	firstTokenLatencyMs    int64
+	firstTokenLatencyCount int
+}
+
+func (r *queryResolver) queryAnalyticsModelStats(
+	ctx context.Context,
+	filter *AnalyticsModelFilter,
+) ([]*AnalyticsModelStat, error) {
+	channelIDs, hasChannelFilter, err := r.resolveAnalyticsChannelIDs(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	loc := r.systemService.TimeLocation(ctx)
+	var rawResults []modelChannelAnalyticsRaw
+	err = r.client.RequestExecution.Query().
+		Modify(func(s *sql.Selector) {
+			usageTable := sql.Table(usagelog.Table)
+			channelTable := sql.Table(channel.Table)
+			s.LeftJoin(usageTable).OnP(sql.And(
+				sql.ColumnsEQ(
+					s.C(requestexecution.FieldRequestID),
+					usageTable.C(usagelog.FieldRequestID),
+				),
+				sql.ColumnsEQ(
+					s.C(requestexecution.FieldChannelID),
+					usageTable.C(usagelog.FieldChannelID),
+				),
+				sql.ColumnsEQ(
+					s.C(requestexecution.FieldModelID),
+					usageTable.C(usagelog.FieldModelID),
+				),
+				sql.EQ(
+					s.C(requestexecution.FieldStatus),
+					requestexecution.StatusCompleted,
+				),
+			))
+			s.Join(channelTable).On(
+				s.C(requestexecution.FieldChannelID),
+				channelTable.C(channel.FieldID),
+			)
+
+			r.buildModelAnalyticsWhere(
+				s,
+				filter,
+				channelIDs,
+				hasChannelFilter,
+				loc,
+			)
+			if projectID, ok := contexts.GetProjectID(ctx); ok {
+				s.Where(sql.EQ(
+					s.C(requestexecution.FieldProjectID),
+					projectID,
+				))
+			}
+
+			statusColumn := s.C(requestexecution.FieldStatus)
+			latencyColumn := s.C(requestexecution.FieldMetricsLatencyMs)
+			firstTokenColumn := s.C(
+				requestexecution.FieldMetricsFirstTokenLatencyMs,
+			)
+			streamColumn := s.C(requestexecution.FieldStream)
+			completed := requestexecution.StatusCompleted
+			outputTokensExpression := fmt.Sprintf(
+				"COALESCE(%s, 0) + COALESCE(%s, 0) + COALESCE(%s, 0)",
+				usageTable.C(usagelog.FieldCompletionTokens),
+				usageTable.C(usagelog.FieldCompletionReasoningTokens),
+				usageTable.C(usagelog.FieldCompletionAudioTokens),
+			)
+
+			s.Select(
+				sql.As(s.C(requestexecution.FieldModelID), "model_id"),
+				sql.As(
+					s.C(requestexecution.FieldChannelID),
+					"channel_id",
+				),
+				sql.As(
+					channelTable.C(channel.FieldName),
+					"channel_name",
+				),
+				sql.As(
+					sql.Count(s.C(requestexecution.FieldID)),
+					"request_count",
+				),
+				sql.As(fmt.Sprintf(
+					"SUM(CASE WHEN %s = '%s' THEN 1 ELSE 0 END)",
+					statusColumn,
+					completed,
+				), "success_count"),
+				sql.As(fmt.Sprintf(
+					"COALESCE(SUM(%s), 0)",
+					usageTable.C(usagelog.FieldTotalTokens),
+				), "total_tokens"),
+				sql.As(fmt.Sprintf(
+					"COALESCE(SUM(%s), 0)",
+					usageTable.C(usagelog.FieldTotalCost),
+				), "cost"),
+				sql.As(fmt.Sprintf(
+					"COALESCE(SUM(%s), 0)",
+					outputTokensExpression,
+				), "output_tokens"),
+				sql.As(fmt.Sprintf(
+					"SUM(CASE WHEN %s = '%s' AND %s > 0 THEN "+
+						"CASE WHEN %s AND %s IS NOT NULL THEN "+
+						"CASE WHEN %s >= %s THEN 0 "+
+						"ELSE %s - %s END "+
+						"ELSE %s END ELSE 0 END)",
+					statusColumn,
+					completed,
+					latencyColumn,
+					streamColumn,
+					firstTokenColumn,
+					firstTokenColumn,
+					latencyColumn,
+					latencyColumn,
+					firstTokenColumn,
+					latencyColumn,
+				), "effective_latency_ms"),
+				sql.As(fmt.Sprintf(
+					"SUM(CASE WHEN %s = '%s' AND %s "+
+						"AND %s IS NOT NULL "+
+						"THEN %s ELSE 0 END)",
+					statusColumn,
+					completed,
+					streamColumn,
+					firstTokenColumn,
+					firstTokenColumn,
+				), "first_token_latency_ms"),
+				sql.As(fmt.Sprintf(
+					"SUM(CASE WHEN %s = '%s' AND %s "+
+						"AND %s IS NOT NULL "+
+						"THEN 1 ELSE 0 END)",
+					statusColumn,
+					completed,
+					streamColumn,
+					firstTokenColumn,
+				), "first_token_latency_count"),
+			).
+				GroupBy(
+					s.C(requestexecution.FieldModelID),
+					s.C(requestexecution.FieldChannelID),
+					channelTable.C(channel.FieldName),
+				)
+		}).
+		Scan(ctx, &rawResults)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get model analytics stats: %w", err)
+	}
+
+	return buildAnalyticsModelStats(rawResults), nil
+}
+
+func (r *queryResolver) resolveAnalyticsChannelIDs(
+	ctx context.Context,
+	filter *AnalyticsModelFilter,
+) ([]int, bool, error) {
+	if filter == nil {
+		return nil, false, nil
+	}
+
+	filterSets := make([][]int, 0, 2)
+	if len(filter.ChannelIDs) > 0 {
+		filterSets = append(filterSets, lo.Map(
+			filter.ChannelIDs,
+			func(id *objects.GUID, _ int) int { return id.ID },
+		))
+	}
+
+	if len(filter.ChannelTags) > 0 {
+		selectedTags := lo.SliceToMap(
+			filter.ChannelTags,
+			func(tag string) (string, struct{}) { return tag, struct{}{} },
+		)
+		channels, err := r.queryAnalyticsTagChannels(ctx)
+		if err != nil {
+			return nil, true, fmt.Errorf(
+				"failed to resolve analytics channel tags: %w",
+				err,
+			)
+		}
+
+		matchingChannelIDs := make([]int, 0)
+		for _, item := range channels {
+			if lo.SomeBy(item.Tags, func(tag string) bool {
+				_, ok := selectedTags[tag]
+				return ok
+			}) {
+				matchingChannelIDs = append(matchingChannelIDs, item.ID)
+			}
+		}
+		filterSets = append(filterSets, matchingChannelIDs)
+	}
+
+	if len(filterSets) == 0 {
+		return nil, false, nil
+	}
+
+	return intersectIntIDSets(filterSets...), true, nil
+}
+
+func (r *queryResolver) queryAnalyticsChannelTags(
+	ctx context.Context,
+) ([]string, error) {
+	channels, err := r.queryAnalyticsTagChannels(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get analytics channel tags: %w", err)
+	}
+
+	tags := lo.Uniq(lo.FlatMap(channels, func(item *ent.Channel, _ int) []string {
+		return item.Tags
+	}))
+	sort.Strings(tags)
+	return tags, nil
+}
+
+func (r *queryResolver) queryAnalyticsTagChannels(
+	ctx context.Context,
+) ([]*ent.Channel, error) {
+	channels, err := authz.RunWithSystemBypass(
+		ctx,
+		"analytics-model-channel-tags",
+		func(ctx context.Context) ([]*ent.Channel, error) {
+			return r.client.Channel.Query().
+				Where(channel.StatusNEQ(channel.StatusArchived)).
+				Select(channel.FieldID, channel.FieldTags).
+				All(ctx)
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	projectID, ok := contexts.GetProjectID(ctx)
+	if !ok || projectID == 0 {
+		return channels, nil
+	}
+
+	project, err := authz.RunWithSystemBypass(
+		ctx,
+		"analytics-model-channel-tags-project",
+		func(ctx context.Context) (*ent.Project, error) {
+			return r.client.Project.Get(ctx, projectID)
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return filterChannelsByProjectProfile(
+		channels,
+		project.GetActiveProfile(),
+	), nil
+}
+
+func intersectIntIDSets(sets ...[]int) []int {
+	if len(sets) == 0 {
+		return nil
+	}
+
+	intersection := make(map[int]struct{}, len(sets[0]))
+	for _, id := range sets[0] {
+		intersection[id] = struct{}{}
+	}
+
+	for _, ids := range sets[1:] {
+		current := lo.SliceToMap(ids, func(id int) (int, struct{}) {
+			return id, struct{}{}
+		})
+		for id := range intersection {
+			if _, ok := current[id]; !ok {
+				delete(intersection, id)
+			}
+		}
+	}
+
+	return lo.Keys(intersection)
+}
+
+func (r *queryResolver) buildModelAnalyticsWhere(
+	s *sql.Selector,
+	filter *AnalyticsModelFilter,
+	channelIDs []int,
+	hasChannelFilter bool,
+	loc *time.Location,
+) {
+	s.Where(sql.In(
+		s.C(requestexecution.FieldStatus),
+		requestexecution.StatusCompleted,
+		requestexecution.StatusFailed,
+	))
+	if filter == nil {
+		return
+	}
+
+	if filter.StartTime != nil {
+		start := parseDateStr(*filter.StartTime, loc)
+		if !start.IsZero() {
+			s.Where(sql.GTE(
+				s.C(requestexecution.FieldCreatedAt),
+				start.UTC(),
+			))
+		}
+	}
+	if filter.EndTime != nil {
+		end := parseDateStr(*filter.EndTime, loc)
+		if !end.IsZero() {
+			s.Where(sql.LT(
+				s.C(requestexecution.FieldCreatedAt),
+				end.AddDate(0, 0, 1).UTC(),
+			))
+		}
+	}
+	if len(filter.ProjectIDs) > 0 {
+		projectIDs := lo.Map(
+			filter.ProjectIDs,
+			func(id *objects.GUID, _ int) int { return id.ID },
+		)
+		s.Where(sql.InInts(
+			s.C(requestexecution.FieldProjectID),
+			projectIDs...,
+		))
+	}
+	if len(filter.ModelIDs) > 0 {
+		modelIDs := lo.Map(
+			filter.ModelIDs,
+			func(id string, _ int) any { return id },
+		)
+		s.Where(sql.In(s.C(requestexecution.FieldModelID), modelIDs...))
+	}
+	if len(channelIDs) > 0 {
+		s.Where(sql.InInts(
+			s.C(requestexecution.FieldChannelID),
+			channelIDs...,
+		))
+	} else if hasChannelFilter {
+		s.Where(sql.False())
+	}
+}
+
+func buildAnalyticsModelStats(
+	rawResults []modelChannelAnalyticsRaw,
+) []*AnalyticsModelStat {
+	groups := make(map[string]*modelAnalyticsAccumulator)
+	for _, raw := range rawResults {
+		channelStat := &AnalyticsModelChannelStat{
+			ID: objects.GUID{
+				Type: ent.TypeChannel,
+				ID:   raw.ChannelID,
+			},
+			Name:         raw.ChannelName,
+			RequestCount: raw.RequestCount,
+			TotalTokens:  safeIntFromInt64(raw.TotalTokens),
+			Cost:         raw.Cost,
+		}
+		populateModelAnalyticsMetrics(
+			&channelStat.CostPerMillion,
+			&channelStat.SuccessRate,
+			&channelStat.AvgFirstTokenLatencyMs,
+			&channelStat.AvgOutputTokensPerSecond,
+			raw.Cost,
+			raw.TotalTokens,
+			raw.RequestCount,
+			raw.SuccessCount,
+			raw.FirstTokenLatencyMs,
+			raw.FirstTokenLatencyCount,
+			raw.OutputTokens,
+			raw.EffectiveLatencyMs,
+		)
+
+		group, ok := groups[raw.ModelID]
+		if !ok {
+			group = &modelAnalyticsAccumulator{
+				stat: &AnalyticsModelStat{
+					ID:   raw.ModelID,
+					Name: raw.ModelID,
+				},
+			}
+			groups[raw.ModelID] = group
+		}
+
+		group.stat.RequestCount += raw.RequestCount
+		group.stat.TotalTokens = safeIntFromInt64(
+			int64(group.stat.TotalTokens) + raw.TotalTokens,
+		)
+		group.stat.Cost += raw.Cost
+		group.stat.Channels = append(group.stat.Channels, channelStat)
+		group.successCount += raw.SuccessCount
+		group.outputTokens += raw.OutputTokens
+		group.effectiveLatencyMs += raw.EffectiveLatencyMs
+		group.firstTokenLatencyMs += raw.FirstTokenLatencyMs
+		group.firstTokenLatencyCount += raw.FirstTokenLatencyCount
+	}
+
+	results := make([]*AnalyticsModelStat, 0, len(groups))
+	for _, group := range groups {
+		populateModelAnalyticsMetrics(
+			&group.stat.CostPerMillion,
+			&group.stat.SuccessRate,
+			&group.stat.AvgFirstTokenLatencyMs,
+			&group.stat.AvgOutputTokensPerSecond,
+			group.stat.Cost,
+			int64(group.stat.TotalTokens),
+			group.stat.RequestCount,
+			group.successCount,
+			group.firstTokenLatencyMs,
+			group.firstTokenLatencyCount,
+			group.outputTokens,
+			group.effectiveLatencyMs,
+		)
+		sort.SliceStable(group.stat.Channels, func(i, j int) bool {
+			return lessModelAnalyticsStat(
+				group.stat.Channels[i].Cost,
+				group.stat.Channels[i].RequestCount,
+				group.stat.Channels[i].TotalTokens,
+				group.stat.Channels[i].Name,
+				group.stat.Channels[j].Cost,
+				group.stat.Channels[j].RequestCount,
+				group.stat.Channels[j].TotalTokens,
+				group.stat.Channels[j].Name,
+			)
+		})
+		results = append(results, group.stat)
+	}
+
+	sort.SliceStable(results, func(i, j int) bool {
+		return lessModelAnalyticsStat(
+			results[i].Cost,
+			results[i].RequestCount,
+			results[i].TotalTokens,
+			results[i].Name,
+			results[j].Cost,
+			results[j].RequestCount,
+			results[j].TotalTokens,
+			results[j].Name,
+		)
+	})
+	return results
+}
+
+func populateModelAnalyticsMetrics(
+	costPerMillion *float64,
+	successRate *float64,
+	avgFirstTokenLatencyMs **float64,
+	avgOutputTokensPerSecond **float64,
+	cost float64,
+	totalTokens int64,
+	requestCount int,
+	successCount int,
+	firstTokenLatencyMs int64,
+	firstTokenLatencyCount int,
+	outputTokens int64,
+	effectiveLatencyMs int64,
+) {
+	if totalTokens > 0 {
+		*costPerMillion = cost * 1_000_000 / float64(totalTokens)
+	}
+	if requestCount > 0 {
+		*successRate = float64(successCount) * 100 / float64(requestCount)
+	}
+	if firstTokenLatencyCount > 0 {
+		*avgFirstTokenLatencyMs = lo.ToPtr(
+			float64(firstTokenLatencyMs) / float64(firstTokenLatencyCount),
+		)
+	}
+	if outputTokens > 0 && effectiveLatencyMs > 0 {
+		*avgOutputTokensPerSecond = lo.ToPtr(
+			float64(outputTokens) * 1000 / float64(effectiveLatencyMs),
+		)
+	}
+}
+
+func lessModelAnalyticsStat(
+	leftCost float64,
+	leftRequestCount int,
+	leftTotalTokens int,
+	leftName string,
+	rightCost float64,
+	rightRequestCount int,
+	rightTotalTokens int,
+	rightName string,
+) bool {
+	if leftCost != rightCost {
+		return leftCost > rightCost
+	}
+	if leftRequestCount != rightRequestCount {
+		return leftRequestCount > rightRequestCount
+	}
+	if leftTotalTokens != rightTotalTokens {
+		return leftTotalTokens > rightTotalTokens
+	}
+	return leftName < rightName
 }
 
 func (r *queryResolver) queryChannelStats(ctx context.Context, filter *AnalyticsFilter, apiKeyIDs []int, hasUserFilter bool, loc *time.Location) ([]dimStats, error) {

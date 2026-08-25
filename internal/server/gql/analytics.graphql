@@ -23,6 +23,22 @@ input AnalyticsFilter {
   userIDs: [ID!]
 }
 
+"Filter input for model detail analytics"
+input AnalyticsModelFilter {
+  "Start date (inclusive, YYYY-MM-DD, parsed in system timezone)"
+  startTime: String
+  "End date (inclusive, YYYY-MM-DD, parsed in system timezone)"
+  endTime: String
+  "Filter by project IDs"
+  projectIDs: [ID!]
+  "Filter by channel IDs"
+  channelIDs: [ID!]
+  "Filter by channel tags (matches any selected tag)"
+  channelTags: [String!]
+  "Filter by model IDs (model identifier strings)"
+  modelIDs: [String!]
+}
+
 """
 Metadata for the analytics page (independent of filters)
 """
@@ -97,6 +113,33 @@ type AnalyticsAPIKeyStat {
   models: [AnalyticsAPIKeyModelStat!]!
 }
 
+"Channel attempt statistics within one model"
+type AnalyticsModelChannelStat {
+  id: ID!
+  name: String!
+  requestCount: Int!
+  totalTokens: Int!
+  cost: Float!
+  costPerMillion: Float!
+  successRate: Float!
+  avgFirstTokenLatencyMs: Float
+  avgOutputTokensPerSecond: Float
+}
+
+"Model attempt statistics with nested channel breakdown"
+type AnalyticsModelStat {
+  id: String!
+  name: String!
+  requestCount: Int!
+  totalTokens: Int!
+  cost: Float!
+  costPerMillion: Float!
+  successRate: Float!
+  avgFirstTokenLatencyMs: Float
+  avgOutputTokensPerSecond: Float
+  channels: [AnalyticsModelChannelStat!]!
+}
+
 extend type Query {
   "Get metadata for the analytics page (date range, etc.)"
   analyticsMetadata: AnalyticsMetadata!
@@ -110,4 +153,8 @@ extend type Query {
   analyticsAPIKeyTemplates: [AnalyticsAPIKeyTemplate!]!
   "Get API key usage aggregated by API key and model"
   analyticsAPIKeyStats(filter: AnalyticsFilter): [AnalyticsAPIKeyStat!]!
+  "Get channel tags available to model analytics"
+  analyticsChannelTags: [String!]!
+  "Get execution attempts aggregated by model and channel"
+  analyticsModelStats(filter: AnalyticsModelFilter): [AnalyticsModelStat!]!
 }

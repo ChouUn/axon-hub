@@ -18,6 +18,19 @@
 sqlite3 /path/to/axonhub-test.db < scripts/e2e/fixtures/api-key-analytics.sql
 ```
 
+#### `e2e/fixtures/model-analytics.sql`
+
+为模型详情分析页面生成可重复使用的 SQLite 模拟数据。脚本会在 ID 最小的 active
+项目中创建带标签的测试渠道，并生成同渠道重试、跨渠道重试、完全失败及成功请求，
+用于验证渠道尝试数、费用排名、成功率、平均 TTFB 和平均输出速度。执行结果会打印
+对应的项目 ID 和名称，便于在前端切换到该项目验收。
+
+脚本仅适用于隔离测试数据库；重复执行时只替换带 `[Model Analytics Seed]` 标记的数据。
+
+```bash
+sqlite3 /path/to/axonhub-test.db < scripts/e2e/fixtures/model-analytics.sql
+```
+
 #### `e2e/e2e-test.sh`
 一键运行完整的 E2E 测试套件。
 

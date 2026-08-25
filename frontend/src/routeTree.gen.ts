@@ -37,6 +37,7 @@ import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedApiKeysIndexRouteImport } from './routes/_authenticated/api-keys/index'
 import { Route as AuthenticatedAnalyticsIndexRouteImport } from './routes/_authenticated/analytics/index'
 import { Route as AuthenticatedAnalyticsApiKeysRouteImport } from './routes/_authenticated/analytics/api-keys'
+import { Route as AuthenticatedAnalyticsModelsRouteImport } from './routes/_authenticated/analytics/models'
 import { Route as OauthOidcIdpCallbackRouteImport } from './routes/oauth/oidc/idp-callback'
 import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings/profile'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
@@ -209,6 +210,12 @@ const AuthenticatedAnalyticsApiKeysRoute =
     path: '/analytics/api-keys',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAnalyticsModelsRoute =
+  AuthenticatedAnalyticsModelsRouteImport.update({
+    id: '/analytics/models',
+    path: '/analytics/models',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const OauthOidcIdpCallbackRoute = OauthOidcIdpCallbackRouteImport.update({
   id: '/oauth/oidc/idp-callback',
   path: '/oauth/oidc/idp-callback',
@@ -345,6 +352,7 @@ export interface FileRoutesByFullPath {
   '/oauth/oidc/idp-callback': typeof OauthOidcIdpCallbackRoute
   '/analytics/': typeof AuthenticatedAnalyticsIndexRoute
   '/analytics/api-keys': typeof AuthenticatedAnalyticsApiKeysRoute
+  '/analytics/models': typeof AuthenticatedAnalyticsModelsRoute
   '/api-keys/': typeof AuthenticatedApiKeysIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/chats/': typeof AuthenticatedChatsIndexRoute
@@ -392,6 +400,7 @@ export interface FileRoutesByTo {
   '/oauth/oidc/idp-callback': typeof OauthOidcIdpCallbackRoute
   '/analytics': typeof AuthenticatedAnalyticsIndexRoute
   '/analytics/api-keys': typeof AuthenticatedAnalyticsApiKeysRoute
+  '/analytics/models': typeof AuthenticatedAnalyticsModelsRoute
   '/api-keys': typeof AuthenticatedApiKeysIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/chats': typeof AuthenticatedChatsIndexRoute
@@ -442,6 +451,7 @@ export interface FileRoutesById {
   '/oauth/oidc/idp-callback': typeof OauthOidcIdpCallbackRoute
   '/_authenticated/analytics/': typeof AuthenticatedAnalyticsIndexRoute
   '/_authenticated/analytics/api-keys': typeof AuthenticatedAnalyticsApiKeysRoute
+  '/_authenticated/analytics/models': typeof AuthenticatedAnalyticsModelsRoute
   '/_authenticated/api-keys/': typeof AuthenticatedApiKeysIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/chats/': typeof AuthenticatedChatsIndexRoute
@@ -492,6 +502,7 @@ export interface FileRouteTypes {
     | '/oauth/oidc/idp-callback'
     | '/analytics/'
     | '/analytics/api-keys'
+    | '/analytics/models'
     | '/api-keys/'
     | '/channels/'
     | '/chats/'
@@ -539,6 +550,7 @@ export interface FileRouteTypes {
     | '/oauth/oidc/idp-callback'
     | '/analytics'
     | '/analytics/api-keys'
+    | '/analytics/models'
     | '/api-keys'
     | '/channels'
     | '/chats'
@@ -588,6 +600,7 @@ export interface FileRouteTypes {
     | '/oauth/oidc/idp-callback'
     | '/_authenticated/analytics/'
     | '/_authenticated/analytics/api-keys'
+    | '/_authenticated/analytics/models'
     | '/_authenticated/api-keys/'
     | '/_authenticated/channels/'
     | '/_authenticated/chats/'
@@ -827,6 +840,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAnalyticsApiKeysRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/analytics/models': {
+      id: '/_authenticated/analytics/models'
+      path: '/analytics/models'
+      fullPath: '/analytics/models'
+      preLoaderRoute: typeof AuthenticatedAnalyticsModelsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/oauth/oidc/idp-callback': {
       id: '/oauth/oidc/idp-callback'
       path: '/oauth/oidc/idp-callback'
@@ -994,6 +1014,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedRequestsRequestIdRoute: typeof AuthenticatedRequestsRequestIdRoute
   AuthenticatedAnalyticsIndexRoute: typeof AuthenticatedAnalyticsIndexRoute
   AuthenticatedAnalyticsApiKeysRoute: typeof AuthenticatedAnalyticsApiKeysRoute
+  AuthenticatedAnalyticsModelsRoute: typeof AuthenticatedAnalyticsModelsRoute
   AuthenticatedApiKeysIndexRoute: typeof AuthenticatedApiKeysIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedChatsIndexRoute: typeof AuthenticatedChatsIndexRoute
@@ -1029,6 +1050,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedRequestsRequestIdRoute: AuthenticatedRequestsRequestIdRoute,
   AuthenticatedAnalyticsIndexRoute: AuthenticatedAnalyticsIndexRoute,
   AuthenticatedAnalyticsApiKeysRoute: AuthenticatedAnalyticsApiKeysRoute,
+  AuthenticatedAnalyticsModelsRoute: AuthenticatedAnalyticsModelsRoute,
   AuthenticatedApiKeysIndexRoute: AuthenticatedApiKeysIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedChatsIndexRoute: AuthenticatedChatsIndexRoute,

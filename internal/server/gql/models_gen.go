@@ -134,6 +134,49 @@ type AnalyticsMetadata struct {
 	EarliestDate *string `json:"earliestDate,omitempty"`
 }
 
+// Channel attempt statistics within one model
+type AnalyticsModelChannelStat struct {
+	ID                       objects.GUID `json:"id"`
+	Name                     string       `json:"name"`
+	RequestCount             int          `json:"requestCount"`
+	TotalTokens              int          `json:"totalTokens"`
+	Cost                     float64      `json:"cost"`
+	CostPerMillion           float64      `json:"costPerMillion"`
+	SuccessRate              float64      `json:"successRate"`
+	AvgFirstTokenLatencyMs   *float64     `json:"avgFirstTokenLatencyMs,omitempty"`
+	AvgOutputTokensPerSecond *float64     `json:"avgOutputTokensPerSecond,omitempty"`
+}
+
+// Filter input for model detail analytics
+type AnalyticsModelFilter struct {
+	// Start date (inclusive, YYYY-MM-DD, parsed in system timezone)
+	StartTime *string `json:"startTime,omitempty"`
+	// End date (inclusive, YYYY-MM-DD, parsed in system timezone)
+	EndTime *string `json:"endTime,omitempty"`
+	// Filter by project IDs
+	ProjectIDs []*objects.GUID `json:"projectIDs,omitempty"`
+	// Filter by channel IDs
+	ChannelIDs []*objects.GUID `json:"channelIDs,omitempty"`
+	// Filter by channel tags (matches any selected tag)
+	ChannelTags []string `json:"channelTags,omitempty"`
+	// Filter by model IDs (model identifier strings)
+	ModelIDs []string `json:"modelIDs,omitempty"`
+}
+
+// Model attempt statistics with nested channel breakdown
+type AnalyticsModelStat struct {
+	ID                       string                       `json:"id"`
+	Name                     string                       `json:"name"`
+	RequestCount             int                          `json:"requestCount"`
+	TotalTokens              int                          `json:"totalTokens"`
+	Cost                     float64                      `json:"cost"`
+	CostPerMillion           float64                      `json:"costPerMillion"`
+	SuccessRate              float64                      `json:"successRate"`
+	AvgFirstTokenLatencyMs   *float64                     `json:"avgFirstTokenLatencyMs,omitempty"`
+	AvgOutputTokensPerSecond *float64                     `json:"avgOutputTokensPerSecond,omitempty"`
+	Channels                 []*AnalyticsModelChannelStat `json:"channels"`
+}
+
 // Overview statistics for the analytics page
 type AnalyticsOverview struct {
 	TotalTokens              int     `json:"totalTokens"`

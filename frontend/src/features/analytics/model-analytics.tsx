@@ -7,55 +7,53 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useGeneralSettings } from '@/features/system/data/system';
 import {
-  useAnalyticsAPIKeyStats,
-  useAnalyticsAPIKeyTemplates,
-  useAnalyticsMetadata,
-  type AnalyticsFilter,
+  useAnalyticsChannelTags,
+  useAnalyticsModelStats,
+  type AnalyticsModelFilter,
 } from './data/analytics';
-import { APIKeyAnalyticsFilterBar } from './components/api-key-analytics-filter-bar';
-import { APIKeyAnalyticsTable } from './components/api-key-analytics-table';
+import { AnalyticsDetailFilterBar } from './components/api-key-analytics-filter-bar';
+import { ModelAnalyticsTable } from './components/model-analytics-table';
 
-export default function APIKeyAnalyticsPage() {
+export default function ModelAnalyticsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [startTime, setStartTime] = useState<string | null>(null);
   const [endTime, setEndTime] = useState<string | null>(null);
-  const [templateIDs, setTemplateIDs] = useState<string[]>([]);
+  const [channelTags, setChannelTags] = useState<string[]>([]);
   const { data: generalSettings } = useGeneralSettings();
-  const { data: metadata } = useAnalyticsMetadata();
   const {
-    data: templates = [],
-    isLoading: isTemplatesLoading,
-    error: templatesError,
-  } = useAnalyticsAPIKeyTemplates();
-  const filter = useMemo<AnalyticsFilter>(
+    data: availableTags = [],
+    isLoading: isTagsLoading,
+    error: tagsError,
+  } = useAnalyticsChannelTags();
+  const filter = useMemo<AnalyticsModelFilter>(
     () => ({
       startTime,
       endTime,
-      templateIDs: templateIDs.length > 0 ? templateIDs : undefined,
+      channelTags: channelTags.length > 0 ? channelTags : undefined,
     }),
-    [endTime, startTime, templateIDs]
+    [channelTags, endTime, startTime]
   );
   const {
     data: stats = [],
     isLoading: isStatsLoading,
     error: statsError,
-  } = useAnalyticsAPIKeyStats(filter);
+  } = useAnalyticsModelStats(filter);
 
   const handleReset = () => {
     setStartTime(null);
     setEndTime(null);
-    setTemplateIDs([]);
+    setChannelTags([]);
   };
 
-  const error = templatesError || statsError;
+  const error = tagsError || statsError;
   const currencyCode = generalSettings?.currencyCode || 'USD';
 
   return (
     <div className='flex-1 space-y-6 p-8 pt-6'>
       <Header>
         <h1 className='text-2xl font-bold tracking-tight'>
-          {t('analytics.apiKeyAnalytics.title')}
+          {t('analytics.modelAnalytics.title')}
         </h1>
       </Header>
 
@@ -65,20 +63,20 @@ export default function APIKeyAnalyticsPage() {
       </Button>
 
       <p className='text-sm text-muted-foreground'>
-        {t('analytics.apiKeyAnalytics.description')}
+        {t('analytics.modelAnalytics.description')}
       </p>
 
-      <APIKeyAnalyticsFilterBar
-        earliestDate={metadata?.earliestDate}
+      <AnalyticsDetailFilterBar
         timezone={generalSettings?.timezone || 'UTC'}
         startTime={startTime}
         endTime={endTime}
-        templateIDs={templateIDs}
-        templates={templates}
-        isLoadingTemplates={isTemplatesLoading}
+        selectedValues={channelTags}
+        filterTitle={t('analytics.modelAnalytics.filter.channelTag')}
+        options={availableTags.map((tag) => ({ label: tag, value: tag }))}
+        isLoadingOptions={isTagsLoading}
         onStartTimeChange={setStartTime}
         onEndTimeChange={setEndTime}
-        onTemplateIDsChange={setTemplateIDs}
+        onSelectedValuesChange={setChannelTags}
         onReset={handleReset}
       />
 
@@ -92,7 +90,7 @@ export default function APIKeyAnalyticsPage() {
           {t('common.loadError')} {error.message}
         </div>
       ) : (
-        <APIKeyAnalyticsTable
+        <ModelAnalyticsTable
           data={stats}
           isLoading={isStatsLoading}
           currencyCode={currencyCode}

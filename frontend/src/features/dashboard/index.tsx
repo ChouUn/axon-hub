@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Header } from '@/components/layout/header';
+import { cn } from '@/lib/utils';
 import { formatNumber } from '@/utils/format-number';
 import { TimePeriodSelector, type TimePeriod } from '@/components/time-period-selector';
 import { ChannelSuccessRate } from './components/channel-success-rate';
@@ -217,6 +218,34 @@ export default function DashboardPage() {
             </span>
             <p className='text-sm text-muted-foreground'>
               {t('dashboard.sections.apiKeyAnalyticsDescription')}
+            </p>
+          </div>
+        </div>
+        <ChevronRight className='h-5 w-5 text-muted-foreground' />
+      </Link>
+
+      <Link
+        to='/analytics/models'
+        className={cn(
+          'flex w-full items-center justify-between rounded-lg border bg-card p-4',
+          'text-left transition-colors hover:bg-accent/50'
+        )}
+      >
+        <div className='flex items-center gap-3'>
+          <div
+            className={cn(
+              'flex h-8 w-8 items-center justify-center',
+              'rounded-md bg-primary/10'
+            )}
+          >
+            <Brain className='h-4 w-4 text-primary' />
+          </div>
+          <div>
+            <span className='text-lg font-semibold'>
+              {t('dashboard.sections.modelAnalytics')}
+            </span>
+            <p className='text-sm text-muted-foreground'>
+              {t('dashboard.sections.modelAnalyticsDescription')}
             </p>
           </div>
         </div>
