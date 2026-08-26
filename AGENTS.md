@@ -13,6 +13,9 @@ This file provides guidance to AI coding assistants when working with code in th
 ## 仓库维护模式
 
 - 本仓库是 [上游 AxonHub](https://github.com/looplj/axonhub) 的自维护 fork。
+- 本 fork 的 feature、bugfix topic 及其维护检查表记录在
+  [Fork 维护台账](docs/fork-maintenance.md)。新增或实质修改本地 topic 时更新台账；
+  同步上游 release 时逐项核对。
 - 上游 release tag 是定期同步的基线。合并或 cherry-pick 上游 release 前，必须同时检查
   上游的 schema、data migration 和本地改动。
 - 本 fork 的专有行为和迁移应与上游历史保持可区分。除非有明确要求，不要仅为使分支看起来
