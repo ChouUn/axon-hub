@@ -80,6 +80,7 @@ CREATE TEMP TABLE model_analytics_seed_requests (
   hour INTEGER NOT NULL,
   final_channel_suffix TEXT,
   prompt_tokens INTEGER NOT NULL,
+  prompt_cached_tokens INTEGER NOT NULL,
   completion_tokens INTEGER NOT NULL,
   total_cost REAL,
   stream INTEGER NOT NULL,
@@ -89,17 +90,17 @@ CREATE TEMP TABLE model_analytics_seed_requests (
 
 INSERT INTO model_analytics_seed_requests VALUES
   ('gpt-same-channel-retry', 'gpt-model-mock', 0, 10,
-   'premium-east', 2700, 300, 6.0, 1, 2000, 500),
+   'premium-east', 2700, 900, 300, 6.0, 1, 2000, 500),
   ('gpt-cross-channel-retry', 'gpt-model-mock', 0, 11,
-   'premium-backup', 900, 100, 2.0, 0, 1000, NULL),
+   'premium-backup', 900, 450, 100, 2.0, 0, 1000, NULL),
   ('gpt-budget-success', 'gpt-model-mock', -1, 12,
-   'budget-west', 3600, 400, 4.0, 1, 3000, 1000),
+   'budget-west', 3600, 720, 400, 4.0, 1, 3000, 1000),
   ('gpt-total-failure', 'gpt-model-mock', 0, 13,
-   NULL, 0, 0, NULL, 0, NULL, NULL),
+   NULL, 0, 0, 0, NULL, 0, NULL, NULL),
   ('claude-premium-success', 'claude-model-mock', 0, 14,
-   'premium-east', 4500, 500, 15.0, 1, 2500, 500),
+   'premium-east', 4500, 2250, 500, 15.0, 1, 2500, 500),
   ('claude-budget-success', 'claude-model-mock', -1, 15,
-   'budget-west', 1800, 200, 5.0, 0, 1000, NULL);
+   'budget-west', 1800, 180, 200, 5.0, 0, 1000, NULL);
 
 CREATE TEMP VIEW model_analytics_seed_request_data AS
 SELECT
@@ -220,6 +221,7 @@ INSERT INTO usage_logs (
   updated_at,
   model_id,
   prompt_tokens,
+  prompt_cached_tokens,
   completion_tokens,
   total_tokens,
   source,
@@ -234,6 +236,7 @@ SELECT
   rows.created_at,
   rows.model_id,
   rows.prompt_tokens,
+  rows.prompt_cached_tokens,
   rows.completion_tokens,
   rows.prompt_tokens + rows.completion_tokens,
   'test',

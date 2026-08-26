@@ -143,6 +143,7 @@ type AnalyticsModelChannelStat struct {
 	Cost                     float64      `json:"cost"`
 	CostPerMillion           float64      `json:"costPerMillion"`
 	SuccessRate              float64      `json:"successRate"`
+	CacheHitRate             float64      `json:"cacheHitRate"`
 	AvgFirstTokenLatencyMs   *float64     `json:"avgFirstTokenLatencyMs,omitempty"`
 	AvgOutputTokensPerSecond *float64     `json:"avgOutputTokensPerSecond,omitempty"`
 }
@@ -172,6 +173,7 @@ type AnalyticsModelStat struct {
 	Cost                     float64                      `json:"cost"`
 	CostPerMillion           float64                      `json:"costPerMillion"`
 	SuccessRate              float64                      `json:"successRate"`
+	CacheHitRate             float64                      `json:"cacheHitRate"`
 	AvgFirstTokenLatencyMs   *float64                     `json:"avgFirstTokenLatencyMs,omitempty"`
 	AvgOutputTokensPerSecond *float64                     `json:"avgOutputTokensPerSecond,omitempty"`
 	Channels                 []*AnalyticsModelChannelStat `json:"channels"`

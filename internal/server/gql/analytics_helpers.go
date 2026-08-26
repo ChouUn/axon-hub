@@ -358,6 +358,8 @@ type modelChannelAnalyticsRaw struct {
 	RequestCount           int     `json:"request_count"`
 	SuccessCount           int     `json:"success_count"`
 	TotalTokens            int64   `json:"total_tokens"`
+	InputTokens            int64   `json:"input_tokens"`
+	CachedInputTokens      int64   `json:"cached_input_tokens"`
 	Cost                   float64 `json:"cost"`
 	OutputTokens           int64   `json:"output_tokens"`
 	EffectiveLatencyMs     int64   `json:"effective_latency_ms"`
@@ -368,6 +370,8 @@ type modelChannelAnalyticsRaw struct {
 type modelAnalyticsAccumulator struct {
 	stat                   *AnalyticsModelStat
 	successCount           int
+	inputTokens            int64
+	cachedInputTokens      int64
 	outputTokens           int64
 	effectiveLatencyMs     int64
 	firstTokenLatencyMs    int64
@@ -463,6 +467,14 @@ func (r *queryResolver) queryAnalyticsModelStats(
 					"COALESCE(SUM(%s), 0)",
 					usageTable.C(usagelog.FieldTotalTokens),
 				), "total_tokens"),
+				sql.As(fmt.Sprintf(
+					"COALESCE(SUM(%s), 0)",
+					usageTable.C(usagelog.FieldPromptTokens),
+				), "input_tokens"),
+				sql.As(fmt.Sprintf(
+					"COALESCE(SUM(%s), 0)",
+					usageTable.C(usagelog.FieldPromptCachedTokens),
+				), "cached_input_tokens"),
 				sql.As(fmt.Sprintf(
 					"COALESCE(SUM(%s), 0)",
 					usageTable.C(usagelog.FieldTotalCost),
@@ -727,12 +739,15 @@ func buildAnalyticsModelStats(
 		populateModelAnalyticsMetrics(
 			&channelStat.CostPerMillion,
 			&channelStat.SuccessRate,
+			&channelStat.CacheHitRate,
 			&channelStat.AvgFirstTokenLatencyMs,
 			&channelStat.AvgOutputTokensPerSecond,
 			raw.Cost,
 			raw.TotalTokens,
 			raw.RequestCount,
 			raw.SuccessCount,
+			raw.InputTokens,
+			raw.CachedInputTokens,
 			raw.FirstTokenLatencyMs,
 			raw.FirstTokenLatencyCount,
 			raw.OutputTokens,
@@ -757,6 +772,8 @@ func buildAnalyticsModelStats(
 		group.stat.Cost += raw.Cost
 		group.stat.Channels = append(group.stat.Channels, channelStat)
 		group.successCount += raw.SuccessCount
+		group.inputTokens += raw.InputTokens
+		group.cachedInputTokens += raw.CachedInputTokens
 		group.outputTokens += raw.OutputTokens
 		group.effectiveLatencyMs += raw.EffectiveLatencyMs
 		group.firstTokenLatencyMs += raw.FirstTokenLatencyMs
@@ -768,12 +785,15 @@ func buildAnalyticsModelStats(
 		populateModelAnalyticsMetrics(
 			&group.stat.CostPerMillion,
 			&group.stat.SuccessRate,
+			&group.stat.CacheHitRate,
 			&group.stat.AvgFirstTokenLatencyMs,
 			&group.stat.AvgOutputTokensPerSecond,
 			group.stat.Cost,
 			int64(group.stat.TotalTokens),
 			group.stat.RequestCount,
 			group.successCount,
+			group.inputTokens,
+			group.cachedInputTokens,
 			group.firstTokenLatencyMs,
 			group.firstTokenLatencyCount,
 			group.outputTokens,
@@ -812,12 +832,15 @@ func buildAnalyticsModelStats(
 func populateModelAnalyticsMetrics(
 	costPerMillion *float64,
 	successRate *float64,
+	cacheHitRate *float64,
 	avgFirstTokenLatencyMs **float64,
 	avgOutputTokensPerSecond **float64,
 	cost float64,
 	totalTokens int64,
 	requestCount int,
 	successCount int,
+	inputTokens int64,
+	cachedInputTokens int64,
 	firstTokenLatencyMs int64,
 	firstTokenLatencyCount int,
 	outputTokens int64,
@@ -828,6 +851,9 @@ func populateModelAnalyticsMetrics(
 	}
 	if requestCount > 0 {
 		*successRate = float64(successCount) * 100 / float64(requestCount)
+	}
+	if inputTokens > 0 {
+		*cacheHitRate = float64(cachedInputTokens) * 100 / float64(inputTokens)
 	}
 	if firstTokenLatencyCount > 0 {
 		*avgFirstTokenLatencyMs = lo.ToPtr(

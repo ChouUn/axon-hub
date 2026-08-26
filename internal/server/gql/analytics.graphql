@@ -122,6 +122,7 @@ type AnalyticsModelChannelStat {
   cost: Float!
   costPerMillion: Float!
   successRate: Float!
+  cacheHitRate: Float!
   avgFirstTokenLatencyMs: Float
   avgOutputTokensPerSecond: Float
 }
@@ -135,6 +136,7 @@ type AnalyticsModelStat {
   cost: Float!
   costPerMillion: Float!
   successRate: Float!
+  cacheHitRate: Float!
   avgFirstTokenLatencyMs: Float
   avgOutputTokensPerSecond: Float
   channels: [AnalyticsModelChannelStat!]!

@@ -186,6 +186,7 @@ func TestQueryAnalyticsModelStatsCountsExecutionAttempts(t *testing.T) {
 		SetChannelID(budgetChannel.ID).
 		SetModelID("model-x").
 		SetPromptTokens(900).
+		SetPromptCachedTokens(300).
 		SetCompletionTokens(100).
 		SetTotalTokens(1000).
 		SetTotalCost(1).
@@ -215,6 +216,7 @@ func TestQueryAnalyticsModelStatsCountsExecutionAttempts(t *testing.T) {
 		SetChannelID(premiumChannel.ID).
 		SetModelID("model-x").
 		SetPromptTokens(2850).
+		SetPromptCachedTokens(570).
 		SetCompletionTokens(150).
 		SetTotalTokens(3000).
 		SetTotalCost(3).
@@ -274,17 +276,20 @@ func TestQueryAnalyticsModelStatsCountsExecutionAttempts(t *testing.T) {
 	require.InDelta(t, 4, modelX.Cost, 0.0001)
 	require.InDelta(t, 1000, modelX.CostPerMillion, 0.0001)
 	require.InDelta(t, 50, modelX.SuccessRate, 0.0001)
+	require.InDelta(t, 23.2, modelX.CacheHitRate, 0.0001)
 	require.InDelta(t, 500, *modelX.AvgFirstTokenLatencyMs, 0.0001)
 	require.InDelta(t, 100, *modelX.AvgOutputTokensPerSecond, 0.0001)
 	require.Len(t, modelX.Channels, 2)
 	require.Equal(t, "Premium channel", modelX.Channels[0].Name)
 	require.Equal(t, 2, modelX.Channels[0].RequestCount)
 	require.InDelta(t, 50, modelX.Channels[0].SuccessRate, 0.0001)
+	require.InDelta(t, 20, modelX.Channels[0].CacheHitRate, 0.0001)
 	require.Equal(t, "Budget channel", modelX.Channels[1].Name)
 	require.Equal(t, 2, modelX.Channels[1].RequestCount)
 	require.Equal(t, 1000, modelX.Channels[1].TotalTokens)
 	require.InDelta(t, 1, modelX.Channels[1].Cost, 0.0001)
 	require.InDelta(t, 50, modelX.Channels[1].SuccessRate, 0.0001)
+	require.InDelta(t, 100.0/3, modelX.Channels[1].CacheHitRate, 0.0001)
 
 	filtered, err := resolver.queryAnalyticsModelStats(ctx, &AnalyticsModelFilter{
 		ChannelTags: []string{"premium"},
@@ -293,6 +298,7 @@ func TestQueryAnalyticsModelStatsCountsExecutionAttempts(t *testing.T) {
 	require.Len(t, filtered, 1)
 	require.Equal(t, "model-x", filtered[0].ID)
 	require.Equal(t, 2, filtered[0].RequestCount)
+	require.InDelta(t, 20, filtered[0].CacheHitRate, 0.0001)
 	require.Len(t, filtered[0].Channels, 1)
 	require.Equal(t, "Premium channel", filtered[0].Channels[0].Name)
 
@@ -377,13 +383,17 @@ func TestModelAnalyticsFixtureIsIdempotent(t *testing.T) {
 			request.ExternalIDHasPrefix("model-analytics-seed:"),
 		)).
 		CountX(ctx)
-	usageCount := client.UsageLog.Query().
+	usageLogs := client.UsageLog.Query().
 		Where(usagelog.HasRequestWith(
 			request.ExternalIDHasPrefix("model-analytics-seed:"),
 		)).
-		CountX(ctx)
+		AllX(ctx)
 
 	require.Equal(t, 6, requestCount)
 	require.Equal(t, 10, executionCount)
-	require.Equal(t, 5, usageCount)
+	require.Len(t, usageLogs, 5)
+	require.Equal(t, int64(4500), lo.SumBy(
+		usageLogs,
+		func(usage *ent.UsageLog) int64 { return usage.PromptCachedTokens },
+	))
 }

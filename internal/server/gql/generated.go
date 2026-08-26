@@ -284,6 +284,7 @@ type ComplexityRoot struct {
 	AnalyticsModelChannelStat struct {
 		AvgFirstTokenLatencyMs   func(childComplexity int) int
 		AvgOutputTokensPerSecond func(childComplexity int) int
+		CacheHitRate             func(childComplexity int) int
 		Cost                     func(childComplexity int) int
 		CostPerMillion           func(childComplexity int) int
 		ID                       func(childComplexity int) int
@@ -296,6 +297,7 @@ type ComplexityRoot struct {
 	AnalyticsModelStat struct {
 		AvgFirstTokenLatencyMs   func(childComplexity int) int
 		AvgOutputTokensPerSecond func(childComplexity int) int
+		CacheHitRate             func(childComplexity int) int
 		Channels                 func(childComplexity int) int
 		Cost                     func(childComplexity int) int
 		CostPerMillion           func(childComplexity int) int
@@ -3273,6 +3275,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AnalyticsModelChannelStat.AvgOutputTokensPerSecond(childComplexity), true
+	case "AnalyticsModelChannelStat.cacheHitRate":
+		if e.complexity.AnalyticsModelChannelStat.CacheHitRate == nil {
+			break
+		}
+
+		return e.complexity.AnalyticsModelChannelStat.CacheHitRate(childComplexity), true
 	case "AnalyticsModelChannelStat.cost":
 		if e.complexity.AnalyticsModelChannelStat.Cost == nil {
 			break
@@ -3328,6 +3336,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AnalyticsModelStat.AvgOutputTokensPerSecond(childComplexity), true
+	case "AnalyticsModelStat.cacheHitRate":
+		if e.complexity.AnalyticsModelStat.CacheHitRate == nil {
+			break
+		}
+
+		return e.complexity.AnalyticsModelStat.CacheHitRate(childComplexity), true
 	case "AnalyticsModelStat.channels":
 		if e.complexity.AnalyticsModelStat.Channels == nil {
 			break
@@ -19221,6 +19235,35 @@ func (ec *executionContext) fieldContext_AnalyticsModelChannelStat_successRate(_
 	return fc, nil
 }
 
+func (ec *executionContext) _AnalyticsModelChannelStat_cacheHitRate(ctx context.Context, field graphql.CollectedField, obj *AnalyticsModelChannelStat) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AnalyticsModelChannelStat_cacheHitRate,
+		func(ctx context.Context) (any, error) {
+			return obj.CacheHitRate, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AnalyticsModelChannelStat_cacheHitRate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AnalyticsModelChannelStat",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _AnalyticsModelChannelStat_avgFirstTokenLatencyMs(ctx context.Context, field graphql.CollectedField, obj *AnalyticsModelChannelStat) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -19482,6 +19525,35 @@ func (ec *executionContext) fieldContext_AnalyticsModelStat_successRate(_ contex
 	return fc, nil
 }
 
+func (ec *executionContext) _AnalyticsModelStat_cacheHitRate(ctx context.Context, field graphql.CollectedField, obj *AnalyticsModelStat) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AnalyticsModelStat_cacheHitRate,
+		func(ctx context.Context) (any, error) {
+			return obj.CacheHitRate, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AnalyticsModelStat_cacheHitRate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AnalyticsModelStat",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _AnalyticsModelStat_avgFirstTokenLatencyMs(ctx context.Context, field graphql.CollectedField, obj *AnalyticsModelStat) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -19578,6 +19650,8 @@ func (ec *executionContext) fieldContext_AnalyticsModelStat_channels(_ context.C
 				return ec.fieldContext_AnalyticsModelChannelStat_costPerMillion(ctx, field)
 			case "successRate":
 				return ec.fieldContext_AnalyticsModelChannelStat_successRate(ctx, field)
+			case "cacheHitRate":
+				return ec.fieldContext_AnalyticsModelChannelStat_cacheHitRate(ctx, field)
 			case "avgFirstTokenLatencyMs":
 				return ec.fieldContext_AnalyticsModelChannelStat_avgFirstTokenLatencyMs(ctx, field)
 			case "avgOutputTokensPerSecond":
@@ -48249,6 +48323,8 @@ func (ec *executionContext) fieldContext_Query_analyticsModelStats(ctx context.C
 				return ec.fieldContext_AnalyticsModelStat_costPerMillion(ctx, field)
 			case "successRate":
 				return ec.fieldContext_AnalyticsModelStat_successRate(ctx, field)
+			case "cacheHitRate":
+				return ec.fieldContext_AnalyticsModelStat_cacheHitRate(ctx, field)
 			case "avgFirstTokenLatencyMs":
 				return ec.fieldContext_AnalyticsModelStat_avgFirstTokenLatencyMs(ctx, field)
 			case "avgOutputTokensPerSecond":
@@ -92485,6 +92561,11 @@ func (ec *executionContext) _AnalyticsModelChannelStat(ctx context.Context, sel 
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "cacheHitRate":
+			out.Values[i] = ec._AnalyticsModelChannelStat_cacheHitRate(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "avgFirstTokenLatencyMs":
 			out.Values[i] = ec._AnalyticsModelChannelStat_avgFirstTokenLatencyMs(ctx, field, obj)
 		case "avgOutputTokensPerSecond":
@@ -92555,6 +92636,11 @@ func (ec *executionContext) _AnalyticsModelStat(ctx context.Context, sel ast.Sel
 			}
 		case "successRate":
 			out.Values[i] = ec._AnalyticsModelStat_successRate(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cacheHitRate":
+			out.Values[i] = ec._AnalyticsModelStat_cacheHitRate(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

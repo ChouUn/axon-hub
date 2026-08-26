@@ -103,6 +103,7 @@ export const analyticsModelChannelStatSchema = z.object({
   cost: z.number(),
   costPerMillion: z.number(),
   successRate: z.number(),
+  cacheHitRate: z.number(),
   avgFirstTokenLatencyMs: z.number().nullable(),
   avgOutputTokensPerSecond: z.number().nullable(),
 });
@@ -119,6 +120,7 @@ export const analyticsModelStatSchema = z.object({
   cost: z.number(),
   costPerMillion: z.number(),
   successRate: z.number(),
+  cacheHitRate: z.number(),
   avgFirstTokenLatencyMs: z.number().nullable(),
   avgOutputTokensPerSecond: z.number().nullable(),
   channels: z.array(analyticsModelChannelStatSchema),
@@ -230,6 +232,7 @@ const ANALYTICS_MODEL_STATS_QUERY = `
       cost
       costPerMillion
       successRate
+      cacheHitRate
       avgFirstTokenLatencyMs
       avgOutputTokensPerSecond
       channels {
@@ -240,6 +243,7 @@ const ANALYTICS_MODEL_STATS_QUERY = `
         cost
         costPerMillion
         successRate
+        cacheHitRate
         avgFirstTokenLatencyMs
         avgOutputTokensPerSecond
       }
