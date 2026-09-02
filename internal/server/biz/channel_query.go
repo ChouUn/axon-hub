@@ -2,24 +2,29 @@ package biz
 
 import (
 	"context"
+	"strings"
 
 	"entgo.io/contrib/entgql"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqljson"
+	"github.com/samber/lo"
 
 	"github.com/looplj/axonhub/internal/ent"
+	"github.com/looplj/axonhub/internal/ent/channel"
 )
 
 // QueryChannelsInput represents the input for querying channels with additional filters.
 type QueryChannelsInput struct {
-	After   *entgql.Cursor[int]
-	First   *int
-	Before  *entgql.Cursor[int]
-	Last    *int
-	OrderBy *ent.ChannelOrder
-	Where   *ent.ChannelWhereInput
-	HasTag  *string
-	Model   *string
+	After                   *entgql.Cursor[int]
+	First                   *int
+	Before                  *entgql.Cursor[int]
+	Last                    *int
+	OrderBy                 *ent.ChannelOrder
+	Where                   *ent.ChannelWhereInput
+	HasTag                  *string
+	Model                   *string
+	PrimaryAPIFormat        *string
+	ExcludePrimaryAPIFormat *string
 }
 
 // QueryChannels queries channels with the specified input parameters, including model filtering.
@@ -41,6 +46,22 @@ func (svc *ChannelService) QueryChannels(ctx context.Context, input QueryChannel
 	if input.HasTag != nil && *input.HasTag != "" {
 		query = query.Where(func(s *sql.Selector) {
 			s.Where(sqljson.ValueContains("tags", *input.HasTag))
+		})
+	}
+
+	if format := strings.TrimSpace(lo.FromPtr(input.PrimaryAPIFormat)); format != "" {
+		query = query.Where(func(s *sql.Selector) {
+			s.Where(sqljson.ValueEQ(channel.FieldSettings, format, sqljson.Path("primaryApiFormat")))
+		})
+	}
+
+	if format := strings.TrimSpace(lo.FromPtr(input.ExcludePrimaryAPIFormat)); format != "" {
+		query = query.Where(func(s *sql.Selector) {
+			// Missing JSON keys make ValueEQ/ValueNEQ UNKNOWN; keep those rows.
+			s.Where(sql.Or(
+				sql.Not(sqljson.HasKey(channel.FieldSettings, sqljson.Path("primaryApiFormat"))),
+				sqljson.ValueNEQ(channel.FieldSettings, format, sqljson.Path("primaryApiFormat")),
+			))
 		})
 	}
 

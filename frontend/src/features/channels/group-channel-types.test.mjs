@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { groupChannelTypesByProvider } from './utils/group-channel-types.ts';
+import { groupChannelTypesByProvider, IMAGE_PRIMARY_API_FORMAT } from './utils/group-channel-types.ts';
 
 const typeToProvider = {
   deepseek: 'deepseek',
@@ -49,6 +49,28 @@ test('unmapped types keep their own group instead of disappearing', () => {
   assert.deepEqual(groups, [
     { key: 'brand_new_type', provider: 'brand_new_type', types: ['brand_new_type'], totalCount: 1 },
     { key: 'openai', provider: 'openai', types: ['openai'], totalCount: 1 },
+  ]);
+});
+
+test('image-generation channels split into a sibling vendor group', () => {
+  const groups = groupChannelTypesByProvider(
+    [
+      { type: 'openai', count: 4 },
+      { type: 'openai', count: 2, primaryApiFormat: IMAGE_PRIMARY_API_FORMAT },
+      { type: 'openai_responses', count: 1 },
+    ],
+    typeToProvider
+  );
+
+  assert.deepEqual(groups, [
+    { key: 'openai', provider: 'openai', types: ['openai', 'openai_responses'], totalCount: 5 },
+    {
+      key: 'openai:image',
+      provider: 'openai',
+      types: ['openai'],
+      totalCount: 2,
+      primaryApiFormat: IMAGE_PRIMARY_API_FORMAT,
+    },
   ]);
 });
 

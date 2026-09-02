@@ -1,6 +1,9 @@
+export const IMAGE_PRIMARY_API_FORMAT = 'openai/image_generation';
+
 export interface ChannelTypeCountLike {
   type: string;
   count: number;
+  primaryApiFormat?: string | null;
 }
 
 export interface ChannelTypeGroup {
@@ -11,6 +14,8 @@ export interface ChannelTypeGroup {
   /** Channel types that fall into this group, in input order. */
   types: string[];
   totalCount: number;
+  /** Set when this group is the image-generation split of a vendor. */
+  primaryApiFormat?: string;
 }
 
 /**
@@ -25,15 +30,21 @@ export function groupChannelTypesByProvider(
 ): ChannelTypeGroup[] {
   const groups = new Map<string, ChannelTypeGroup>();
 
-  for (const { type, count } of typeCounts) {
+  for (const { type, count, primaryApiFormat } of typeCounts) {
     const provider = typeToProvider[type] ?? type;
-    const existing = groups.get(provider);
+    const isImage = primaryApiFormat === IMAGE_PRIMARY_API_FORMAT;
+    const key = isImage ? `${provider}:image` : provider;
+    const existing = groups.get(key);
     if (existing) {
       existing.types.push(type);
       existing.totalCount += count;
       continue;
     }
-    groups.set(provider, { key: provider, provider, types: [type], totalCount: count });
+    const group: ChannelTypeGroup = { key, provider, types: [type], totalCount: count };
+    if (isImage) {
+      group.primaryApiFormat = IMAGE_PRIMARY_API_FORMAT;
+    }
+    groups.set(key, group);
   }
 
   return Array.from(groups.values()).sort((a, b) => b.totalCount - a.totalCount || a.key.localeCompare(b.key));

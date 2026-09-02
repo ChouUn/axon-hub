@@ -622,6 +622,7 @@ type ComplexityRoot struct {
 		ModelMappings            func(childComplexity int) int
 		PassThroughBody          func(childComplexity int) int
 		PassThroughUserAgent     func(childComplexity int) int
+		PrimaryAPIFormat         func(childComplexity int) int
 		ProviderQuota            func(childComplexity int) int
 		Proxy                    func(childComplexity int) int
 		RateLimit                func(childComplexity int) int
@@ -652,8 +653,9 @@ type ComplexityRoot struct {
 	}
 
 	ChannelTypeCount struct {
-		Count func(childComplexity int) int
-		Type  func(childComplexity int) int
+		Count            func(childComplexity int) int
+		PrimaryAPIFormat func(childComplexity int) int
+		Type             func(childComplexity int) int
 	}
 
 	CleanupOption struct {
@@ -4624,6 +4626,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ChannelSettings.PassThroughUserAgent(childComplexity), true
+	case "ChannelSettings.primaryApiFormat":
+		if e.complexity.ChannelSettings.PrimaryAPIFormat == nil {
+			break
+		}
+
+		return e.complexity.ChannelSettings.PrimaryAPIFormat(childComplexity), true
 	case "ChannelSettings.providerQuota":
 		if e.complexity.ChannelSettings.ProviderQuota == nil {
 			break
@@ -4742,6 +4750,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ChannelTypeCount.Count(childComplexity), true
+	case "ChannelTypeCount.primaryApiFormat":
+		if e.complexity.ChannelTypeCount.PrimaryAPIFormat == nil {
+			break
+		}
+
+		return e.complexity.ChannelTypeCount.PrimaryAPIFormat(childComplexity), true
 	case "ChannelTypeCount.type":
 		if e.complexity.ChannelTypeCount.Type == nil {
 			break
@@ -21871,6 +21885,8 @@ func (ec *executionContext) fieldContext_Channel_settings(_ context.Context, fie
 				return ec.fieldContext_ChannelSettings_retryableErrorPatterns(ctx, field)
 			case "providerQuota":
 				return ec.fieldContext_ChannelSettings_providerQuota(ctx, field)
+			case "primaryApiFormat":
+				return ec.fieldContext_ChannelSettings_primaryApiFormat(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type ChannelSettings", field.Name)
 		},
@@ -26589,6 +26605,35 @@ func (ec *executionContext) fieldContext_ChannelSettings_providerQuota(_ context
 	return fc, nil
 }
 
+func (ec *executionContext) _ChannelSettings_primaryApiFormat(ctx context.Context, field graphql.CollectedField, obj *objects.ChannelSettings) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelSettings_primaryApiFormat,
+		func(ctx context.Context) (any, error) {
+			return obj.PrimaryAPIFormat, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelSettings_primaryApiFormat(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelSettings",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _ChannelSuccessRate_channelId(ctx context.Context, field graphql.CollectedField, obj *ChannelSuccessRate) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -26990,6 +27035,35 @@ func (ec *executionContext) fieldContext_ChannelTypeCount_count(_ context.Contex
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelTypeCount_primaryApiFormat(ctx context.Context, field graphql.CollectedField, obj *ChannelTypeCount) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelTypeCount_primaryApiFormat,
+		func(ctx context.Context) (any, error) {
+			return obj.PrimaryAPIFormat, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelTypeCount_primaryApiFormat(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelTypeCount",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -45895,6 +45969,8 @@ func (ec *executionContext) fieldContext_Query_countChannelsByType(ctx context.C
 				return ec.fieldContext_ChannelTypeCount_type(ctx, field)
 			case "count":
 				return ec.fieldContext_ChannelTypeCount_count(ctx, field)
+			case "primaryApiFormat":
+				return ec.fieldContext_ChannelTypeCount_primaryApiFormat(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type ChannelTypeCount", field.Name)
 		},
@@ -69735,7 +69811,7 @@ func (ec *executionContext) unmarshalInputChannelSettingsInput(ctx context.Conte
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"extraModelPrefix", "modelMappings", "autoTrimedModelPrefixes", "hideOriginalModels", "hideMappedModels", "lowercaseModelId", "proxy", "transformOptions", "headerOverrideOperations", "bodyOverrideOperations", "passThroughUserAgent", "passThroughBody", "rateLimit", "retryableStatusCodes", "retryableErrorPatterns", "providerQuota"}
+	fieldsInOrder := [...]string{"extraModelPrefix", "modelMappings", "autoTrimedModelPrefixes", "hideOriginalModels", "hideMappedModels", "lowercaseModelId", "proxy", "transformOptions", "headerOverrideOperations", "bodyOverrideOperations", "passThroughUserAgent", "passThroughBody", "rateLimit", "retryableStatusCodes", "retryableErrorPatterns", "providerQuota", "primaryApiFormat"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -69854,6 +69930,13 @@ func (ec *executionContext) unmarshalInputChannelSettingsInput(ctx context.Conte
 				return it, err
 			}
 			it.ProviderQuota = data
+		case "primaryApiFormat":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("primaryApiFormat"))
+			data, err := ec.unmarshalOString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrimaryAPIFormat = data
 		}
 	}
 
@@ -79393,7 +79476,7 @@ func (ec *executionContext) unmarshalInputQueryChannelInput(ctx context.Context,
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"after", "first", "before", "last", "orderBy", "where", "hasTag", "model"}
+	fieldsInOrder := [...]string{"after", "first", "before", "last", "orderBy", "where", "hasTag", "model", "primaryApiFormat", "excludePrimaryApiFormat"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -79456,6 +79539,20 @@ func (ec *executionContext) unmarshalInputQueryChannelInput(ctx context.Context,
 				return it, err
 			}
 			it.Model = data
+		case "primaryApiFormat":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("primaryApiFormat"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrimaryAPIFormat = data
+		case "excludePrimaryApiFormat":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("excludePrimaryApiFormat"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ExcludePrimaryAPIFormat = data
 		}
 	}
 
@@ -96267,6 +96364,8 @@ func (ec *executionContext) _ChannelSettings(ctx context.Context, sel ast.Select
 			out.Values[i] = ec._ChannelSettings_retryableErrorPatterns(ctx, field, obj)
 		case "providerQuota":
 			out.Values[i] = ec._ChannelSettings_providerQuota(ctx, field, obj)
+		case "primaryApiFormat":
+			out.Values[i] = ec._ChannelSettings_primaryApiFormat(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -96473,6 +96572,8 @@ func (ec *executionContext) _ChannelTypeCount(ctx context.Context, sel ast.Selec
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "primaryApiFormat":
+			out.Values[i] = ec._ChannelTypeCount_primaryApiFormat(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}

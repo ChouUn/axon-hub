@@ -14,6 +14,7 @@
   "channels.importChannels": "Bulk Import",
   "channels.orderChannels": "Bulk Adjust Weight",
   "channels.tabs.all": "All",
+  "channels.tabs.imageSuffix": "Image",
   "channels.columns.type": "Type",
   "channels.columns.provider": "Provider",
   "channels.columns.health": "Health",

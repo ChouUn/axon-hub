@@ -115,6 +115,7 @@ const CREATE_CHANNEL_MUTATION = `
           pattern
           regex
         }
+        primaryApiFormat
         providerQuota {
           opencodeGo {
             workspaceId
@@ -190,6 +191,7 @@ const DUPLICATE_CHANNEL_MUTATION = `
           pattern
           regex
         }
+        primaryApiFormat
         providerQuota {
           opencodeGo {
             workspaceId
@@ -265,6 +267,7 @@ const BULK_CREATE_CHANNELS_MUTATION = `
           pattern
           regex
         }
+        primaryApiFormat
         providerQuota {
           opencodeGo {
             workspaceId
@@ -340,6 +343,7 @@ const UPDATE_CHANNEL_MUTATION = `
           pattern
           regex
         }
+        primaryApiFormat
         providerQuota {
           opencodeGo {
             workspaceId
@@ -530,6 +534,7 @@ const BULK_IMPORT_CHANNELS_MUTATION = `
             pattern
             regex
           }
+          primaryApiFormat
           providerQuota {
             opencodeGo {
               workspaceId
@@ -761,6 +766,7 @@ const BULK_UPDATE_CHANNEL_ORDERING_MUTATION = `
             pattern
             regex
           }
+          primaryApiFormat
           providerQuota {
             opencodeGo {
               workspaceId
@@ -814,6 +820,7 @@ const CHANNEL_TYPES_QUERY = `
     countChannelsByType(input: $input) {
       type
       count
+      primaryApiFormat
     }
   }
 `;
@@ -920,6 +927,7 @@ const QUERY_CHANNELS_QUERY = `
               pattern
               regex
             }
+            primaryApiFormat
             providerQuota {
               opencodeGo {
                 workspaceId
@@ -1032,6 +1040,8 @@ export function useQueryChannels(
     };
     hasTag?: string;
     model?: string;
+    primaryApiFormat?: string;
+    excludePrimaryApiFormat?: string;
   },
   options?: {
     disableAutoFetch?: boolean;
@@ -1049,6 +1059,8 @@ export function useQueryChannels(
       variables?.orderBy?.direction,
       variables?.hasTag,
       variables?.model,
+      variables?.primaryApiFormat,
+      variables?.excludePrimaryApiFormat,
       variables?.first,
       variables?.last,
       variables?.after,
@@ -1694,6 +1706,7 @@ export function useFetchModels() {
 export interface ChannelTypeCount {
   type: string;
   count: number;
+  primaryApiFormat?: string | null;
 }
 
 export function useChannelTypes(statusIn?: string[]) {

@@ -42,6 +42,26 @@ import { ApiFormat, ChannelType } from './schema';
 
 export const OPENAI_CHAT_COMPLETIONS: ApiFormat = 'openai/chat_completions';
 export const OPENAI_RESPONSES: ApiFormat = 'openai/responses';
+export const OPENAI_IMAGE_GENERATION: ApiFormat = 'openai/image_generation';
+
+/**
+ * Channel types whose default endpoints include openai/image_generation.
+ * Mirrors internal/server/biz/channel_endpoint.go, except `codex`: its dialog
+ * hides the API format selector, so exposing the option there has no effect.
+ */
+export const IMAGE_GENERATION_CHANNEL_TYPES = new Set<ChannelType>([
+  'openai',
+  'atlascloud',
+  'vercel',
+  'deepinfra',
+  'ppio',
+  'siliconflow',
+  'aihubmix',
+  'burncloud',
+  'github',
+  'nanogpt',
+  'evolink',
+]);
 export const ANTHROPIC_MESSAGES: ApiFormat = 'anthropic/messages';
 export const GEMINI_CONTENTS: ApiFormat = 'gemini/contents';
 export const GEMINI_EMBEDDINGS: ApiFormat = 'gemini/embeddings';

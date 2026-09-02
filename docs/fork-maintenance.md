@@ -75,13 +75,50 @@
 - 动机：上游按下划线前缀折叠，且只在裸前缀类型同时存在时才折，导致
   `moonshot_anthropic` + `moonshot_coding`、`opencode_go` + `opencode_go_anthropic`
   各自成组，而 `github_copilot` 又被误并入 GitHub。
-- 提交：`feat(channels): 按供应商聚合渠道 tab`。
+- 提交：`54fab437`（`feat(channels): 按供应商聚合渠道 tab`）。
 - 代码：`frontend/src/features/channels/utils/group-channel-types.ts`、
   `frontend/src/features/channels/components/channels-type-tabs.tsx`、
   `frontend/src/features/channels/index.tsx`、
   `frontend/src/features/channels/data/config_channels.ts`。
 - 迁移：无。
 - 测试：`frontend/src/features/channels/group-channel-types.test.mjs`。
+
+### 生图渠道拆分
+
+- 行为：`ChannelSettings.primaryApiFormat` 标记渠道主用途（JSON 列）。新建/编辑对话框对
+  默认端点含 `openai/image_generation` 的供应商增加「OpenAI (图像生成)」选项，选中后
+  类型仍为供应商基类型，写入 `settings.primaryApiFormat=openai/image_generation`。
+  带该标记的渠道在 tab 中单独成组「<供应商> · 生图」（组 key `<provider>:image`），
+  徽章追加同一后缀；供应商普通 tab 以 `excludePrimaryApiFormat` 排除生图渠道。
+  渠道测试（含单 key 与批量 key）对该标记改发一次 1024x1024、`quality=low`、`n=1`
+  的图像生成请求且不走流式，成功判定为响应至少含一张图。已有生图渠道需编辑一次
+  并改选该 API 格式后才会分组与改测。
+- 边界：该标记不影响路由，渠道仍按默认端点同时承接 `image_edit` /
+  `image_variation`。选中该格式后切换供应商时，类型须由
+  `getBaseChannelTypeForProvider` 推导，`getChannelTypeForApiFormat` 对图像格式恒为
+  undefined，否则表单 `type` 与 baseURL 停在上一家。`excludePrimaryApiFormat`
+  谓词必须兼容 `settings` 中不存在该键的旧行，否则普通渠道会被一起滤掉。
+  `countChannelsByType` 改为按 `(type, 是否生图)` 在内存中计数并返回
+  `primaryApiFormat`，供分组函数拆组。
+- 明确不做：不移除任何现有 API 格式选项（含 Anthropic Messages），不新增渠道类型，
+  不改路由与端点解析。`codex` 虽有图像默认端点，但其对话框隐藏 API 格式选择器，
+  未加入可选供应商。
+- 依赖：建立在「渠道 tab 按供应商聚合」之上。
+- 提交：`feat(channels): 拆分生图渠道`。
+- 代码：`internal/objects/channel.go`、`internal/server/gql/axonhub.graphql`、
+  `internal/server/gql/axonhub.resolvers.go`、`internal/server/biz/channel_query.go`、
+  `internal/server/orchestrator/tester.go`、
+  `frontend/src/features/channels/utils/group-channel-types.ts`、
+  `frontend/src/features/channels/components/channels-type-tabs.tsx`、
+  `frontend/src/features/channels/index.tsx`、
+  `frontend/src/features/channels/components/channels-action-dialog.tsx`、
+  `frontend/src/features/channels/components/channels-columns.tsx`、
+  `frontend/src/features/channels/data/config_channels.ts`、
+  `frontend/src/features/channels/data/config_providers.ts`。
+- 迁移：无。
+- 测试：`frontend/src/features/channels/group-channel-types.test.mjs`、
+  `internal/server/orchestrator/tester_test.go`、
+  `internal/server/biz/channel_query_test.go`。
 
 ## Bugfix Topics
 

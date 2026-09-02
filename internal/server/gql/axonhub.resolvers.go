@@ -839,12 +839,6 @@ func (r *queryResolver) AllChannelTags(ctx context.Context) ([]string, error) {
 
 // CountChannelsByType is the resolver for the countChannelsByType field.
 func (r *queryResolver) CountChannelsByType(ctx context.Context, input CountChannelsByTypeInput) ([]*ChannelTypeCount, error) {
-	// Query channel types with counts
-	var results []struct {
-		Type  string `json:"type"`
-		Count int    `json:"count"`
-	}
-
 	q := r.client.Channel.Query()
 	if len(input.StatusIn) > 0 {
 		q = q.Where(channel.StatusIn(input.StatusIn...))
@@ -852,18 +846,35 @@ func (r *queryResolver) CountChannelsByType(ctx context.Context, input CountChan
 		q = q.Where(channel.StatusNEQ(channel.StatusArchived))
 	}
 
-	err := q.GroupBy(channel.FieldType).
-		Aggregate(ent.Count()).Scan(ctx, &results)
+	channels, err := q.Select(channel.FieldType, channel.FieldSettings).All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query channel type counts: %w", err)
 	}
 
-	typeCounts := make([]*ChannelTypeCount, len(results))
-	for i, result := range results {
-		typeCounts[i] = &ChannelTypeCount{
-			Type:  result.Type,
-			Count: result.Count,
+	type countKey struct {
+		Type   string
+		Format string
+	}
+
+	counts := make(map[countKey]int, len(channels))
+	for _, ch := range channels {
+		format := ""
+		if objects.IsImageGenerationPrimary(ch.Settings) {
+			format = objects.PrimaryAPIFormatImageGeneration
 		}
+		counts[countKey{Type: string(ch.Type), Format: format}]++
+	}
+
+	typeCounts := make([]*ChannelTypeCount, 0, len(counts))
+	for key, count := range counts {
+		item := &ChannelTypeCount{
+			Type:  key.Type,
+			Count: count,
+		}
+		if key.Format != "" {
+			item.PrimaryAPIFormat = lo.ToPtr(key.Format)
+		}
+		typeCounts = append(typeCounts, item)
 	}
 
 	return typeCounts, nil

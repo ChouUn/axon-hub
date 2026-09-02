@@ -48,6 +48,7 @@ import {
   CHANNEL_CONFIGS,
   OPENAI_CHAT_COMPLETIONS,
   OPENAI_RESPONSES,
+  OPENAI_IMAGE_GENERATION,
   ANTHROPIC_MESSAGES,
   GEMINI_CONTENTS,
 } from '../data/config_channels';
@@ -56,6 +57,7 @@ import {
   getProviderFromChannelType,
   getApiFormatsForProvider,
   getChannelTypeForApiFormat,
+  getBaseChannelTypeForProvider,
 } from '../data/config_providers';
 import { Channel, ChannelType, ApiFormat, RetryableErrorPattern, createChannelInputSchema, updateChannelInputSchema } from '../data/schema';
 import { ProxyConfig, useOAuthFlow } from '../hooks/use-oauth-flow';
@@ -458,6 +460,9 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
     return 'openai';
   });
   const [selectedApiFormat, setSelectedApiFormat] = useState<ApiFormat>(() => {
+    if (initialRow?.settings?.primaryApiFormat === OPENAI_IMAGE_GENERATION) {
+      return OPENAI_IMAGE_GENERATION;
+    }
     if (initialRow) {
       return CHANNEL_CONFIGS[initialRow.type as ChannelType]?.apiFormat || 'openai/chat_completions';
     }
@@ -645,6 +650,10 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
 
   // Determine the actual channel type based on provider and API format
   const derivedChannelType = useMemo(() => {
+    if (selectedApiFormat === OPENAI_IMAGE_GENERATION) {
+      return getBaseChannelTypeForProvider(selectedProvider) || 'openai';
+    }
+
     // If gemini/contents is selected and vertex checkbox is checked, use gemini_vertex
     if (selectedApiFormat === 'gemini/contents' && useGeminiVertex) {
       return 'gemini_vertex';
@@ -879,13 +888,15 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
 
       setSelectedApiFormat(newFormat);
       const newChannelType =
-        provider === 'gemini' && newFormat === 'gemini/contents' && useGeminiVertex
-          ? 'gemini_vertex'
-          : provider === 'anthropic' && newFormat === 'anthropic/messages' && useAnthropicAws
-            ? 'anthropic_aws'
-            : provider === 'moonshot' && newFormat === 'anthropic/messages' && useKimiCoding
-              ? 'moonshot_coding'
-              : getChannelTypeForApiFormat(provider, newFormat);
+        newFormat === OPENAI_IMAGE_GENERATION
+          ? getBaseChannelTypeForProvider(provider)
+          : provider === 'gemini' && newFormat === 'gemini/contents' && useGeminiVertex
+            ? 'gemini_vertex'
+            : provider === 'anthropic' && newFormat === 'anthropic/messages' && useAnthropicAws
+              ? 'anthropic_aws'
+              : provider === 'moonshot' && newFormat === 'anthropic/messages' && useKimiCoding
+                ? 'moonshot_coding'
+                : getChannelTypeForApiFormat(provider, newFormat);
       if (newChannelType) {
         form.setValue('type', newChannelType);
         if (!isEdit) {
@@ -922,6 +933,20 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
       if (format !== 'anthropic/messages') {
         setUseAnthropicAws(false);
         setUseKimiCoding(false);
+      }
+
+      if (format === OPENAI_IMAGE_GENERATION) {
+        const imageChannelType = getBaseChannelTypeForProvider(selectedProvider);
+        if (imageChannelType) {
+          form.setValue('type', imageChannelType);
+          if (!isEdit && !isDuplicate) {
+            const baseURL = getDefaultBaseURL(imageChannelType);
+            if (baseURL) {
+              form.resetField('baseURL', { defaultValue: baseURL });
+            }
+          }
+        }
+        return;
       }
 
       const channelTypeFromFormat = getChannelTypeForApiFormat(selectedProvider, format);
@@ -1235,6 +1260,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
           passThroughBody,
           retryableStatusCodes,
           retryableErrorPatterns,
+          primaryApiFormat: selectedApiFormat === OPENAI_IMAGE_GENERATION ? OPENAI_IMAGE_GENERATION : '',
         });
 
         const updateInput = {
@@ -1279,6 +1305,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
           passThroughBody,
           retryableStatusCodes,
           retryableErrorPatterns,
+          primaryApiFormat: selectedApiFormat === OPENAI_IMAGE_GENERATION ? OPENAI_IMAGE_GENERATION : '',
         });
 
         const createInput = {

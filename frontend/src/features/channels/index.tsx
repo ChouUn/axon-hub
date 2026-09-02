@@ -14,7 +14,7 @@ import { ChannelsTypeTabs } from './components/channels-type-tabs';
 import ChannelsProvider, { useChannels } from './context/channels-context';
 import { useQueryChannels, useChannelTypes, useErrorChannelsCount, useChannelProbeData } from './data/channels';
 import { CHANNEL_TYPE_TO_PROVIDER } from './data/config_channels';
-import { groupChannelTypesByProvider } from './utils/group-channel-types';
+import { groupChannelTypesByProvider, IMAGE_PRIMARY_API_FORMAT } from './utils/group-channel-types';
 import { useProvidersData } from '@/features/models/data/providers';
 
 const ChannelsDialogs = lazy(() => import('./components/channels-dialogs').then((m) => ({ default: m.ChannelsDialogs })));
@@ -159,6 +159,9 @@ function ChannelsContent() {
     orderBy: currentOrderBy,
     hasTag: tagFilter || undefined,
     model: modelFilter || undefined,
+    primaryApiFormat: selectedTypeGroup?.primaryApiFormat,
+    excludePrimaryApiFormat:
+      selectedTypeTab !== 'all' && !selectedTypeGroup?.primaryApiFormat ? IMAGE_PRIMARY_API_FORMAT : undefined,
   });
 
   const channelIDs = useMemo(() => {

@@ -167,6 +167,7 @@ type ChannelSettings {
   retryableStatusCodes: [Int!]
   retryableErrorPatterns: [RetryableErrorPattern!]
   providerQuota: ChannelProviderQuotaSettings
+  primaryApiFormat: String
 }
 
 enum CapabilityPolicy {
@@ -234,6 +235,7 @@ input ChannelSettingsInput {
   retryableStatusCodes: [Int!]
   retryableErrorPatterns: [RetryableErrorPatternInput!]
   providerQuota: ChannelProviderQuotaSettingsInput
+  primaryApiFormat: String
 }
 
 input ChannelRateLimitInput {
@@ -588,6 +590,7 @@ input QueryModelsInput {
 type ChannelTypeCount {
   type: String!
   count: Int!
+  primaryApiFormat: String
 }
 
 input AddUserToProjectInput {
@@ -1003,6 +1006,17 @@ input QueryChannelInput {
   Filter channels that support the specified model.
   """
   model: String
+
+  """
+  Keep only channels whose settings.primaryApiFormat equals this value.
+  """
+  primaryApiFormat: String
+
+  """
+  Drop channels whose settings.primaryApiFormat equals this value.
+  Used so a vendor tab does not also list image-generation channels.
+  """
+  excludePrimaryApiFormat: String
 }
 
 input CountChannelsByTypeInput {

@@ -35,7 +35,11 @@ export const ChannelsTypeTabs = memo(function ChannelsTypeTabs({ groups, selecte
   const getLabel = (group: ChannelTypeGroup) => {
     const providerKey = `channels.providers.${group.provider}`;
     const translated = t(providerKey);
-    return translated !== providerKey ? translated : t(`channels.types.${group.types[0]}`, { defaultValue: group.types[0] });
+    const vendorLabel = translated !== providerKey ? translated : t(`channels.types.${group.types[0]}`, { defaultValue: group.types[0] });
+    if (group.primaryApiFormat) {
+      return `${vendorLabel} · ${t('channels.tabs.imageSuffix')}`;
+    }
+    return vendorLabel;
   };
 
   return (

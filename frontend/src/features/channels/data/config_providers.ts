@@ -37,7 +37,7 @@ import { AtlasCloudIcon } from '../components/atlas-cloud-icon';
 import { EvolinkIcon } from '../components/evolink-icon';
 import { FennoIcon } from '../components/fenno-icon';
 import { NanoGPTIcon } from '../components/nanogpt-icon';
-import { CHANNEL_CONFIGS } from './config_channels';
+import { CHANNEL_CONFIGS, IMAGE_GENERATION_CHANNEL_TYPES, OPENAI_IMAGE_GENERATION } from './config_channels';
 import { ApiFormat, ChannelType } from './schema';
 
 export interface ProviderConfig {
@@ -331,5 +331,22 @@ export const getApiFormatsForProvider = (provider: string): ApiFormat[] => {
       formats.push(channelConfig.apiFormat);
     }
   }
+  if (providerConfig.channelTypes.some((channelType) => IMAGE_GENERATION_CHANNEL_TYPES.has(channelType))) {
+    if (!formats.includes(OPENAI_IMAGE_GENERATION)) {
+      formats.push(OPENAI_IMAGE_GENERATION);
+    }
+  }
   return formats;
+};
+
+export const getBaseChannelTypeForProvider = (provider: string): ChannelType | undefined => {
+  const providerConfig = PROVIDER_CONFIGS[provider];
+  if (!providerConfig) return undefined;
+
+  return (
+    providerConfig.channelTypes.find(
+      (channelType) =>
+        !channelType.endsWith('_anthropic') && !channelType.endsWith('_responses') && !channelType.endsWith('_fake')
+    ) ?? providerConfig.channelTypes[0]
+  );
 };

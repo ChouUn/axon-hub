@@ -409,7 +409,10 @@ const ProviderCell = memo(({ row }: { row: Row<Channel> }) => {
       <Badge variant='outline' className={cn('capitalize', config.color)}>
         <div className='flex items-center gap-2'>
           <IconComponent size={16} className='shrink-0' />
-          <span>{t(`channels.providers.${provider}`)}</span>
+          <span>
+            {t(`channels.providers.${provider}`)}
+            {row.original.settings?.primaryApiFormat === 'openai/image_generation' ? ` · ${t('channels.tabs.imageSuffix')}` : ''}
+          </span>
         </div>
       </Badge>
     </div>

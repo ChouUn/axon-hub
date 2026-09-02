@@ -13,6 +13,7 @@
   "channels.loadBalancingStrategy": "负载均衡策略",
   "channels.importChannels": "批量导入",
   "channels.orderChannels": "批量调整权重",
+  "channels.tabs.imageSuffix": "生图",
   "channels.tabs.all": "全部",
   "channels.columns.type": "类型",
   "channels.columns.provider": "服务商",

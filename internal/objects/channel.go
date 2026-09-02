@@ -212,6 +212,27 @@ type ChannelSettings struct {
 	// ProviderQuota stores provider-specific credentials used only for quota
 	// polling. Keep upstream request credentials in ChannelCredentials.
 	ProviderQuota *ChannelProviderQuotaSettings `json:"providerQuota,omitempty"`
+
+	// PrimaryAPIFormat declares the capability this channel is primarily used for,
+	// e.g. "openai/image_generation" for an image-only relay whose channel type
+	// still defaults to chat. It drives UI grouping and which request type the
+	// channel test sends; routing is unaffected and keeps using ResolveEndpoints.
+	// Empty means the channel type's first default endpoint.
+	PrimaryAPIFormat string `json:"primaryApiFormat,omitempty"`
+}
+
+const PrimaryAPIFormatImageGeneration = "openai/image_generation"
+
+func (s *ChannelSettings) PrimaryAPIFormatOrEmpty() string {
+	if s == nil {
+		return ""
+	}
+
+	return s.PrimaryAPIFormat
+}
+
+func IsImageGenerationPrimary(settings *ChannelSettings) bool {
+	return settings.PrimaryAPIFormatOrEmpty() == PrimaryAPIFormatImageGeneration
 }
 
 type RetryableErrorPattern struct {

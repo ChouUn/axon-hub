@@ -367,6 +367,44 @@ func TestChannelService_QueryChannels_WithoutModelFilter(t *testing.T) {
 	})
 }
 
+func TestChannelService_QueryChannels_PrimaryAPIFormatFilter(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+
+	ctx := context.Background()
+	ctx = ent.NewContext(ctx, client)
+	ctx = authz.WithTestBypass(ctx)
+
+	imageSettings := &objects.ChannelSettings{PrimaryAPIFormat: objects.PrimaryAPIFormatImageGeneration}
+	chatSettings := &objects.ChannelSettings{PrimaryAPIFormat: "openai/chat_completions"}
+
+	image := createTestChannel(t, client, ctx, "Image Channel", []string{"gpt-image-2"}, imageSettings)
+	chat := createTestChannel(t, client, ctx, "Chat Channel", []string{"gpt-4"}, chatSettings)
+	unmarked := createTestChannel(t, client, ctx, "Unmarked Channel", []string{"gpt-4"}, nil)
+
+	t.Run("keep only image-generation channels", func(t *testing.T) {
+		conn, err := svc.QueryChannels(ctx, QueryChannelsInput{
+			PrimaryAPIFormat: lo.ToPtr(objects.PrimaryAPIFormatImageGeneration),
+		})
+		require.NoError(t, err)
+		require.Len(t, conn.Edges, 1)
+		require.Equal(t, image.ID, conn.Edges[0].Node.ID)
+	})
+
+	t.Run("drop image-generation channels from a vendor tab", func(t *testing.T) {
+		conn, err := svc.QueryChannels(ctx, QueryChannelsInput{
+			ExcludePrimaryAPIFormat: lo.ToPtr(objects.PrimaryAPIFormatImageGeneration),
+		})
+		require.NoError(t, err)
+
+		actualIDs := make([]int, len(conn.Edges))
+		for i, edge := range conn.Edges {
+			actualIDs[i] = edge.Node.ID
+		}
+		require.ElementsMatch(t, []int{chat.ID, unmarked.ID}, actualIDs)
+	})
+}
+
 // Helper function to create test channel.
 func createTestChannel(
 	t *testing.T,

@@ -277,8 +277,9 @@ type ChannelSuccessRate struct {
 }
 
 type ChannelTypeCount struct {
-	Type  string `json:"type"`
-	Count int    `json:"count"`
+	Type             string  `json:"type"`
+	Count            int     `json:"count"`
+	PrimaryAPIFormat *string `json:"primaryApiFormat,omitempty"`
 }
 
 type ClearCacheInput struct {
