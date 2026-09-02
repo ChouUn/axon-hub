@@ -14,24 +14,24 @@ This file provides guidance to AI coding assistants when working with code in th
 
 - 本仓库是 [上游 AxonHub](https://github.com/looplj/axonhub) 的自维护 fork。
 - 本 fork 的 feature、bugfix topic 及其维护检查表记录在
-  [Fork 维护台账](docs/fork-maintenance.md)。新增或实质修改本地 topic 时更新台账；
+  [Fork 维护台账](docs/fork-maintenance.md)。新增或实质修改 fork topic 时更新台账；
   同步上游 release 时逐项核对。
 - 上游 release tag 是定期同步的基线。合并或 cherry-pick 上游 release 前，必须同时检查
-  上游的 schema、data migration 和本地改动。
+  上游的 schema、data migration 和 fork 改动。
 - 本 fork 的专有行为和迁移应与上游历史保持可区分。除非有明确要求，不要仅为使分支看起来
-  像上游而改写或删除既有的本地维护改动。
+  像上游而改写或删除既有的 fork 维护改动。
 
 ## 数据库迁移兼容性
 
 - 将 `internal/ent/migrate/migrations/`（schema migration）和
   `internal/ent/migrate/datamigrate/`（data migration）都视为升级路径代码。
-- 新增本地迁移前，必须对照目标上游 release tag 及其迁移版本；不要复用上游迁移版本，
-  也不要假定看似未使用的版本号已经被本地保留。
-- 每个本地 data migration 都要使用可由 semver 正确排序、且能明确表明 fork 归属的版本标识
+- 新增 fork 迁移前，必须对照目标上游 release tag 及其迁移版本；不要复用上游迁移版本，
+  也不要假定看似未使用的版本号已经被 fork 保留。
+- 每个 fork data migration 都要使用可由 semver 正确排序、且能明确表明 fork 归属的版本标识
   （例如 `v1.0.0-beta7-fork.1`）。必须验证它与周边上游版本的顺序，并在 `NewMigrator`
   中按对应的执行顺序注册。
 - 已发布的迁移视为不可变。需要修正时新增幂等迁移，不要修改既有迁移的行为或版本号。
-- 每个本地迁移都要补充升级路径测试，覆盖相关数据库方言行为；同步上游前检查下一个
+- 每个 fork 迁移都要补充升级路径测试，覆盖相关数据库方言行为；同步上游前检查下一个
   上游 release 是否存在版本或 schema 冲突。
 
 ## Configuration
