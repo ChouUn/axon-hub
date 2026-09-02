@@ -31,6 +31,22 @@ sqlite3 /path/to/axonhub-test.db < scripts/e2e/fixtures/api-key-analytics.sql
 sqlite3 /path/to/axonhub-test.db < scripts/e2e/fixtures/model-analytics.sql
 ```
 
+#### `e2e/fixtures/channel-groups.sql`
+
+为渠道列表的供应商 tab 生成可重复使用的 SQLite 模拟数据。脚本会创建 24 个测试渠道，
+覆盖同一供应商的多种协议变体（DeepSeek、Moonshot、OpenCode Go）、前缀相同但供应商不同
+的类型（GitHub 与 GitHub Copilot）、仅有 Anthropic 变体的供应商（Ollama），以及带
+`settings.primaryApiFormat=openai/image_generation` 标记的生图渠道，并混入 `settings` 为
+NULL、缺少该键或显式为聊天格式的行，用于验证供应商聚合、「供应商 · 生图」拆分、
+生图排除谓词对旧行的兼容以及 archived 渠道不计入 tab。执行结果会打印按
+`(type, primaryApiFormat)` 的计数，应与 `countChannelsByType` 一致。
+
+脚本仅适用于隔离测试数据库；重复执行时只替换带 `[Channel Groups Seed]` 标记的数据。
+
+```bash
+sqlite3 /path/to/axonhub-test.db < scripts/e2e/fixtures/channel-groups.sql
+```
+
 #### `e2e/e2e-test.sh`
 一键运行完整的 E2E 测试套件。
 

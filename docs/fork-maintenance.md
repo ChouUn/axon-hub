@@ -81,7 +81,8 @@ fork 改动，由用户决定。
   `frontend/src/features/channels/index.tsx`、
   `frontend/src/features/channels/data/config_channels.ts`。
 - 迁移：无。
-- 测试：`frontend/src/features/channels/group-channel-types.test.mjs`。
+- 测试与 fixture：`frontend/src/features/channels/group-channel-types.test.mjs`、
+  `scripts/e2e/fixtures/channel-groups.sql`。
 
 ### 生图渠道拆分
 
@@ -116,9 +117,10 @@ fork 改动，由用户决定。
   `frontend/src/features/channels/data/config_channels.ts`、
   `frontend/src/features/channels/data/config_providers.ts`。
 - 迁移：无。
-- 测试：`frontend/src/features/channels/group-channel-types.test.mjs`、
+- 测试与 fixture：`frontend/src/features/channels/group-channel-types.test.mjs`、
   `internal/server/orchestrator/tester_test.go`、
-  `internal/server/biz/channel_query_test.go`。
+  `internal/server/biz/channel_query_test.go`、
+  `scripts/e2e/fixtures/channel-groups.sql`。
 
 ## 提前回补的上游 Feature
 
