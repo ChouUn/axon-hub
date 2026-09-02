@@ -64,6 +64,25 @@
   `frontend/src/features/analytics-date-range.test.mjs`、
   `scripts/e2e/fixtures/model-analytics.sql`。
 
+### 渠道 tab 按供应商聚合
+
+- 行为：渠道列表顶部 tab 按 `CHANNEL_TYPE_TO_PROVIDER` 把同一供应商的协议变体聚成
+  一组：`deepseek` / `deepseek_anthropic` 归入 DeepSeek，`moonshot` /
+  `moonshot_anthropic` / `moonshot_coding` 归入 Moonshot。标签与图标取自
+  `PROVIDER_CONFIGS`，tab 筛选使用该组实际类型列表而不是类型名前缀；未在映射中的
+  类型保留独立分组，不会消失。顺带补齐映射缺失的 `ollama_anthropic`。徽章列原本已
+  显示供应商，未改。
+- 动机：上游按下划线前缀折叠，且只在裸前缀类型同时存在时才折，导致
+  `moonshot_anthropic` + `moonshot_coding`、`opencode_go` + `opencode_go_anthropic`
+  各自成组，而 `github_copilot` 又被误并入 GitHub。
+- 提交：`feat(channels): 按供应商聚合渠道 tab`。
+- 代码：`frontend/src/features/channels/utils/group-channel-types.ts`、
+  `frontend/src/features/channels/components/channels-type-tabs.tsx`、
+  `frontend/src/features/channels/index.tsx`、
+  `frontend/src/features/channels/data/config_channels.ts`。
+- 迁移：无。
+- 测试：`frontend/src/features/channels/group-channel-types.test.mjs`。
+
 ## Bugfix Topics
 
 ### Provider 模型成本可为空

@@ -2,80 +2,40 @@ import { useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useHorizontalScroll } from '@/hooks/use-horizontal-scroll';
-import type { ChannelTypeCount } from '../data/channels';
 import { CHANNEL_CONFIGS } from '../data/config_channels';
+import { PROVIDER_CONFIGS } from '../data/config_providers';
+import type { ChannelType } from '../data/schema';
+import type { ChannelTypeGroup } from '../utils/group-channel-types';
 
 interface ChannelsTypeTabsProps {
-  typeCounts: ChannelTypeCount[];
+  groups: ChannelTypeGroup[];
   selectedTab: string;
   onTabChange: (tab: string) => void;
   className?: string;
 }
 
-interface GroupedTypeCount {
-  prefix: string;
-  types: string[];
-  totalCount: number;
-}
+const MAX_VISIBLE_GROUPS = 8;
 
-/**
- * Groups channel types by their prefix and aggregates counts
- * For example: deepseek (5) and deepseek_anthropic (3) -> deepseek (8)
- */
-function groupTypesByPrefix(typeCounts: ChannelTypeCount[]): GroupedTypeCount[] {
-  const groups = new Map<string, { types: string[]; totalCount: number }>();
-  // Only fold `<prefix>_<suffix>` under `<prefix>` when `<prefix>` itself is
-  // also a known channel type in this batch — otherwise the bare prefix has
-  // no i18n entry and the tab label falls back to the raw key
-  // (e.g. `opencode_go` has no sibling `opencode`, so it stays as
-  // `opencode_go`; `deepseek_anthropic` + `deepseek` still fold to `deepseek`).
-  const knownTypes = new Set(typeCounts.map(({ type }) => type));
-
-  typeCounts.forEach(({ type, count }) => {
-    const candidatePrefix = type.split('_')[0];
-    const prefix = knownTypes.has(candidatePrefix) ? candidatePrefix : type;
-
-    if (!groups.has(prefix)) {
-      groups.set(prefix, { types: [], totalCount: 0 });
-    }
-    const group = groups.get(prefix)!;
-    group.types.push(type);
-    group.totalCount += count;
-  });
-
-  // Convert to array and sort by count (descending), then by prefix
-  return Array.from(groups.entries())
-    .map(([prefix, { types, totalCount }]) => ({
-      prefix,
-      types,
-      totalCount,
-    }))
-    .sort((a, b) => b.totalCount - a.totalCount || a.prefix.localeCompare(b.prefix));
-}
-
-export const ChannelsTypeTabs = memo(function ChannelsTypeTabs({ typeCounts, selectedTab, onTabChange, className }: ChannelsTypeTabsProps) {
+export const ChannelsTypeTabs = memo(function ChannelsTypeTabs({ groups, selectedTab, onTabChange, className }: ChannelsTypeTabsProps) {
   const { t } = useTranslation();
   const scrollRef = useHorizontalScroll<HTMLDivElement>();
 
-  // Group types by prefix and get top 8
-  const groupedTypes = useMemo(() => {
-    const groups = groupTypesByPrefix(typeCounts);
-    return groups.slice(0, 8);
-  }, [typeCounts]);
+  const visibleGroups = useMemo(() => groups.slice(0, MAX_VISIBLE_GROUPS), [groups]);
 
-  // Calculate total count for "all" tab
-  const totalCount = useMemo(() => {
-    return typeCounts.reduce((sum, { count }) => sum + count, 0);
-  }, [typeCounts]);
+  const totalCount = useMemo(() => groups.reduce((sum, { totalCount }) => sum + totalCount, 0), [groups]);
 
-  if (typeCounts.length === 0) {
+  if (groups.length === 0) {
     return null;
   }
 
-  // Get icon for a prefix
-  const getIcon = (prefix: string) => {
-    const config = CHANNEL_CONFIGS[prefix as keyof typeof CHANNEL_CONFIGS];
-    return config?.icon;
+  const getIcon = (group: ChannelTypeGroup) => {
+    return PROVIDER_CONFIGS[group.provider]?.icon ?? CHANNEL_CONFIGS[group.types[0] as ChannelType]?.icon;
+  };
+
+  const getLabel = (group: ChannelTypeGroup) => {
+    const providerKey = `channels.providers.${group.provider}`;
+    const translated = t(providerKey);
+    return translated !== providerKey ? translated : t(`channels.types.${group.types[0]}`, { defaultValue: group.types[0] });
   };
 
   return (
@@ -105,29 +65,29 @@ export const ChannelsTypeTabs = memo(function ChannelsTypeTabs({ typeCounts, sel
           </span>
         </button>
 
-        {/* Type tabs */}
-        {groupedTypes.map(({ prefix, totalCount }) => {
-          const Icon = getIcon(prefix);
+        {/* Provider tabs */}
+        {visibleGroups.map((group) => {
+          const Icon = getIcon(group);
           return (
             <button
-              key={prefix}
-              onClick={() => onTabChange(prefix)}
+              key={group.key}
+              onClick={() => onTabChange(group.key)}
               className={cn(
                 'flex shrink-0 items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-all',
-                selectedTab === prefix
+                selectedTab === group.key
                   ? 'bg-primary text-primary-foreground shadow-primary/20 shadow-md'
                   : 'bg-card border-border text-foreground hover:border-primary hover:text-primary border'
               )}
             >
               {Icon && <Icon size={16} />}
-              {t(`channels.types.${prefix}`)}{' '}
+              {getLabel(group)}{' '}
               <span
                 className={cn(
                   'bg-muted text-muted-foreground rounded-full px-1.5 text-xs',
-                  selectedTab === prefix && 'bg-primary-foreground/20 text-primary-foreground'
+                  selectedTab === group.key && 'bg-primary-foreground/20 text-primary-foreground'
                 )}
               >
-                {totalCount}
+                {group.totalCount}
               </span>
             </button>
           );

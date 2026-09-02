@@ -13,6 +13,8 @@ import { ChannelsTable } from './components/channels-table';
 import { ChannelsTypeTabs } from './components/channels-type-tabs';
 import ChannelsProvider, { useChannels } from './context/channels-context';
 import { useQueryChannels, useChannelTypes, useErrorChannelsCount, useChannelProbeData } from './data/channels';
+import { CHANNEL_TYPE_TO_PROVIDER } from './data/config_channels';
+import { groupChannelTypesByProvider } from './utils/group-channel-types';
 import { useProvidersData } from '@/features/models/data/providers';
 
 const ChannelsDialogs = lazy(() => import('./components/channels-dialogs').then((m) => ({ default: m.ChannelsDialogs })));
@@ -77,14 +79,24 @@ function ChannelsContent() {
   // Debounce the name filter to avoid excessive API calls
   const debouncedNameFilter = useDebounce(nameFilter, 300);
 
+  // Group protocol variants of the same vendor into one tab
+  const channelTypeGroups = useMemo(
+    () => groupChannelTypesByProvider(channelTypeCounts, CHANNEL_TYPE_TO_PROVIDER),
+    [channelTypeCounts]
+  );
+
+  const selectedTypeGroup = useMemo(
+    () => channelTypeGroups.find((group) => group.key === selectedTypeTab),
+    [channelTypeGroups, selectedTypeTab]
+  );
+
   // Get types for the selected tab
   const tabFilteredTypes = useMemo(() => {
     if (selectedTypeTab === 'all') {
       return [];
     }
-    // Filter types that start with the selected prefix
-    return channelTypeCounts.filter(({ type }) => type.startsWith(selectedTypeTab)).map(({ type }) => type);
-  }, [selectedTypeTab, channelTypeCounts]);
+    return selectedTypeGroup?.types ?? [];
+  }, [selectedTypeTab, selectedTypeGroup]);
 
   // Build where clause with filters using useMemo
   const whereClause = useMemo(() => {
@@ -262,7 +274,7 @@ function ChannelsContent() {
         showErrorOnly={showErrorOnly}
         onExitErrorOnlyMode={handleExitErrorOnlyMode}
       />
-      <ChannelsTypeTabs typeCounts={channelTypeCounts} selectedTab={selectedTypeTab} onTabChange={handleTabChange} className={showTypeTabs ? '' : 'hidden'} />
+      <ChannelsTypeTabs groups={channelTypeGroups} selectedTab={selectedTypeTab} onTabChange={handleTabChange} className={showTypeTabs ? '' : 'hidden'} />
       <ChannelsTable
         loading={isLoading}
         data={channelsWithProbeData}
