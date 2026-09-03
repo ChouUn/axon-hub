@@ -200,6 +200,15 @@ function ChannelsContent() {
     [setPageSize]
   );
 
+  // A cursor encodes the previous order's value, so it is meaningless once the order changes.
+  const handleSortingChange = useCallback(
+    (updater: SortingState | ((prev: SortingState) => SortingState)) => {
+      setSorting(updater);
+      resetCursor();
+    },
+    [resetCursor]
+  );
+
   const handleNameFilterChange = useCallback(
     (filter: string) => {
       setNameFilter(filter);
@@ -293,7 +302,7 @@ function ChannelsContent() {
         selectedTypeTab={selectedTypeTab}
         showErrorOnly={showErrorOnly}
         sorting={sorting}
-        onSortingChange={setSorting}
+        onSortingChange={handleSortingChange}
         onExitErrorOnlyMode={handleExitErrorOnlyMode}
         onNextPage={handleNextPage}
         onPreviousPage={handlePreviousPage}

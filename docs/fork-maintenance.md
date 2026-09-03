@@ -147,6 +147,32 @@ fork 改动，由用户决定。
 
 ## Bugfix Topics
 
+### 排序字段为零值时分页错乱
+
+- 问题：entgql 的 `Cursor.Value` 带 `msgpack:"v,omitempty"`，排序字段值为该类型零值时
+  （如 `ordering_weight` 为 0）游标丢掉该值，解码为 nil 后 `entgql.CursorsPredicate`
+  退化为只按 id 比较，下一页会重复或漏掉行。表现为渠道页按权重排序、每页 20 条时，
+  第一页末尾是权重 0，第二页开头又出现权重 5、10。
+- 上游来源：ent/contrib `3625dcc2e035`（本 fork 锁定版本）仍带 `omitempty`，未见修复；
+  本 fork 不改依赖，在调用侧绕过。
+- 行为：`biz.RestoreZeroCursorValue` 在 `Paginate` 前用排序字段在空实体上取到的零值
+  补回 `cursor.Value`（`omitempty` 只省略零值，nil 必然对应零值）。接入
+  `ChannelService.QueryChannels`、`Query.channels`、`Query.prompts`（`prompt.order`
+  同样默认 0）。默认 ID 排序的 `Field.String()` 为空，跳过不补。渠道页切换排序时重置
+  分页游标，避免旧排序下产生的游标被带入新排序。
+- 提交：尚未提交。
+- 代码：`internal/server/biz/cursor.go`、`internal/server/biz/channel_query.go`、
+  `internal/server/gql/ent.resolvers.go`、`frontend/src/features/channels/index.tsx`。
+- 触发条件：只在某页最后一行的排序值为零时触发，与 tab 无关。「全部」若带权重的渠道
+  不少于 20 个，第一次翻页落在非零权重上看起来正常，翻到零权重之后的下一页同样出错；
+  分类 tab 带权重渠道少，第一次翻页就出错。
+- 迁移与测试：无迁移；`internal/server/biz/channel_query_test.go`
+  （`TestChannelService_QueryChannels_OrderingWeightZeroCursor` 与
+  `TestChannelService_QueryChannels_VendorTabZeroCursor`，游标经
+  `MarshalGQL`/`UnmarshalGQL` 往返以复现，后者同时覆盖「全部」与分类 tab 逐页遍历）。
+- 同步上游注意：若上游 entgql 去掉 `omitempty`，该绕过变为无害冗余，可移除；若新增按
+  可为零值字段排序的分页入口，需同样接入。
+
 ### Provider 模型成本可为空
 
 - 行为：模型目录中的 `cost` 可以缺失或为 `null`，远程拉取和内嵌快照的 provider 数据均可解析；

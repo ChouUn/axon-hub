@@ -13,6 +13,7 @@ import (
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/samber/lo"
 )
 
@@ -351,6 +352,11 @@ func (r *queryResolver) Channels(ctx context.Context, after *entgql.Cursor[int],
 		orderBy.Field = ent.DefaultChannelOrder.Field
 	}
 
+	if orderBy != nil && orderBy.Field != nil && orderBy.Field.String() != "" {
+		biz.RestoreZeroCursorValue(after, orderBy.Field.Value)
+		biz.RestoreZeroCursorValue(before, orderBy.Field.Value)
+	}
+
 	return r.client.Channel.Query().Paginate(ctx, after, first, before, last,
 		ent.WithChannelOrder(orderBy),
 		ent.WithChannelFilter(where.Filter),
@@ -436,6 +442,11 @@ func (r *queryResolver) Prompts(ctx context.Context, after *entgql.Cursor[int], 
 
 	if orderBy != nil && orderBy.Field.String() == "CREATED_AT" {
 		orderBy.Field = ent.DefaultPromptOrder.Field
+	}
+
+	if orderBy != nil && orderBy.Field != nil && orderBy.Field.String() != "" {
+		biz.RestoreZeroCursorValue(after, orderBy.Field.Value)
+		biz.RestoreZeroCursorValue(before, orderBy.Field.Value)
 	}
 
 	return r.client.Prompt.Query().Paginate(ctx, after, first, before, last,

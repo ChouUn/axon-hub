@@ -1,10 +1,13 @@
 package biz
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"strconv"
 	"testing"
 
+	"entgo.io/contrib/entgql"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
@@ -403,6 +406,172 @@ func TestChannelService_QueryChannels_PrimaryAPIFormatFilter(t *testing.T) {
 		}
 		require.ElementsMatch(t, []int{chat.ID, unmarked.ID}, actualIDs)
 	})
+}
+
+func TestChannelService_QueryChannels_OrderingWeightZeroCursor(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+
+	ctx := context.Background()
+	ctx = ent.NewContext(ctx, client)
+	ctx = authz.WithTestBypass(ctx)
+
+	// 3 x 10, 5 x 5, 17 x 0: with a page size of 20 the first page ends on weight 0,
+	// whose cursor loses its value through msgpack omitempty.
+	weights := []int{10, 10, 10, 5, 5, 5, 5, 5}
+	for len(weights) < 25 {
+		weights = append(weights, 0)
+	}
+
+	for i, weight := range weights {
+		ch := createTestChannel(t, client, ctx, "Weighted "+strconv.Itoa(i), []string{"gpt-4"}, nil)
+		_, err := client.Channel.UpdateOneID(ch.ID).SetOrderingWeight(weight).Save(ctx)
+		require.NoError(t, err)
+	}
+
+	orderBy := &ent.ChannelOrder{Direction: entgql.OrderDirectionDesc, Field: ent.ChannelOrderFieldOrderingWeight}
+
+	page1, err := svc.QueryChannels(ctx, QueryChannelsInput{First: lo.ToPtr(20), OrderBy: orderBy})
+	require.NoError(t, err)
+	require.Len(t, page1.Edges, 20)
+	require.True(t, page1.PageInfo.HasNextPage)
+	require.Equal(t, 0, page1.Edges[19].Node.OrderingWeight)
+
+	after := roundTripCursor(t, *page1.PageInfo.EndCursor)
+	require.Nil(t, after.Value, "msgpack omitempty drops the zero order value")
+
+	page2, err := svc.QueryChannels(ctx, QueryChannelsInput{First: lo.ToPtr(20), After: after, OrderBy: orderBy})
+	require.NoError(t, err)
+	require.Len(t, page2.Edges, 5)
+	require.False(t, page2.PageInfo.HasNextPage)
+
+	seen := make(map[int]bool, 25)
+	for _, edge := range page1.Edges {
+		seen[edge.Node.ID] = true
+	}
+
+	for _, edge := range page2.Edges {
+		require.Equal(t, 0, edge.Node.OrderingWeight, "page 2 must not contain weights above the end of page 1")
+		require.False(t, seen[edge.Node.ID], "page 2 must not repeat page 1")
+		seen[edge.Node.ID] = true
+	}
+
+	require.Len(t, seen, 25)
+}
+
+// Mirrors the reported symptom: the "all" tab pages correctly because its first
+// page ends on a non-zero weight, while a vendor tab with 25 channels and a
+// 20-row page ends on weight 0 and used to leak higher weights onto page 2.
+func TestChannelService_QueryChannels_VendorTabZeroCursor(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+
+	ctx := context.Background()
+	ctx = ent.NewContext(ctx, client)
+	ctx = authz.WithTestBypass(ctx)
+
+	setWeight := func(ch *ent.Channel, weight int) {
+		_, err := client.Channel.UpdateOneID(ch.ID).SetOrderingWeight(weight).Save(ctx)
+		require.NoError(t, err)
+	}
+
+	// 20 non-OpenAI channels, all weighted, so the "all" tab's first page never ends on 0.
+	for i := 1; i <= 20; i++ {
+		ch, err := client.Channel.Create().
+			SetType(channel.TypeDeepseek).
+			SetName("DeepSeek " + strconv.Itoa(i)).
+			SetBaseURL("https://api.deepseek.com/v1").
+			SetCredentials(objects.ChannelCredentials{APIKey: "test-key"}).
+			SetSupportedModels([]string{"deepseek-chat"}).
+			SetDefaultTestModel("deepseek-chat").
+			SetStatus(channel.StatusEnabled).
+			Save(ctx)
+		require.NoError(t, err)
+		setWeight(ch, i)
+	}
+
+	// 25 OpenAI channels with weights 10 / 5 / 0 interleaved by creation order,
+	// so weighted rows also sit on low ids.
+	for i := 0; i < 25; i++ {
+		ch := createTestChannel(t, client, ctx, "OpenAI "+strconv.Itoa(i), []string{"gpt-4"}, nil)
+		switch i % 5 {
+		case 0:
+			setWeight(ch, 10)
+		case 1:
+			setWeight(ch, 5)
+		}
+	}
+
+	orderBy := &ent.ChannelOrder{Direction: entgql.OrderDirectionDesc, Field: ent.ChannelOrderFieldOrderingWeight}
+
+	// Walk every page through GraphQL-shaped cursors and require the concatenation
+	// to be one non-increasing weight sequence that covers each row exactly once.
+	assertPagesConsistent := func(t *testing.T, label string, base QueryChannelsInput, total int) {
+		t.Helper()
+
+		seen := make(map[int]bool, total)
+		previousWeight := int(^uint(0) >> 1)
+
+		var after *entgql.Cursor[int]
+
+		for page := 1; ; page++ {
+			input := base
+			input.First = lo.ToPtr(20)
+			input.OrderBy = orderBy
+			input.After = after
+
+			conn, err := svc.QueryChannels(ctx, input)
+			require.NoError(t, err)
+			require.Equal(t, total, conn.TotalCount)
+			require.NotEmpty(t, conn.Edges, "%s: page %d is empty", label, page)
+
+			for _, edge := range conn.Edges {
+				require.LessOrEqual(t, edge.Node.OrderingWeight, previousWeight,
+					"%s: page %d has weight %d after weight %d", label, page, edge.Node.OrderingWeight, previousWeight)
+				require.False(t, seen[edge.Node.ID], "%s: page %d repeats channel %d", label, page, edge.Node.ID)
+				seen[edge.Node.ID] = true
+				previousWeight = edge.Node.OrderingWeight
+			}
+
+			if !conn.PageInfo.HasNextPage {
+				break
+			}
+
+			after = roundTripCursor(t, *conn.PageInfo.EndCursor)
+		}
+
+		require.Len(t, seen, total, "%s: pages must cover every row exactly once", label)
+	}
+
+	t.Run("all tab", func(t *testing.T) {
+		assertPagesConsistent(t, "all", QueryChannelsInput{}, 45)
+	})
+
+	t.Run("openai vendor tab", func(t *testing.T) {
+		assertPagesConsistent(t, "openai", QueryChannelsInput{
+			Where: &ent.ChannelWhereInput{
+				TypeIn: []channel.Type{channel.TypeOpenai, channel.TypeOpenaiResponses},
+			},
+			ExcludePrimaryAPIFormat: lo.ToPtr(objects.PrimaryAPIFormatImageGeneration),
+		}, 25)
+	})
+}
+
+// roundTripCursor serializes a cursor the way GraphQL transports it, so the
+// msgpack omitempty behaviour on zero order values is exercised.
+func roundTripCursor(t *testing.T, cursor entgql.Cursor[int]) *entgql.Cursor[int] {
+	t.Helper()
+
+	var buf bytes.Buffer
+	cursor.MarshalGQL(&buf)
+
+	var encoded string
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &encoded))
+
+	var decoded entgql.Cursor[int]
+	require.NoError(t, decoded.UnmarshalGQL(encoded))
+
+	return &decoded
 }
 
 // Helper function to create test channel.

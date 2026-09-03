@@ -67,6 +67,12 @@ func (svc *ChannelService) QueryChannels(ctx context.Context, input QueryChannel
 
 	// If the model is not specified, return the query result directly.
 	if input.Model == nil || *input.Model == "" {
+		// The default (ID) order field has no GraphQL name and must keep a nil cursor value.
+		if order := input.OrderBy; order != nil && order.Field != nil && order.Field.String() != "" {
+			RestoreZeroCursorValue(input.After, order.Field.Value)
+			RestoreZeroCursorValue(input.Before, order.Field.Value)
+		}
+
 		return query.Paginate(ctx, input.After, input.First, input.Before, input.Last,
 			ent.WithChannelOrder(input.OrderBy),
 		)
