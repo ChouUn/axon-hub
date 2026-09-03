@@ -122,6 +122,24 @@ fork 改动，由用户决定。
   `internal/server/biz/channel_query_test.go`、
   `scripts/e2e/fixtures/channel-groups.sql`。
 
+### Docker 镜像发布到 fork 仓库
+
+- 行为：复用上游 `docker-publish.yml`（监听 `v*` tag，amd64 / arm64 原生构建后合成
+  manifest，构建前把 tag 写入 `internal/build/VERSION`），镜像名由 workflow 级
+  `env.IMAGE` 指定为 `chouun/axon-hub`；产出 `<tag>`、`<tag>-<arch>`、`latest`。
+- 发布：`git tag -a vX -m "release: vX"` 后 `git push fork release/v1.0.x --follow-tags`。
+  fork 仓库需启用 workflow，并配置 repository secrets `DOCKERHUB_USERNAME` /
+  `DOCKERHUB_TOKEN`；`release.yml`（goreleaser）在 Actions 页面单独禁用。
+- 动机：此前手工 `docker build .` 未写 VERSION，镜像自报仓库内上游值 `v1.0.0-beta8`，
+  启动时 `datamigrate` 把 `system_version` 抬到 beta8，此后所有 `v1.0.0-beta7-fork.N`
+  数据迁移都会被跳过，且镜像内容不保证等于 tag。
+- 存量实例修正：`fork.5` 之前部署过的实例需手工把 `systems.system_version` 回拨为当前
+  部署的 fork 版本（migrator 只升不降）。回拨后版本正确的镜像会在每次启动重跑上游
+  `v1.0.0-beta8` 数据迁移（幂等，与上游 beta7 正式版行为一致），同步到 beta8 后停止。
+- 提交：尚未提交。
+- 代码：`.github/workflows/docker-publish.yml`。
+- 迁移与测试：无。
+
 ## 提前回补的上游 Feature
 
 ### 模型目录后端热加载
@@ -160,7 +178,7 @@ fork 改动，由用户决定。
   `ChannelService.QueryChannels`、`Query.channels`、`Query.prompts`（`prompt.order`
   同样默认 0）。默认 ID 排序的 `Field.String()` 为空，跳过不补。渠道页切换排序时重置
   分页游标，避免旧排序下产生的游标被带入新排序。
-- 提交：尚未提交。
+- 提交：`973928e3`（`fix(channels): 修复排序值为零时游标分页错乱`）。
 - 代码：`internal/server/biz/cursor.go`、`internal/server/biz/channel_query.go`、
   `internal/server/gql/ent.resolvers.go`、`frontend/src/features/channels/index.tsx`。
 - 触发条件：只在某页最后一行的排序值为零时触发，与 tab 无关。「全部」若带权重的渠道

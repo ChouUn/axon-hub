@@ -9,6 +9,10 @@ on:
     tags:
       - 'v*'
 
+env:
+  # Fork publishes to its own Docker Hub repository; upstream uses looplj/axonhub.
+  IMAGE: chouun/axon-hub
+
 jobs:
   build_single_arch:
     name: Build & push (${{ matrix.arch }}) [native]
@@ -56,7 +60,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            looplj/axonhub
+            ${{ env.IMAGE }}
 
       - name: Build & push single-arch (to both registries)
         uses: docker/build-push-action@v6
@@ -65,8 +69,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           tags: |
-            looplj/axonhub:${{ env.TAG }}-${{ matrix.arch }}
-            looplj/axonhub:latest-${{ matrix.arch }}
+            ${{ env.IMAGE }}:${{ env.TAG }}-${{ matrix.arch }}
+            ${{ env.IMAGE }}:latest-${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -91,13 +95,13 @@ jobs:
       - name: Create & push manifest (Docker Hub - version)
         run: |
           docker buildx imagetools create \
-            -t looplj/axonhub:${TAG} \
-            looplj/axonhub:${TAG}-amd64 \
-            looplj/axonhub:${TAG}-arm64
+            -t ${IMAGE}:${TAG} \
+            ${IMAGE}:${TAG}-amd64 \
+            ${IMAGE}:${TAG}-arm64
 
       - name: Create & push manifest (Docker Hub - latest)
         run: |
           docker buildx imagetools create \
-            -t looplj/axonhub:latest \
-            looplj/axonhub:latest-amd64 \
-            looplj/axonhub:latest-arm64
+            -t ${IMAGE}:latest \
+            ${IMAGE}:latest-amd64 \
+            ${IMAGE}:latest-arm64
