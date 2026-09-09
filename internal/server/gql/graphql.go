@@ -89,6 +89,19 @@ type GraphqlHandler struct {
 	Playground http.Handler
 }
 
+// skipMutationTransaction lists mutations that must not run inside the request
+// transaction. Channel tests perform long-running provider requests that can
+// outlive the admin request deadline, which would roll back a transaction bound
+// to it; matching on fields instead of operation names also covers anonymous
+// operations and the single-key test. BulkImportChannels manages one
+// transaction per row to preserve its partial-success behavior.
+var skipMutationTransaction = entgql.SkipIfHasFields(
+	"testChannel",
+	"testChannelAPIKeys",
+	"testChannelAPIKey",
+	"bulkImportChannels",
+)
+
 func NewGraphqlHandlers(deps Dependencies) *GraphqlHandler {
 	gqlSrv := handler.New(
 		NewSchema(
@@ -138,16 +151,9 @@ func NewGraphqlHandlers(deps Dependencies) *GraphqlHandler {
 		Cache: lru.New[string](1024),
 	})
 	gqlSrv.Use(&loggingTracer{})
-	skipTestChannelTransaction := entgql.SkipOperations("TestChannel", "TestChannelAPIKeys")
-	skipBulkImportTransaction := entgql.SkipIfHasFields("bulkImportChannels")
 	gqlSrv.Use(entgql.Transactioner{
-		TxOpener: deps.Ent,
-		// TestChannel performs long-running parallel provider requests whose database
-		// operations do not require one transaction. BulkImportChannels manages one
-		// transaction per row to preserve its partial-success behavior.
-		SkipTxFunc: func(op *ast.OperationDefinition) bool {
-			return skipTestChannelTransaction(op) || skipBulkImportTransaction(op)
-		},
+		TxOpener:   deps.Ent,
+		SkipTxFunc: skipMutationTransaction,
 	})
 
 	// Set error presenter to handle CodedError and add extensions.code
