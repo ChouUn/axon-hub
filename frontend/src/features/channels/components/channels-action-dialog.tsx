@@ -104,6 +104,21 @@ function baseURLMatchesResponsesTransport(baseURL: string | undefined, transport
   return normalized.startsWith('http://') || normalized.startsWith('https://');
 }
 
+// Image-generation channels are marked by settings.primaryApiFormat. The upstream
+// per-model protocol helper does not know that marker, so resolve it first
+// wherever the dialog derives the API format from a channel row.
+function getInitialApiFormatForRow(row: Channel): ApiFormat {
+  if (row.settings?.primaryApiFormat === OPENAI_IMAGE_GENERATION) {
+    return OPENAI_IMAGE_GENERATION;
+  }
+
+  return getInitialApiFormatForChannel(
+    row.type,
+    CHANNEL_CONFIGS[row.type as ChannelType]?.apiFormat || OPENAI_CHAT_COMPLETIONS,
+    row.settings?.modelProtocols
+  );
+}
+
 function getResponsesTransportBaseURLError(transport: ResponsesTransport): string {
   return transport === 'websocket'
     ? 'channels.dialogs.fields.baseURL.errors.websocketScheme'
@@ -473,19 +488,9 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
     }
     return 'openai';
   });
-  const [selectedApiFormat, setSelectedApiFormat] = useState<ApiFormat>(() => {
-    if (initialRow?.settings?.primaryApiFormat === OPENAI_IMAGE_GENERATION) {
-      return OPENAI_IMAGE_GENERATION;
-    }
-    if (initialRow) {
-      return getInitialApiFormatForChannel(
-        initialRow.type,
-        CHANNEL_CONFIGS[initialRow.type as ChannelType]?.apiFormat || OPENAI_CHAT_COMPLETIONS,
-        initialRow.settings?.modelProtocols
-      );
-    }
-    return OPENAI_CHAT_COMPLETIONS;
-  });
+  const [selectedApiFormat, setSelectedApiFormat] = useState<ApiFormat>(() =>
+    initialRow ? getInitialApiFormatForRow(initialRow) : OPENAI_CHAT_COMPLETIONS
+  );
   const [responsesTransport, setResponsesTransport] = useState<ResponsesTransport>(() => getResponsesTransportFromChannel(initialRow));
   const [useGeminiVertex, setUseGeminiVertex] = useState(() => {
     if (initialRow) {
@@ -511,12 +516,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
 
     const provider = getProviderFromChannelType(initialRow.type) || 'openai';
     setSelectedProvider(provider);
-    const apiFormat = getInitialApiFormatForChannel(
-      initialRow.type,
-      CHANNEL_CONFIGS[initialRow.type as ChannelType]?.apiFormat || OPENAI_CHAT_COMPLETIONS,
-      initialRow.settings?.modelProtocols
-    );
-    setSelectedApiFormat(apiFormat);
+    setSelectedApiFormat(getInitialApiFormatForRow(initialRow));
     setResponsesTransport(getResponsesTransportFromChannel(initialRow));
     setUseGeminiVertex(initialRow.type === 'gemini_vertex');
     setUseAnthropicAws(initialRow.type === 'anthropic_aws');
@@ -1873,13 +1873,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
             // Reset provider and API format state
             if (initialRow) {
               setSelectedProvider(getProviderFromChannelType(initialRow.type) || 'openai');
-              setSelectedApiFormat(
-                getInitialApiFormatForChannel(
-                  initialRow.type,
-                  CHANNEL_CONFIGS[initialRow.type as ChannelType]?.apiFormat || OPENAI_CHAT_COMPLETIONS,
-                  initialRow.settings?.modelProtocols
-                )
-              );
+              setSelectedApiFormat(getInitialApiFormatForRow(initialRow));
               setResponsesTransport(getResponsesTransportFromChannel(initialRow));
               setUseGeminiVertex(initialRow.type === 'gemini_vertex');
               setUseAnthropicAws(initialRow.type === 'anthropic_aws');

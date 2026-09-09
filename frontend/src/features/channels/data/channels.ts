@@ -1016,6 +1016,9 @@ const CHANNEL_QUERY_LIST_NODE_BASE_SELECTION = `
           status
           defaultTestModel
           errorMessage
+          settings {
+            primaryApiFormat
+          }
           disabledAPIKeys {
             key
             disabledAt
