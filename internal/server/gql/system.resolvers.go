@@ -180,14 +180,18 @@ func (r *mutationResolver) UpdateQuotaEnforcementSettings(ctx context.Context, i
 		return false, fmt.Errorf("failed to read current quota enforcement settings: %w", err)
 	}
 	newSettings := biz.QuotaEnforcementSettings{
-		Enabled: current.Enabled,
-		Mode:    current.Mode,
+		Enabled:           current.Enabled,
+		Mode:              current.Mode,
+		AllowedChannelIDs: current.AllowedChannelIDs,
 	}
 	if input.Enabled != nil {
 		newSettings.Enabled = *input.Enabled
 	}
 	if input.Mode != nil {
 		newSettings.Mode = *input.Mode
+	}
+	if input.AllowedChannelIDs != nil {
+		newSettings.AllowedChannelIDs = objects.IntGuids(input.AllowedChannelIDs)
 	}
 
 	err = r.systemService.SetQuotaEnforcementSettings(ctx, newSettings)
@@ -327,6 +331,16 @@ func (r *mutationResolver) UpdatePassThroughSettings(ctx context.Context, input 
 	err := r.systemService.SetPassThrough(ctx, input.Enabled)
 	if err != nil {
 		return false, fmt.Errorf("failed to update pass-through settings: %w", err)
+	}
+
+	return true, nil
+}
+
+// UpdateUsageCostInjectionSettings is the resolver for the updateUsageCostInjectionSettings field.
+func (r *mutationResolver) UpdateUsageCostInjectionSettings(ctx context.Context, input UpdateUsageCostInjectionSettingsInput) (bool, error) {
+	err := r.systemService.SetInjectUsageCostEnabled(ctx, input.Enabled)
+	if err != nil {
+		return false, fmt.Errorf("failed to update usage cost injection settings: %w", err)
 	}
 
 	return true, nil
@@ -672,6 +686,18 @@ func (r *queryResolver) PassThroughSettings(ctx context.Context) (*PassThroughSe
 	}, nil
 }
 
+// UsageCostInjectionSettings is the resolver for the usageCostInjectionSettings field.
+func (r *queryResolver) UsageCostInjectionSettings(ctx context.Context) (*UsageCostInjectionSettings, error) {
+	enabled, err := r.systemService.InjectUsageCostEnabled(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get usage cost injection settings: %w", err)
+	}
+
+	return &UsageCostInjectionSettings{
+		Enabled: enabled,
+	}, nil
+}
+
 // GetCacheDiagnostics is the resolver for the getCacheDiagnostics field.
 func (r *queryResolver) GetCacheDiagnostics(ctx context.Context, input *GetCacheDiagnosticsInput) (*GetCacheDiagnosticsPayload, error) {
 	user, ok := contexts.GetUser(ctx)
@@ -710,9 +736,22 @@ func (r *queryResolver) GetCacheDiagnostics(ctx context.Context, input *GetCache
 	}, nil
 }
 
+// AllowedChannelIDs is the resolver for the allowedChannelIDs field.
+func (r *quotaEnforcementSettingsResolver) AllowedChannelIDs(ctx context.Context, obj *biz.QuotaEnforcementSettings) ([]*objects.GUID, error) {
+	return lo.Map(obj.AllowedChannelIDs, func(id int, _ int) *objects.GUID {
+		return &objects.GUID{Type: "Channel", ID: id}
+	}), nil
+}
+
 // ProviderQuotaCollectionSettings returns ProviderQuotaCollectionSettingsResolver implementation.
 func (r *Resolver) ProviderQuotaCollectionSettings() ProviderQuotaCollectionSettingsResolver {
 	return &providerQuotaCollectionSettingsResolver{r}
 }
 
+// QuotaEnforcementSettings returns QuotaEnforcementSettingsResolver implementation.
+func (r *Resolver) QuotaEnforcementSettings() QuotaEnforcementSettingsResolver {
+	return &quotaEnforcementSettingsResolver{r}
+}
+
 type providerQuotaCollectionSettingsResolver struct{ *Resolver }
+type quotaEnforcementSettingsResolver struct{ *Resolver }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +27,8 @@ import (
 )
 
 const testChannelAPIKeysMaxConcurrency = 8
+
+const responsesWebSocketTestPrompt = "ping"
 
 // TestChannelOrchestrator handles channel testing functionality.
 // It is stateless and can be reused across multiple test requests.
@@ -71,8 +74,9 @@ type TestChannelRequest struct {
 	ModelID   *string
 }
 
-func buildChannelTestRequest(model string, useStream bool, systemPrompt string, userPrompt string) *llm.Request {
-	return &llm.Request{
+// buildChannelTestRequest creates the request used by channel tests.
+func buildChannelTestRequest(model string, useStream bool, systemPrompt string, userPrompt string, responsesWebSocket bool) *llm.Request {
+	req := &llm.Request{
 		Model: model,
 		Messages: []llm.Message{
 			{
@@ -87,6 +91,49 @@ func buildChannelTestRequest(model string, useStream bool, systemPrompt string, 
 		MaxCompletionTokens: lo.ToPtr(int64(256)),
 		Stream:              lo.ToPtr(useStream),
 	}
+
+	if responsesWebSocket {
+		req.Messages = []llm.Message{{
+			Role:    "user",
+			Content: llm.MessageContent{Content: lo.ToPtr(responsesWebSocketTestPrompt)},
+		}}
+		req.MaxCompletionTokens = nil
+		req.Stream = lo.ToPtr(true)
+	}
+
+	return req
+}
+
+// usesResponsesWebSocket reports whether a channel routes Responses requests over WebSocket.
+func usesResponsesWebSocket(channel *biz.Channel) bool {
+	if channel == nil {
+		return false
+	}
+
+	for _, endpoint := range channel.ResolveEndpoints() {
+		if endpoint.APIFormat != llm.APIFormatOpenAIResponse.String() && endpoint.APIFormat != llm.APIFormatOpenAIResponseCompact.String() {
+			continue
+		}
+
+		transport := strings.ToLower(strings.TrimSpace(endpoint.Transport))
+		if transport == objects.ChannelEndpointTransportWebSocket {
+			return true
+		}
+		if transport != "" {
+			continue
+		}
+
+		baseURL := endpoint.BaseURL
+		if baseURL == "" {
+			baseURL = channel.BaseURL
+		}
+		baseURL = strings.ToLower(strings.TrimSpace(baseURL))
+		if strings.HasPrefix(baseURL, "ws://") || strings.HasPrefix(baseURL, "wss://") {
+			return true
+		}
+	}
+
+	return false
 }
 
 func buildChannelTestImageRequest(model string, prompt string) openai.ImageGenerationRequest {
@@ -104,12 +151,12 @@ func channelUsesImageTest(settings *objects.ChannelSettings) bool {
 	return objects.IsImageGenerationPrimary(settings)
 }
 
-func marshalChannelTestBody(settings *objects.ChannelSettings, model string, useStream bool, systemPrompt string, userPrompt string) ([]byte, error) {
+func marshalChannelTestBody(settings *objects.ChannelSettings, model string, useStream bool, systemPrompt string, userPrompt string, responsesWebSocket bool) ([]byte, error) {
 	if channelUsesImageTest(settings) {
 		return json.Marshal(buildChannelTestImageRequest(model, userPrompt))
 	}
 
-	return json.Marshal(buildChannelTestRequest(model, useStream, systemPrompt, userPrompt))
+	return json.Marshal(buildChannelTestRequest(model, useStream, systemPrompt, userPrompt, responsesWebSocket))
 }
 
 // TestChannelResult represents the result of a channel test.
@@ -170,7 +217,7 @@ func (processor *TestChannelOrchestrator) TestChannel(
 
 	useStream := channel != nil && channel.Policies.Stream == objects.CapabilityPolicyRequire && !channelUsesImageTest(channel.Settings)
 
-	body, err := marshalChannelTestBody(channel.Settings, testModel, useStream, systemPrompt, userPrompt)
+	body, err := marshalChannelTestBody(channel.Settings, testModel, useStream, systemPrompt, userPrompt, usesResponsesWebSocket(channel))
 	if err != nil {
 		return nil, err
 	}
@@ -397,6 +444,7 @@ func (processor *TestChannelOrchestrator) TestChannelAPIKeys(
 	}
 
 	useStream := ch.Policies.Stream == objects.CapabilityPolicyRequire && !channelUsesImageTest(ch.Settings)
+	responsesWebSocket := usesResponsesWebSocket(ch)
 	systemPrompt, userPrompt, err := processor.systemService.ChannelTestPrompts(ctx)
 	if err != nil {
 		return nil, err
@@ -432,7 +480,7 @@ func (processor *TestChannelOrchestrator) TestChannelAPIKeys(
 			default:
 			}
 
-			result := processor.testSingleKey(groupCtx, ch, apiKey, testModel, useStream, proxy, systemPrompt, userPrompt)
+			result := processor.testSingleKey(groupCtx, ch, apiKey, testModel, useStream, responsesWebSocket, proxy, systemPrompt, userPrompt)
 			_, isDisabled := disabledSet[apiKey]
 			result.Disabled = isDisabled
 			results[index] = result
@@ -492,6 +540,7 @@ func (processor *TestChannelOrchestrator) TestSingleAPIKey(
 	}
 
 	useStream := ch.Policies.Stream == objects.CapabilityPolicyRequire && !channelUsesImageTest(ch.Settings)
+	responsesWebSocket := usesResponsesWebSocket(ch)
 	systemPrompt, userPrompt, err := processor.systemService.ChannelTestPrompts(ctx)
 	if err != nil {
 		return nil, err
@@ -502,7 +551,7 @@ func (processor *TestChannelOrchestrator) TestSingleAPIKey(
 		disabledSet[dk.Key] = struct{}{}
 	}
 
-	result := processor.testSingleKey(ctx, ch, key, testModel, useStream, proxy, systemPrompt, userPrompt)
+	result := processor.testSingleKey(ctx, ch, key, testModel, useStream, responsesWebSocket, proxy, systemPrompt, userPrompt)
 	_, isDisabled := disabledSet[key]
 	result.Disabled = isDisabled
 
@@ -516,6 +565,7 @@ func (processor *TestChannelOrchestrator) testSingleKey(
 	key string,
 	testModel string,
 	useStream bool,
+	responsesWebSocket bool,
 	proxy *httpclient.ProxyConfig,
 	systemPrompt string,
 	userPrompt string,
@@ -553,7 +603,7 @@ func (processor *TestChannelOrchestrator) testSingleKey(
 		modelCircuitBreaker:        processor.modelCircuitBreaker,
 	}
 
-	body, err := marshalChannelTestBody(ch.Settings, testModel, useStream, systemPrompt, userPrompt)
+	body, err := marshalChannelTestBody(ch.Settings, testModel, useStream, systemPrompt, userPrompt, responsesWebSocket)
 	if err != nil {
 		errMsg := err.Error()
 

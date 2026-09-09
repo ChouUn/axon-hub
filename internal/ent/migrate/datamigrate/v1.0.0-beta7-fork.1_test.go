@@ -21,11 +21,11 @@ import (
 )
 
 const (
-	dirtyUpdatedAt = "2026-08-18 00:13:11.396794292 +0800 CST m=+0.000011483"
-	cleanUpdatedAt = "2026-08-18 00:13:11.396794292 +0800 CST"
+	forkDirtyUpdatedAt = "2026-08-18 00:13:11.396794292 +0800 CST m=+0.000011483"
+	forkCleanUpdatedAt = "2026-08-18 00:13:11.396794292 +0800 CST"
 )
 
-func updatedAtMatches(
+func forkUpdatedAtMatches(
 	t *testing.T,
 	driver *entsql.Driver,
 	id int,
@@ -63,26 +63,26 @@ func TestV1_0_0_Beta7_Fork_1StripsMonotonicSuffixFromUpdatedAt(t *testing.T) {
 	driver := client.Driver().(*entsql.Driver)
 	_, err := driver.ExecContext(ctx,
 		"UPDATE channels SET updated_at = ? WHERE id = ?",
-		dirtyUpdatedAt,
+		forkDirtyUpdatedAt,
 		channelEntity.ID,
 	)
 	require.NoError(t, err)
 	require.Equal(
 		t,
 		0,
-		updatedAtMatches(t, driver, channelEntity.ID, cleanUpdatedAt),
+		forkUpdatedAtMatches(t, driver, channelEntity.ID, forkCleanUpdatedAt),
 	)
 
 	require.NoError(t, datamigrate.NewV1_0_0_Beta7_Fork_1().Migrate(ctx, client))
 	require.Equal(
 		t,
 		1,
-		updatedAtMatches(t, driver, channelEntity.ID, cleanUpdatedAt),
+		forkUpdatedAtMatches(t, driver, channelEntity.ID, forkCleanUpdatedAt),
 	)
 	require.Equal(
 		t,
 		0,
-		updatedAtMatches(t, driver, channelEntity.ID, dirtyUpdatedAt),
+		forkUpdatedAtMatches(t, driver, channelEntity.ID, forkDirtyUpdatedAt),
 	)
 }
 
@@ -106,7 +106,7 @@ func TestV1_0_0_Beta7_Fork_1PreservesCleanUpdatedAt(t *testing.T) {
 	driver := client.Driver().(*entsql.Driver)
 	_, err := driver.ExecContext(ctx,
 		"UPDATE channels SET updated_at = ? WHERE id = ?",
-		cleanUpdatedAt,
+		forkCleanUpdatedAt,
 		channelEntity.ID,
 	)
 	require.NoError(t, err)
@@ -115,28 +115,28 @@ func TestV1_0_0_Beta7_Fork_1PreservesCleanUpdatedAt(t *testing.T) {
 	require.Equal(
 		t,
 		1,
-		updatedAtMatches(t, driver, channelEntity.ID, cleanUpdatedAt),
+		forkUpdatedAtMatches(t, driver, channelEntity.ID, forkCleanUpdatedAt),
 	)
 }
 
-type recordingDriver struct {
+type forkRecordingDriver struct {
 	dialect     string
 	execQueries []string
 }
 
-func (d *recordingDriver) Dialect() string { return d.dialect }
+func (d *forkRecordingDriver) Dialect() string { return d.dialect }
 
-func (d *recordingDriver) Close() error { return nil }
+func (d *forkRecordingDriver) Close() error { return nil }
 
-func (d *recordingDriver) Tx(context.Context) (dialect.Tx, error) {
+func (d *forkRecordingDriver) Tx(context.Context) (dialect.Tx, error) {
 	return nil, errors.New("unexpected tx")
 }
 
-func (d *recordingDriver) Query(context.Context, string, any, any) error {
+func (d *forkRecordingDriver) Query(context.Context, string, any, any) error {
 	return errors.New("unexpected query")
 }
 
-func (d *recordingDriver) Exec(
+func (d *forkRecordingDriver) Exec(
 	_ context.Context,
 	query string,
 	_ any,
@@ -152,7 +152,7 @@ func (d *recordingDriver) Exec(
 }
 
 func TestV1_0_0_Beta7_Fork_1PostgresSkipsMonotonicCleanup(t *testing.T) {
-	drv := &recordingDriver{dialect: dialect.Postgres}
+	drv := &forkRecordingDriver{dialect: dialect.Postgres}
 	client := ent.NewClient(ent.Driver(drv))
 	defer client.Close()
 

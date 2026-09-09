@@ -699,8 +699,9 @@ type UpdateProviderQuotaCollectionSettingsInput struct {
 }
 
 type UpdateQuotaEnforcementSettingsInput struct {
-	Enabled *bool                     `json:"enabled,omitempty"`
-	Mode    *biz.QuotaEnforcementMode `json:"mode,omitempty"`
+	Enabled           *bool                     `json:"enabled,omitempty"`
+	Mode              *biz.QuotaEnforcementMode `json:"mode,omitempty"`
+	AllowedChannelIDs []*objects.GUID           `json:"allowedChannelIDs,omitempty"`
 }
 
 type UpdateSecuritySettingsInput struct {
@@ -708,7 +709,15 @@ type UpdateSecuritySettingsInput struct {
 	ShowRequestLogIPBanIcon *bool    `json:"showRequestLogIPBanIcon,omitempty"`
 }
 
+type UpdateUsageCostInjectionSettingsInput struct {
+	Enabled bool `json:"enabled"`
+}
+
 type UpdateUserAgentPassThroughSettingsInput struct {
+	Enabled bool `json:"enabled"`
+}
+
+type UsageCostInjectionSettings struct {
 	Enabled bool `json:"enabled"`
 }
 

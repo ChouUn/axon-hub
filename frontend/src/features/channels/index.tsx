@@ -12,7 +12,14 @@ import { ChannelsPrimaryButtons } from './components/channels-primary-buttons';
 import { ChannelsTable } from './components/channels-table';
 import { ChannelsTypeTabs } from './components/channels-type-tabs';
 import ChannelsProvider, { useChannels } from './context/channels-context';
-import { useQueryChannels, useChannelTypes, useErrorChannelsCount, useChannelProbeData } from './data/channels';
+import {
+  DEFAULT_CHANNEL_COLUMN_VISIBILITY,
+  useQueryChannels,
+  useChannelTypes,
+  useErrorChannelsCount,
+  useChannelProbeData,
+  type ChannelListColumnVisibility,
+} from './data/channels';
 import { CHANNEL_TYPE_TO_PROVIDER } from './data/config_channels';
 import { groupChannelTypesByProvider, IMAGE_PRIMARY_API_FORMAT } from './utils/group-channel-types';
 import { useProvidersData } from '@/features/models/data/providers';
@@ -46,17 +53,16 @@ function ChannelsContent() {
     }
     return [{ id: 'createdAt', desc: true }];
   });
-  const [isHealthColumnVisible, setIsHealthColumnVisible] = useState<boolean>(() => {
+  const [columnVisibility, setColumnVisibility] = useState<ChannelListColumnVisibility>(() => {
     const stored = localStorage.getItem('channels-table-column-visibility');
     if (stored) {
       try {
-        const visibility = JSON.parse(stored);
-        return visibility.health !== false;
+        return { ...DEFAULT_CHANNEL_COLUMN_VISIBILITY, ...JSON.parse(stored) };
       } catch {
-        return true;
+        return DEFAULT_CHANNEL_COLUMN_VISIBILITY;
       }
     }
-    return true;
+    return DEFAULT_CHANNEL_COLUMN_VISIBILITY;
   });
 
   useEffect(() => {
@@ -162,13 +168,14 @@ function ChannelsContent() {
     primaryApiFormat: selectedTypeGroup?.primaryApiFormat,
     excludePrimaryApiFormat:
       selectedTypeTab !== 'all' && !selectedTypeGroup?.primaryApiFormat ? IMAGE_PRIMARY_API_FORMAT : undefined,
+    columnVisibility,
   });
 
   const channelIDs = useMemo(() => {
     return data?.edges?.map((edge) => edge.node.id) || [];
   }, [data?.edges]);
 
-  const { data: probeData } = useChannelProbeData(channelIDs, { enabled: isHealthColumnVisible });
+  const { data: probeData } = useChannelProbeData(channelIDs, { enabled: columnVisibility.health !== false });
 
   const channelsWithProbeData = useMemo(() => {
     if (!data?.edges) return [];
@@ -313,7 +320,8 @@ function ChannelsContent() {
         onStatusFilterChange={handleStatusFilterChange}
         onTagFilterChange={handleTagFilterChange}
         onModelFilterChange={handleModelFilterChange}
-        onHealthColumnVisibilityChange={setIsHealthColumnVisible}
+        columnVisibility={columnVisibility}
+        onColumnVisibilityChange={setColumnVisibility}
         canWrite={channelPermissions.canWrite}
       />
     </div>

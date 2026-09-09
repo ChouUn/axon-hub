@@ -36,8 +36,6 @@ import { Route as AuthenticatedChatsIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedApiKeysIndexRouteImport } from './routes/_authenticated/api-keys/index'
 import { Route as AuthenticatedAnalyticsIndexRouteImport } from './routes/_authenticated/analytics/index'
-import { Route as AuthenticatedAnalyticsApiKeysRouteImport } from './routes/_authenticated/analytics/api-keys'
-import { Route as AuthenticatedAnalyticsModelsRouteImport } from './routes/_authenticated/analytics/models'
 import { Route as OauthOidcIdpCallbackRouteImport } from './routes/oauth/oidc/idp-callback'
 import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings/profile'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
@@ -45,6 +43,8 @@ import { Route as AuthenticatedSettingsDisplayRouteImport } from './routes/_auth
 import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
 import { Route as AuthenticatedRequestsRequestIdRouteImport } from './routes/_authenticated/requests/$requestId'
 import { Route as AuthenticatedDashboardChannelSuccessRatesRouteImport } from './routes/_authenticated/dashboard/channel-success-rates'
+import { Route as AuthenticatedAnalyticsModelsRouteImport } from './routes/_authenticated/analytics/models'
+import { Route as AuthenticatedAnalyticsApiKeysRouteImport } from './routes/_authenticated/analytics/api-keys'
 import { Route as AuthenticatedProjectUsersIndexRouteImport } from './routes/_authenticated/project/users/index'
 import { Route as AuthenticatedProjectUsageStatsIndexRouteImport } from './routes/_authenticated/project/usage-stats/index'
 import { Route as AuthenticatedProjectTracesIndexRouteImport } from './routes/_authenticated/project/traces/index'
@@ -204,18 +204,6 @@ const AuthenticatedAnalyticsIndexRoute =
     path: '/analytics/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedAnalyticsApiKeysRoute =
-  AuthenticatedAnalyticsApiKeysRouteImport.update({
-    id: '/analytics/api-keys',
-    path: '/analytics/api-keys',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedAnalyticsModelsRoute =
-  AuthenticatedAnalyticsModelsRouteImport.update({
-    id: '/analytics/models',
-    path: '/analytics/models',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
 const OauthOidcIdpCallbackRoute = OauthOidcIdpCallbackRouteImport.update({
   id: '/oauth/oidc/idp-callback',
   path: '/oauth/oidc/idp-callback',
@@ -255,6 +243,18 @@ const AuthenticatedDashboardChannelSuccessRatesRoute =
   AuthenticatedDashboardChannelSuccessRatesRouteImport.update({
     id: '/dashboard/channel-success-rates',
     path: '/dashboard/channel-success-rates',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAnalyticsModelsRoute =
+  AuthenticatedAnalyticsModelsRouteImport.update({
+    id: '/analytics/models',
+    path: '/analytics/models',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAnalyticsApiKeysRoute =
+  AuthenticatedAnalyticsApiKeysRouteImport.update({
+    id: '/analytics/api-keys',
+    path: '/analytics/api-keys',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedProjectUsersIndexRoute =
@@ -343,6 +343,8 @@ export interface FileRoutesByFullPath {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/permission': typeof AuthenticatedPermissionRoute
+  '/analytics/api-keys': typeof AuthenticatedAnalyticsApiKeysRoute
+  '/analytics/models': typeof AuthenticatedAnalyticsModelsRoute
   '/dashboard/channel-success-rates': typeof AuthenticatedDashboardChannelSuccessRatesRoute
   '/requests/$requestId': typeof AuthenticatedRequestsRequestIdRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
@@ -351,8 +353,6 @@ export interface FileRoutesByFullPath {
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/oauth/oidc/idp-callback': typeof OauthOidcIdpCallbackRoute
   '/analytics/': typeof AuthenticatedAnalyticsIndexRoute
-  '/analytics/api-keys': typeof AuthenticatedAnalyticsApiKeysRoute
-  '/analytics/models': typeof AuthenticatedAnalyticsModelsRoute
   '/api-keys/': typeof AuthenticatedApiKeysIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/chats/': typeof AuthenticatedChatsIndexRoute
@@ -391,6 +391,8 @@ export interface FileRoutesByTo {
   '/503': typeof errors503Route
   '/permission': typeof AuthenticatedPermissionRoute
   '/': typeof AuthenticatedIndexRoute
+  '/analytics/api-keys': typeof AuthenticatedAnalyticsApiKeysRoute
+  '/analytics/models': typeof AuthenticatedAnalyticsModelsRoute
   '/dashboard/channel-success-rates': typeof AuthenticatedDashboardChannelSuccessRatesRoute
   '/requests/$requestId': typeof AuthenticatedRequestsRequestIdRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
@@ -399,8 +401,6 @@ export interface FileRoutesByTo {
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/oauth/oidc/idp-callback': typeof OauthOidcIdpCallbackRoute
   '/analytics': typeof AuthenticatedAnalyticsIndexRoute
-  '/analytics/api-keys': typeof AuthenticatedAnalyticsApiKeysRoute
-  '/analytics/models': typeof AuthenticatedAnalyticsModelsRoute
   '/api-keys': typeof AuthenticatedApiKeysIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/chats': typeof AuthenticatedChatsIndexRoute
@@ -442,6 +442,8 @@ export interface FileRoutesById {
   '/(errors)/503': typeof errors503Route
   '/_authenticated/permission': typeof AuthenticatedPermissionRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/analytics/api-keys': typeof AuthenticatedAnalyticsApiKeysRoute
+  '/_authenticated/analytics/models': typeof AuthenticatedAnalyticsModelsRoute
   '/_authenticated/dashboard/channel-success-rates': typeof AuthenticatedDashboardChannelSuccessRatesRoute
   '/_authenticated/requests/$requestId': typeof AuthenticatedRequestsRequestIdRoute
   '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
@@ -450,8 +452,6 @@ export interface FileRoutesById {
   '/_authenticated/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/oauth/oidc/idp-callback': typeof OauthOidcIdpCallbackRoute
   '/_authenticated/analytics/': typeof AuthenticatedAnalyticsIndexRoute
-  '/_authenticated/analytics/api-keys': typeof AuthenticatedAnalyticsApiKeysRoute
-  '/_authenticated/analytics/models': typeof AuthenticatedAnalyticsModelsRoute
   '/_authenticated/api-keys/': typeof AuthenticatedApiKeysIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/chats/': typeof AuthenticatedChatsIndexRoute
@@ -493,6 +493,8 @@ export interface FileRouteTypes {
     | '/500'
     | '/503'
     | '/permission'
+    | '/analytics/api-keys'
+    | '/analytics/models'
     | '/dashboard/channel-success-rates'
     | '/requests/$requestId'
     | '/settings/appearance'
@@ -501,8 +503,6 @@ export interface FileRouteTypes {
     | '/settings/profile'
     | '/oauth/oidc/idp-callback'
     | '/analytics/'
-    | '/analytics/api-keys'
-    | '/analytics/models'
     | '/api-keys/'
     | '/channels/'
     | '/chats/'
@@ -541,6 +541,8 @@ export interface FileRouteTypes {
     | '/503'
     | '/permission'
     | '/'
+    | '/analytics/api-keys'
+    | '/analytics/models'
     | '/dashboard/channel-success-rates'
     | '/requests/$requestId'
     | '/settings/appearance'
@@ -549,8 +551,6 @@ export interface FileRouteTypes {
     | '/settings/profile'
     | '/oauth/oidc/idp-callback'
     | '/analytics'
-    | '/analytics/api-keys'
-    | '/analytics/models'
     | '/api-keys'
     | '/channels'
     | '/chats'
@@ -591,6 +591,8 @@ export interface FileRouteTypes {
     | '/(errors)/503'
     | '/_authenticated/permission'
     | '/_authenticated/'
+    | '/_authenticated/analytics/api-keys'
+    | '/_authenticated/analytics/models'
     | '/_authenticated/dashboard/channel-success-rates'
     | '/_authenticated/requests/$requestId'
     | '/_authenticated/settings/appearance'
@@ -599,8 +601,6 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/profile'
     | '/oauth/oidc/idp-callback'
     | '/_authenticated/analytics/'
-    | '/_authenticated/analytics/api-keys'
-    | '/_authenticated/analytics/models'
     | '/_authenticated/api-keys/'
     | '/_authenticated/channels/'
     | '/_authenticated/chats/'
@@ -833,20 +833,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAnalyticsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/analytics/api-keys': {
-      id: '/_authenticated/analytics/api-keys'
-      path: '/analytics/api-keys'
-      fullPath: '/analytics/api-keys'
-      preLoaderRoute: typeof AuthenticatedAnalyticsApiKeysRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/analytics/models': {
-      id: '/_authenticated/analytics/models'
-      path: '/analytics/models'
-      fullPath: '/analytics/models'
-      preLoaderRoute: typeof AuthenticatedAnalyticsModelsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/oauth/oidc/idp-callback': {
       id: '/oauth/oidc/idp-callback'
       path: '/oauth/oidc/idp-callback'
@@ -894,6 +880,20 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/channel-success-rates'
       fullPath: '/dashboard/channel-success-rates'
       preLoaderRoute: typeof AuthenticatedDashboardChannelSuccessRatesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/analytics/models': {
+      id: '/_authenticated/analytics/models'
+      path: '/analytics/models'
+      fullPath: '/analytics/models'
+      preLoaderRoute: typeof AuthenticatedAnalyticsModelsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/analytics/api-keys': {
+      id: '/_authenticated/analytics/api-keys'
+      path: '/analytics/api-keys'
+      fullPath: '/analytics/api-keys'
+      preLoaderRoute: typeof AuthenticatedAnalyticsApiKeysRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/project/users/': {
@@ -1010,11 +1010,11 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedPermissionRoute: typeof AuthenticatedPermissionRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedAnalyticsApiKeysRoute: typeof AuthenticatedAnalyticsApiKeysRoute
+  AuthenticatedAnalyticsModelsRoute: typeof AuthenticatedAnalyticsModelsRoute
   AuthenticatedDashboardChannelSuccessRatesRoute: typeof AuthenticatedDashboardChannelSuccessRatesRoute
   AuthenticatedRequestsRequestIdRoute: typeof AuthenticatedRequestsRequestIdRoute
   AuthenticatedAnalyticsIndexRoute: typeof AuthenticatedAnalyticsIndexRoute
-  AuthenticatedAnalyticsApiKeysRoute: typeof AuthenticatedAnalyticsApiKeysRoute
-  AuthenticatedAnalyticsModelsRoute: typeof AuthenticatedAnalyticsModelsRoute
   AuthenticatedApiKeysIndexRoute: typeof AuthenticatedApiKeysIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedChatsIndexRoute: typeof AuthenticatedChatsIndexRoute
@@ -1045,12 +1045,12 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
   AuthenticatedPermissionRoute: AuthenticatedPermissionRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedAnalyticsApiKeysRoute: AuthenticatedAnalyticsApiKeysRoute,
+  AuthenticatedAnalyticsModelsRoute: AuthenticatedAnalyticsModelsRoute,
   AuthenticatedDashboardChannelSuccessRatesRoute:
     AuthenticatedDashboardChannelSuccessRatesRoute,
   AuthenticatedRequestsRequestIdRoute: AuthenticatedRequestsRequestIdRoute,
   AuthenticatedAnalyticsIndexRoute: AuthenticatedAnalyticsIndexRoute,
-  AuthenticatedAnalyticsApiKeysRoute: AuthenticatedAnalyticsApiKeysRoute,
-  AuthenticatedAnalyticsModelsRoute: AuthenticatedAnalyticsModelsRoute,
   AuthenticatedApiKeysIndexRoute: AuthenticatedApiKeysIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedChatsIndexRoute: AuthenticatedChatsIndexRoute,
