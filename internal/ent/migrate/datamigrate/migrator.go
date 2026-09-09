@@ -3,8 +3,6 @@ package datamigrate
 import (
 	"context"
 
-	"github.com/Masterminds/semver/v3"
-
 	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/build"
 	"github.com/looplj/axonhub/internal/ent"
@@ -74,7 +72,7 @@ func (m *Migrator) shouldRunMigration(ctx context.Context, migrationVersion stri
 		systemVersion = "v0.2.1"
 	}
 
-	migrationSemver, err := semver.NewVersion(migrationVersion)
+	migrationSemver, err := parseComparableVersion(migrationVersion)
 	if err != nil {
 		log.Warn(ctx, "invalid migration version, will run migration",
 			log.String("migration_version", migrationVersion),
@@ -83,7 +81,7 @@ func (m *Migrator) shouldRunMigration(ctx context.Context, migrationVersion stri
 		return true
 	}
 
-	systemSemver, err := semver.NewVersion(systemVersion)
+	systemSemver, err := parseComparableVersion(systemVersion)
 	if err != nil {
 		log.Warn(ctx, "invalid system version, will run migration",
 			log.String("system_version", systemVersion),
@@ -148,7 +146,7 @@ func (m *Migrator) Run(ctx context.Context) error {
 		return err
 	}
 
-	buildSemver, err := semver.NewVersion(build.Version)
+	buildSemver, err := parseComparableVersion(build.Version)
 	if err != nil {
 		log.Warn(ctx, "invalid build version, skipping system version update",
 			log.String("build_version", build.Version),
@@ -162,7 +160,7 @@ func (m *Migrator) Run(ctx context.Context) error {
 	if currentVersion == "" {
 		updateSystemVersion = true
 	} else {
-		currentSemver, err := semver.NewVersion(currentVersion)
+		currentSemver, err := parseComparableVersion(currentVersion)
 		if err != nil {
 			log.Warn(ctx, "invalid system version, updating to build version",
 				log.String("system_version", currentVersion),

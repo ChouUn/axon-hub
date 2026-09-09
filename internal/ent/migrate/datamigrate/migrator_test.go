@@ -449,3 +449,48 @@ func TestMigrator_UpgradeFromV0_3_0(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, build.Version, version)
 }
+
+func TestMigrator_Run_NumericPrereleaseOrdering(t *testing.T) {
+	client := enttest.NewEntClient(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	defer client.Close()
+
+	ctx := ent.NewContext(context.Background(), client)
+	ctx = authz.WithTestBypass(ctx)
+
+	systemService := biz.NewSystemService(biz.SystemServiceParams{})
+	err := systemService.Initialize(ctx, &biz.InitializeSystemParams{
+		OwnerEmail:     "owner@example.com",
+		OwnerPassword:  "password123",
+		OwnerFirstName: "System",
+		OwnerLastName:  "Owner",
+		BrandName:      "Test Brand",
+	})
+	require.NoError(t, err)
+
+	originalBuildVersion := build.Version
+	build.Version = "v1.0.0-beta10-fork.1"
+	t.Cleanup(func() { build.Version = originalBuildVersion })
+
+	// beta9 -> beta10: plain semver sorts "beta10" before "beta9", which would
+	// skip the beta10 migration and leave the system version behind.
+	require.NoError(t, systemService.SetVersion(ctx, "v1.0.0-beta9"))
+	beta10 := &mockMigrator{version: "v1.0.0-beta10"}
+	migrator := datamigrate.NewMigratorWithoutRegistrations(client)
+	migrator.Register(beta10)
+	require.NoError(t, migrator.Run(ctx))
+	assert.Equal(t, 1, beta10.migrateCalls, "beta10 should run on a beta9 system")
+
+	version, err := systemService.Version(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "v1.0.0-beta10-fork.1", version)
+
+	// Already on beta10-fork.1: the beta7 fork migration and beta10 are behind
+	// the system version and must not run again.
+	forkOne := &mockMigrator{version: "v1.0.0-beta7-fork.1"}
+	beta10Again := &mockMigrator{version: "v1.0.0-beta10"}
+	migrator = datamigrate.NewMigratorWithoutRegistrations(client)
+	migrator.Register(forkOne).Register(beta10Again)
+	require.NoError(t, migrator.Run(ctx))
+	assert.Equal(t, 0, forkOne.migrateCalls, "beta7-fork.1 should be skipped")
+	assert.Equal(t, 0, beta10Again.migrateCalls, "beta10 should be skipped")
+}
