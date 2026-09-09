@@ -2558,3 +2558,29 @@ func TestInboundTransformer_TransformResponse_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+func TestInboundTransformer_TransformError_PassThroughReturnsUpstreamBody(t *testing.T) {
+	transformer := NewInboundTransformer()
+	upstreamBody := []byte(`{"id":"1","type":"error","error":{"type":"request_error","message":"请求参数包含多余输入"},` +
+		`"raw_body":"{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"messages.1.output_config: Extra inputs are not permitted\"}}"}`)
+
+	t.Run("raw upstream error is returned verbatim", func(t *testing.T) {
+		result := transformer.TransformError(context.Background(), &llm.ResponseError{
+			StatusCode:  http.StatusBadRequest,
+			Detail:      llm.ErrorDetail{Type: "api_error", Message: "请求参数包含多余输入"},
+			RawUpstream: &httpclient.Error{StatusCode: http.StatusBadRequest, Body: upstreamBody},
+		})
+		require.Equal(t, http.StatusBadRequest, result.StatusCode)
+		require.Equal(t, string(upstreamBody), string(result.Body))
+	})
+
+	t.Run("non-JSON upstream body falls back to the normalized error", func(t *testing.T) {
+		result := transformer.TransformError(context.Background(), &llm.ResponseError{
+			StatusCode:  http.StatusBadGateway,
+			Detail:      llm.ErrorDetail{Type: "api_error", Message: "Bad Gateway"},
+			RawUpstream: &httpclient.Error{StatusCode: http.StatusBadGateway, Body: []byte("<html>502</html>")},
+		})
+		require.Equal(t, http.StatusBadGateway, result.StatusCode)
+		require.JSONEq(t, `{"type":"api_error","error":{"message":"Bad Gateway","type":"api_error"},"request_id":""}`, string(result.Body))
+	})
+}

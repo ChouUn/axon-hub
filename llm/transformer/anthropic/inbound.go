@@ -171,6 +171,16 @@ func (t *InboundTransformer) TransformError(ctx context.Context, rawErr error) *
 	}
 
 	if llmErr, ok := errors.AsType[*llm.ResponseError](rawErr); ok {
+		// A pass-through request gets the upstream error body unchanged; only JSON is
+		// replayed because the handler writes the body as a JSON document.
+		if raw := llmErr.RawUpstream; raw != nil && json.Valid(raw.Body) {
+			return &httpclient.Error{
+				StatusCode: llmErr.StatusCode,
+				Status:     http.StatusText(llmErr.StatusCode),
+				Body:       raw.Body,
+			}
+		}
+
 		return &httpclient.Error{
 			StatusCode: llmErr.StatusCode,
 			Status:     http.StatusText(llmErr.StatusCode),

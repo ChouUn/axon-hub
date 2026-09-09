@@ -1277,3 +1277,27 @@ func TestUpstreamErrorStream_PassthroughClassifiesTransportError(t *testing.T) {
 	require.False(t, stream.Next())
 	assert.Equal(t, plain, stream.Err())
 }
+
+func TestApplyUpstreamErrorPolicy_CustomMessageDropsRawUpstream(t *testing.T) {
+	ctx, systemService := setupUpstreamErrorPolicyTest(t, biz.UpstreamErrorPolicy{
+		Mode:          biz.UpstreamErrorModeCustom,
+		CustomMessage: "模型服务暂时不可用，请稍后再试",
+	})
+
+	respErr := &llm.ResponseError{
+		StatusCode: http.StatusBadRequest,
+		Detail:     llm.ErrorDetail{Type: "api_error", Message: "请求参数包含多余输入"},
+		RawUpstream: &httpclient.Error{
+			StatusCode: http.StatusBadRequest,
+			Body:       []byte(`{"error":{"message":"raw provider secret"}}`),
+		},
+	}
+
+	err := applyUpstreamErrorPolicy(ctx, pipeline.WrapUpstreamError(respErr), systemService)
+
+	out := &llm.ResponseError{}
+	require.True(t, errors.As(err, &out))
+	assert.Nil(t, out.RawUpstream)
+	assert.Equal(t, "模型服务暂时不可用，请稍后再试", out.Detail.Message)
+	assert.NotContains(t, err.Error(), "raw provider secret")
+}

@@ -447,7 +447,16 @@ func (p *PersistentOutboundTransformer) APIFormat() llm.APIFormat {
 }
 
 func (p *PersistentOutboundTransformer) TransformError(ctx context.Context, rawErr *httpclient.Error) *llm.ResponseError {
-	return p.wrapped.TransformError(ctx, rawErr)
+	respErr := p.wrapped.TransformError(ctx, rawErr)
+
+	// Pass-through forwarded the client's body verbatim, so hand the upstream error back
+	// verbatim too: clients such as Claude Code key their compatibility fallbacks on the
+	// original error text, which the normalized Detail loses.
+	if respErr != nil && rawErr != nil && len(rawErr.Body) > 0 && p.state.PassThroughApplied {
+		respErr.RawUpstream = rawErr
+	}
+
+	return respErr
 }
 
 func (p *PersistentOutboundTransformer) TransformRequest(ctx context.Context, llmRequest *llm.Request) (*httpclient.Request, error) {

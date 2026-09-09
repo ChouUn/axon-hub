@@ -892,6 +892,11 @@ type ResponseError struct {
 	// Cause keeps the underlying error (for example a transport failure) so callers
 	// can still match it with errors.Is / errors.As after classification.
 	Cause error `json:"-"`
+
+	// RawUpstream keeps the provider's original HTTP error when the request body was
+	// passed through verbatim. Inbound transformers of the same protocol return it
+	// unchanged so clients see exactly what the upstream said.
+	RawUpstream *httpclient.Error `json:"-"`
 }
 
 // Unwrap exposes the underlying cause, if any.

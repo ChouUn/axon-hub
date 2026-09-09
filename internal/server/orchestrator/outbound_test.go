@@ -1543,3 +1543,43 @@ func TestOutboundPersistentStream_Close_TransportErrorKeepsMetricsAndClassifiesE
 	require.NotNil(t, dbExec.MetricsLatencyMs)
 	require.GreaterOrEqual(t, *dbExec.MetricsLatencyMs, int64(1500))
 }
+
+// rawErrorTransformer returns a normalized error so the wrapper's raw attachment is observable.
+type rawErrorTransformer struct{ mockTransformer }
+
+func (m *rawErrorTransformer) TransformError(_ context.Context, err *httpclient.Error) *llm.ResponseError {
+	return &llm.ResponseError{
+		StatusCode: err.StatusCode,
+		Detail:     llm.ErrorDetail{Type: "api_error", Message: "normalized"},
+	}
+}
+
+func TestPersistentOutboundTransformer_TransformError_AttachesRawUpstreamOnPassThrough(t *testing.T) {
+	httpErr := &httpclient.Error{
+		StatusCode: 400,
+		Body:       []byte(`{"type":"error","error":{"type":"invalid_request_error","message":"messages.1.output_config: Extra inputs are not permitted"}}`),
+	}
+
+	t.Run("pass-through applied", func(t *testing.T) {
+		outbound := &PersistentOutboundTransformer{
+			wrapped: &rawErrorTransformer{},
+			state:   &PersistenceState{PassThroughApplied: true},
+		}
+
+		respErr := outbound.TransformError(context.Background(), httpErr)
+		require.NotNil(t, respErr)
+		require.Same(t, httpErr, respErr.RawUpstream)
+		require.Equal(t, "normalized", respErr.Detail.Message)
+	})
+
+	t.Run("pass-through not applied", func(t *testing.T) {
+		outbound := &PersistentOutboundTransformer{
+			wrapped: &rawErrorTransformer{},
+			state:   &PersistenceState{},
+		}
+
+		respErr := outbound.TransformError(context.Background(), httpErr)
+		require.NotNil(t, respErr)
+		require.Nil(t, respErr.RawUpstream)
+	})
+}
