@@ -91,6 +91,11 @@ type Config struct {
 	// LLMRequestTimeout is the maximum duration for processing a request to LLM.
 	LLMRequestTimeout time.Duration `conf:"llm_request_timeout" yaml:"llm_request_timeout" json:"llm_request_timeout"`
 
+	// ChannelTestTimeout is the maximum duration for a channel test started from the
+	// admin console. It replaces RequestTimeout for that operation only, because
+	// image generation tests can outlive the ordinary admin request budget.
+	ChannelTestTimeout time.Duration `conf:"channel_test_timeout" yaml:"channel_test_timeout" json:"channel_test_timeout"`
+
 	SSEKeepAlive SSEKeepAlive `conf:"sse_keep_alive" yaml:"sse_keep_alive" json:"sse_keep_alive"`
 
 	Trace     tracing.Config `conf:"trace" yaml:"trace" json:"trace"`

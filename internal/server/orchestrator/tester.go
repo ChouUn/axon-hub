@@ -15,6 +15,7 @@ import (
 
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/internal/pkg/xcontext"
 	"github.com/looplj/axonhub/internal/pkg/xjson"
 	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/llm"
@@ -30,6 +31,10 @@ const testChannelAPIKeysMaxConcurrency = 8
 
 const responsesWebSocketTestPrompt = "ping"
 
+// ChannelTestTimeout bounds a channel test independently of the admin request
+// deadline. Zero leaves the caller's context untouched.
+type ChannelTestTimeout time.Duration
+
 // TestChannelOrchestrator handles channel testing functionality.
 // It is stateless and can be reused across multiple test requests.
 type TestChannelOrchestrator struct {
@@ -39,6 +44,7 @@ type TestChannelOrchestrator struct {
 	usageLogService             *biz.UsageLogService
 	promptProtectionRuleService *biz.PromptProtectionRuleService
 	httpClient                  *httpclient.HttpClient
+	testTimeout                 time.Duration
 	modelCircuitBreaker         *biz.ModelCircuitBreaker
 	modelMapper                 *ModelMapper
 	loadBalancer                *LoadBalancer
@@ -53,6 +59,7 @@ func NewTestChannelOrchestrator(
 	usageLogService *biz.UsageLogService,
 	promptProtectionRuleService *biz.PromptProtectionRuleService,
 	httpClient *httpclient.HttpClient,
+	testTimeout ChannelTestTimeout,
 ) *TestChannelOrchestrator {
 	return &TestChannelOrchestrator{
 		channelService:              channelService,
@@ -61,11 +68,24 @@ func NewTestChannelOrchestrator(
 		usageLogService:             usageLogService,
 		promptProtectionRuleService: promptProtectionRuleService,
 		httpClient:                  httpClient,
+		testTimeout:                 time.Duration(testTimeout),
 		modelCircuitBreaker:         biz.NewModelCircuitBreaker(),
 		modelMapper:                 NewModelMapper(),
 		loadBalancer:                NewLoadBalancer(systemService, channelService, NewWeightStrategy()),
 		channelLimiterManager:       NewChannelLimiterManager(),
 	}
+}
+
+// testContext detaches a channel test from the admin request deadline and
+// applies the configured test timeout, so slow upstreams such as image
+// generation are not cut off at the console's RequestTimeout. The test then
+// runs to completion or timeout even if the console disconnects.
+func (processor *TestChannelOrchestrator) testContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if processor.testTimeout <= 0 {
+		return ctx, func() {}
+	}
+
+	return xcontext.DetachWithTimeout(ctx, processor.testTimeout)
 }
 
 // TestChannelRequest represents a channel test request.
@@ -174,6 +194,9 @@ func (processor *TestChannelOrchestrator) TestChannel(
 	modelID *string,
 	proxy *httpclient.ProxyConfig,
 ) (*TestChannelResult, error) {
+	ctx, cancel := processor.testContext(ctx)
+	defer cancel()
+
 	channel, err := processor.channelService.GetChannel(ctx, channelID.ID)
 	if err != nil {
 		return nil, err
@@ -422,6 +445,9 @@ func (processor *TestChannelOrchestrator) TestChannelAPIKeys(
 	modelID *string,
 	proxy *httpclient.ProxyConfig,
 ) (*TestChannelAPIKeysResult, error) {
+	ctx, cancel := processor.testContext(ctx)
+	defer cancel()
+
 	ch, err := processor.channelService.GetChannel(ctx, channelID.ID)
 	if err != nil {
 		return nil, err
@@ -518,6 +544,9 @@ func (processor *TestChannelOrchestrator) TestSingleAPIKey(
 	modelID *string,
 	proxy *httpclient.ProxyConfig,
 ) (*TestAPIKeyResult, error) {
+	ctx, cancel := processor.testContext(ctx)
+	defer cancel()
+
 	ch, err := processor.channelService.GetChannel(ctx, channelID.ID)
 	if err != nil {
 		return nil, err

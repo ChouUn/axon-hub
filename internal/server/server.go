@@ -65,7 +65,7 @@ func (srv *Server) Run() error {
 		Addr:         addr,
 		Handler:      srv.Engine,
 		ReadTimeout:  srv.Config.ReadTimeout,
-		WriteTimeout: max(srv.Config.RequestTimeout, srv.Config.LLMRequestTimeout),
+		WriteTimeout: max(srv.Config.RequestTimeout, srv.Config.LLMRequestTimeout, srv.Config.ChannelTestTimeout),
 	}
 	srv.addr = addr
 
@@ -111,6 +111,9 @@ func Run(opts ...fx.Option) {
 					Enabled:  cfg.SSEKeepAlive.Enabled,
 					Interval: cfg.SSEKeepAlive.Interval,
 				}
+			}),
+			fx.Provide(func(cfg Config) orchestrator.ChannelTestTimeout {
+				return orchestrator.ChannelTestTimeout(cfg.ChannelTestTimeout)
 			}),
 			fx.Invoke(func(cfg log.Config) {
 				log.SetGlobalConfig(cfg)

@@ -88,6 +88,7 @@ func NewSchema(
 	gcWorker *gc.Worker,
 	videoWorker *video_storage.Worker,
 	catalogService *biz.CatalogService,
+	channelTestTimeout orchestrator.ChannelTestTimeout,
 ) graphql.ExecutableSchema {
 	modelFetcher := biz.NewModelFetcher(httpClient, channelService)
 
@@ -119,7 +120,7 @@ func NewSchema(
 			defaultSelector:                defaultSelector,
 			candidateSelectorDiagnostics:   candidateSelectorDiagnostics,
 			channelLimiterManager:          channelLimiterManager,
-			TestChannelOrchestrator:        orchestrator.NewTestChannelOrchestrator(channelService, requestService, systemService, usageLogService, promptProtectionRuleService, httpClient),
+			TestChannelOrchestrator:        orchestrator.NewTestChannelOrchestrator(channelService, requestService, systemService, usageLogService, promptProtectionRuleService, httpClient, channelTestTimeout),
 			gcWorker:                       gcWorker,
 			videoWorker:                    videoWorker,
 			catalogService:                 catalogService,
