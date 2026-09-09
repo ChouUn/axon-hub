@@ -242,6 +242,31 @@ fork 改动，由用户决定。
   参数，上游改动这些签名时需重接；若上游为 GraphQL 路由或渠道测试引入自己的超时，
   以上游为准并移除本配置。
 
+### 透传时上游错误体被重包装
+
+- 问题：Anthropic 出站 `TransformError` 把上游任何错误写死成 `api_error`，
+  只保留 message，丢掉上游错误体里的其他字段。Claude Code 2.1.266 起会给对话中段
+  `role: system` 消息挂
+  `output_config`（按轮次 effort，beta `per-turn-control-2026-07-01`），
+  sssaiapi 这类中转不认时返回 400，`raw_body` 内附 Anthropic 原文
+  `messages.N.output_config: Extra inputs are not permitted`。CLI 只要在错误 message 里
+  看到这段原文就会自动去掉该字段重试；经 AxonHub 后原文被吞，CLI 不重试，用户直接看到
+  400。透传关闭时 AxonHub 重组请求会丢掉该字段，反而不会触发。
+- 上游来源：上游 beta10 与 unstable 均未处理，fork 先行修复，可回馈。
+- 行为：`llm.ResponseError` 新增 `RawUpstream`；出站包装器在请求体已透传
+  （`PassThroughApplied`）时挂上上游原始 HTTP 错误；Anthropic 入站遇到带 `RawUpstream`
+  且为合法 JSON 的错误时按上游状态码原样写回。系统设置「上游错误策略」为 custom 时
+  仍以 custom 为准。透传关闭、OpenAI 协议入站、非 JSON 错误体保持原行为。
+- 提交：`07099dd4`（`fix(anthropic): 透传时把上游错误体原样回传客户端`）。
+- 代码：`llm/model.go`、`llm/transformer/anthropic/inbound.go`、
+  `internal/server/orchestrator/outbound.go`。
+- 迁移与测试：无迁移；`llm/transformer/anthropic/inbound_test.go`、
+  `internal/server/orchestrator/outbound_test.go`、`internal/server/api/chat_test.go`。
+  本机 Docker 真机链路（CLI 2.1.266 真实配置 → AxonHub → sssaiapi）验证：透传开时首个
+  400 原样回传、CLI 自动重试 200；custom 策略回自定义文案；透传关时首个请求即 200。
+- 同步上游注意：`llm/` 是独立模块，上游若改动 `ResponseError` 或 Anthropic 入站
+  `TransformError` 需重接；若上游自行实现错误透传，以上游为准并移除本字段。
+
 ### 迁移器把 beta10 排在 beta9 之前
 
 - 问题：`datamigrate` 用 Masterminds semver 比较版本，`beta10` 与 `beta9` 作为字母数字
