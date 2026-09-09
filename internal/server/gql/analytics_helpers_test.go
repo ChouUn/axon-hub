@@ -218,6 +218,8 @@ func TestQueryAnalyticsModelStatsCountsExecutionAttempts(t *testing.T) {
 		SetPromptTokens(2850).
 		SetPromptCachedTokens(570).
 		SetCompletionTokens(150).
+		SetCompletionReasoningTokens(40).
+		SetCompletionAudioTokens(10).
 		SetTotalTokens(3000).
 		SetTotalCost(3).
 		SaveX(ctx)

@@ -437,11 +437,11 @@ func (r *queryResolver) queryAnalyticsModelStats(
 			)
 			streamColumn := s.C(requestexecution.FieldStream)
 			completed := requestexecution.StatusCompleted
+			// completion_tokens already includes reasoning and audio tokens;
+			// adding them again double counts, see upstream 92f81b32.
 			outputTokensExpression := fmt.Sprintf(
-				"COALESCE(%s, 0) + COALESCE(%s, 0) + COALESCE(%s, 0)",
+				"COALESCE(%s, 0)",
 				usageTable.C(usagelog.FieldCompletionTokens),
-				usageTable.C(usagelog.FieldCompletionReasoningTokens),
-				usageTable.C(usagelog.FieldCompletionAudioTokens),
 			)
 
 			s.Select(
