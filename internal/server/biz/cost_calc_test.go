@@ -952,3 +952,181 @@ func mustDecimalPtr(s string) *decimal.Decimal {
 
 	return &d
 }
+
+func TestComputeUsageCost_VolumeTiers(t *testing.T) {
+	makeItems := func(multiplier int64) []objects.ModelPriceItem {
+		pricing := func(rate string) objects.Pricing {
+			value := decimal.RequireFromString(rate).Mul(decimal.NewFromInt(multiplier))
+			return objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: &value}
+		}
+
+		return []objects.ModelPriceItem{
+			{ItemCode: objects.PriceItemCodeUsage, Pricing: pricing("2")},
+			{ItemCode: objects.PriceItemCodeCompletion, Pricing: pricing("4")},
+			{ItemCode: objects.PriceItemCodePromptCachedToken, Pricing: pricing("0.5")},
+			{
+				ItemCode: objects.PriceItemCodeWriteCachedTokens,
+				Pricing:  pricing("3"),
+				PromptWriteCacheVariants: []objects.PromptWriteCacheVariant{
+					{VariantCode: objects.PromptWriteCacheVariantCode5Min, Pricing: pricing("3")},
+					{VariantCode: objects.PromptWriteCacheVariantCode1Hour, Pricing: pricing("4")},
+				},
+			},
+		}
+	}
+	price := objects.ModelPrice{
+		Items: makeItems(1),
+		VolumeTiers: []objects.ModelPriceVolumeTier{
+			{Above: 1000, Items: makeItems(2)},
+			{Above: 2000, Items: makeItems(3)},
+		},
+	}
+	require.NoError(t, price.Validate())
+
+	for _, tt := range []struct {
+		name       string
+		prompt     int64
+		wantInput  string
+		wantOutput string
+		wantRead   string
+		want5Min   string
+		want1Hour  string
+		wantTotal  string
+	}{
+		{"below first threshold", 999, "0.000198", "0.00004", "0.00035", "0.00045", "0.0002", "0.001238"},
+		{"at first threshold", 1000, "0.0002", "0.00004", "0.00035", "0.00045", "0.0002", "0.00124"},
+		{"above first threshold", 1001, "0.000404", "0.00008", "0.0007", "0.0009", "0.0004", "0.002484"},
+		{"at second threshold", 2000, "0.0044", "0.00008", "0.0007", "0.0009", "0.0004", "0.00648"},
+		{"above second threshold", 2001, "0.006606", "0.00012", "0.00105", "0.00135", "0.0006", "0.009726"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			usage := &llm.Usage{
+				PromptTokens:     tt.prompt,
+				CompletionTokens: 10,
+				TotalTokens:      tt.prompt + 10,
+				PromptTokensDetails: &llm.PromptTokensDetails{
+					CachedTokens:           700,
+					WriteCachedTokens:      200,
+					WriteCached5MinTokens:  150,
+					WriteCached1HourTokens: 50,
+				},
+			}
+			items, total := ComputeUsageCost(usage, price, time.Time{})
+			require.Equal(t, tt.wantTotal, total.String())
+
+			type itemKey struct {
+				code    objects.PriceItemCode
+				variant objects.PromptWriteCacheVariantCode
+			}
+			got := make(map[itemKey]string, len(items))
+			for _, item := range items {
+				got[itemKey{item.ItemCode, item.PromptWriteCacheVariantCode}] = item.Subtotal.String()
+			}
+
+			require.Equal(t, map[itemKey]string{
+				{objects.PriceItemCodeUsage, ""}:                                                   tt.wantInput,
+				{objects.PriceItemCodeCompletion, ""}:                                              tt.wantOutput,
+				{objects.PriceItemCodePromptCachedToken, ""}:                                       tt.wantRead,
+				{objects.PriceItemCodeWriteCachedTokens, objects.PromptWriteCacheVariantCode5Min}:  tt.want5Min,
+				{objects.PriceItemCodeWriteCachedTokens, objects.PromptWriteCacheVariantCode1Hour}: tt.want1Hour,
+			}, got)
+		})
+	}
+
+	t.Run("aggregate cache writes use the selected tier default", func(t *testing.T) {
+		usage := &llm.Usage{
+			PromptTokens: 1001,
+			PromptTokensDetails: &llm.PromptTokensDetails{
+				WriteCachedTokens: 200,
+			},
+		}
+		items, total := ComputeUsageCost(usage, price, time.Time{})
+		require.Equal(t, "0.004404", total.String())
+		for _, item := range items {
+			if item.ItemCode == objects.PriceItemCodeWriteCachedTokens {
+				require.Equal(t, "0.0012", item.Subtotal.String())
+				require.Empty(t, item.PromptWriteCacheVariantCode)
+				return
+			}
+		}
+
+		t.Fatal("missing aggregate cache write cost")
+	})
+}
+
+func TestComputeUsageCost_VolumeTiersSchedulePrecedence(t *testing.T) {
+	itemsAtRate := func(rate string) []objects.ModelPriceItem {
+		return []objects.ModelPriceItem{{
+			ItemCode: objects.PriceItemCodeUsage,
+			Pricing: objects.Pricing{
+				Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: mustDecimalPtr(rate),
+			},
+		}}
+	}
+	price := objects.ModelPrice{
+		Items: itemsAtRate("2"),
+		VolumeTiers: []objects.ModelPriceVolumeTier{
+			{Above: 1000, Items: itemsAtRate("4")},
+		},
+		Schedule: &objects.PriceSchedule{
+			Timezone: "UTC",
+			Overrides: []objects.PriceOverride{{
+				Name: "Night discount",
+				When: objects.OverrideWhen{
+					DailyTime: &objects.DailyTimeRange{Start: "00:00", End: "08:00"},
+				},
+				Items: itemsAtRate("1"),
+			}},
+		},
+	}
+	require.NoError(t, price.Validate())
+	usage := &llm.Usage{PromptTokens: 2000}
+
+	_, nightCost := ComputeUsageCost(usage, price, time.Date(2026, 7, 21, 3, 0, 0, 0, time.UTC))
+	require.Equal(t, "0.002", nightCost.String())
+	_, dayCost := ComputeUsageCost(usage, price, time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC))
+	require.Equal(t, "0.008", dayCost.String())
+}
+
+func TestComputeUsageCost_LegacyItemTiers(t *testing.T) {
+	for _, tt := range []struct {
+		mode objects.PricingMode
+		want string
+	}{
+		{objects.PricingModeVolume, "0.0305"},
+		{objects.PricingModeTiered, "0.0205"},
+	} {
+		t.Run(string(tt.mode), func(t *testing.T) {
+			threshold := int64(1000)
+			price := objects.ModelPrice{Items: []objects.ModelPriceItem{
+				{
+					ItemCode: objects.PriceItemCodeUsage,
+					Pricing: objects.Pricing{
+						Mode: tt.mode,
+						UsageTiered: &objects.TieredPricing{Tiers: []objects.PriceTier{
+							{UpTo: &threshold, PricePerUnit: decimal.NewFromInt(1)},
+							{PricePerUnit: decimal.NewFromInt(2)},
+						}},
+					},
+				},
+				{
+					ItemCode: objects.PriceItemCodeCompletion,
+					Pricing: objects.Pricing{
+						Mode: tt.mode,
+						UsageTiered: &objects.TieredPricing{Tiers: []objects.PriceTier{
+							{UpTo: &threshold, PricePerUnit: decimal.NewFromInt(10)},
+							{PricePerUnit: decimal.NewFromInt(20)},
+						}},
+					},
+				},
+			}}
+			require.NoError(t, price.Validate())
+			usage := &llm.Usage{
+				PromptTokens: 2000, CompletionTokens: 1500,
+				PromptTokensDetails: &llm.PromptTokensDetails{CachedTokens: 1500},
+			}
+			_, total := ComputeUsageCost(usage, price, time.Time{})
+			require.Equal(t, tt.want, total.String())
+		})
+	}
+}

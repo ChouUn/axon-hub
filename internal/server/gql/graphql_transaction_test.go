@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/99designs/gqlgen/client"
+	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 
 	"github.com/looplj/axonhub/internal/authz"
@@ -64,7 +66,7 @@ func TestBulkImportChannelsUsesPerRowTransactionsForAnyOperationName(t *testing.
 					SetName(modelID).
 					SetIcon("test").
 					SetGroup("test").
-					SetModelCard(&objects.ModelCard{Cost: objects.ModelCardCost{Input: 1}}).
+					SetModelCard(&objects.ModelCard{Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}}}).
 					SetSettings(&objects.ModelSettings{}).
 					SetStatus(model.StatusEnabled).
 					Save(ctx)

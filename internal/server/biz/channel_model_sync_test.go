@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -73,15 +74,10 @@ func TestChannelService_SyncChannelModelsAutoConfiguresMissingPrices(t *testing.
 		asyncReloadDisabled = previousAsyncReloadDisabled
 	})
 
-	createModelLibraryEntry(t, ctx, client, "existing-model", model.StatusEnabled, objects.ModelCardCost{Input: 99})
-	createModelLibraryEntry(t, ctx, client, "priced-model", model.StatusDisabled, objects.ModelCardCost{
-		Input:      1.25,
-		Output:     5,
-		CacheRead:  0.25,
-		CacheWrite: 1.5,
-	})
-	createModelLibraryEntry(t, ctx, client, "no-cost-model", model.StatusEnabled, objects.ModelCardCost{})
-	createModelLibraryEntry(t, ctx, client, "archived-model", model.StatusArchived, objects.ModelCardCost{Input: 2})
+	createModelLibraryEntry(t, ctx, client, "existing-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(99))}}}})
+	createModelLibraryEntry(t, ctx, client, "priced-model", model.StatusDisabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1.25))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(5))}}, {ItemCode: objects.PriceItemCodePromptCachedToken, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.25))}}, {ItemCode: objects.PriceItemCodeWriteCachedTokens, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1.5))}}}})
+	createModelLibraryEntry(t, ctx, client, "no-cost-model", model.StatusEnabled, nil)
+	createModelLibraryEntry(t, ctx, client, "archived-model", model.StatusArchived, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}}})
 
 	ch, err := client.Channel.Create().
 		SetType(channel.TypeOpenai).
@@ -168,7 +164,7 @@ func TestChannelService_SyncChannelModelsAutoConfiguresMissingPrices(t *testing.
 	noCostModel, err := client.Model.Query().Where(model.ModelID("no-cost-model")).Only(ctx)
 	require.NoError(t, err)
 	_, err = client.Model.UpdateOne(noCostModel).
-		SetModelCard(&objects.ModelCard{Cost: objects.ModelCardCost{Input: 3}}).
+		SetModelCard(&objects.ModelCard{Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(3))}}}}}).
 		Save(ctx)
 	require.NoError(t, err)
 
@@ -336,7 +332,7 @@ func TestChannelService_PeriodicModelSyncNotifiesOnceForChangedBatch(t *testing.
 		asyncReloadDisabled = previousAsyncReloadDisabled
 	})
 
-	createModelLibraryEntry(t, ctx, client, "batch-model", model.StatusEnabled, objects.ModelCardCost{Input: 1})
+	createModelLibraryEntry(t, ctx, client, "batch-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}})
 	for i := 1; i <= 2; i++ {
 		_, err := client.Channel.Create().
 			SetType(channel.TypeOpenai).

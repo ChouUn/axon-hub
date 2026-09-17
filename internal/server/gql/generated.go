@@ -902,6 +902,7 @@ type ComplexityRoot struct {
 		LastUpdated func(childComplexity int) int
 		Limit       func(childComplexity int) int
 		Modalities  func(childComplexity int) int
+		Price       func(childComplexity int) int
 		Reasoning   func(childComplexity int) int
 		ReleaseDate func(childComplexity int) int
 		Temperature func(childComplexity int) int
@@ -976,14 +977,20 @@ type ComplexityRoot struct {
 	}
 
 	ModelPrice struct {
-		Items    func(childComplexity int) int
-		Schedule func(childComplexity int) int
+		Items       func(childComplexity int) int
+		Schedule    func(childComplexity int) int
+		VolumeTiers func(childComplexity int) int
 	}
 
 	ModelPriceItem struct {
 		ItemCode                 func(childComplexity int) int
 		Pricing                  func(childComplexity int) int
 		PromptWriteCacheVariants func(childComplexity int) int
+	}
+
+	ModelPriceVolumeTier struct {
+		Above func(childComplexity int) int
+		Items func(childComplexity int) int
 	}
 
 	ModelProtocol struct {
@@ -5671,6 +5678,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ModelCard.Modalities(childComplexity), true
+	case "ModelCard.price":
+		if e.complexity.ModelCard.Price == nil {
+			break
+		}
+
+		return e.complexity.ModelCard.Price(childComplexity), true
 	case "ModelCard.reasoning":
 		if e.complexity.ModelCard.Reasoning == nil {
 			break
@@ -5906,6 +5919,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ModelPrice.Schedule(childComplexity), true
+	case "ModelPrice.volumeTiers":
+		if e.complexity.ModelPrice.VolumeTiers == nil {
+			break
+		}
+
+		return e.complexity.ModelPrice.VolumeTiers(childComplexity), true
 
 	case "ModelPriceItem.itemCode":
 		if e.complexity.ModelPriceItem.ItemCode == nil {
@@ -5925,6 +5944,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ModelPriceItem.PromptWriteCacheVariants(childComplexity), true
+
+	case "ModelPriceVolumeTier.above":
+		if e.complexity.ModelPriceVolumeTier.Above == nil {
+			break
+		}
+
+		return e.complexity.ModelPriceVolumeTier.Above(childComplexity), true
+	case "ModelPriceVolumeTier.items":
+		if e.complexity.ModelPriceVolumeTier.Items == nil {
+			break
+		}
+
+		return e.complexity.ModelPriceVolumeTier.Items(childComplexity), true
 
 	case "ModelProtocol.apiFormats":
 		if e.complexity.ModelProtocol.APIFormats == nil {
@@ -12039,7 +12071,6 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputLoadApiKeyProfileTemplateInput,
 		ec.unmarshalInputModelAssociationInput,
 		ec.unmarshalInputModelAssociationWhenInput,
-		ec.unmarshalInputModelCardCostInput,
 		ec.unmarshalInputModelCardInput,
 		ec.unmarshalInputModelCardLimitInput,
 		ec.unmarshalInputModelCardModalitiesInput,
@@ -12049,6 +12080,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputModelOrder,
 		ec.unmarshalInputModelPriceInput,
 		ec.unmarshalInputModelPriceItemInput,
+		ec.unmarshalInputModelPriceVolumeTierInput,
 		ec.unmarshalInputModelProtocolInput,
 		ec.unmarshalInputModelSettingsInput,
 		ec.unmarshalInputModelWhereInput,
@@ -23582,6 +23614,8 @@ func (ec *executionContext) fieldContext_ChannelModelPrice_price(_ context.Conte
 			switch field.Name {
 			case "items":
 				return ec.fieldContext_ModelPrice_items(ctx, field)
+			case "volumeTiers":
+				return ec.fieldContext_ModelPrice_volumeTiers(ctx, field)
 			case "schedule":
 				return ec.fieldContext_ModelPrice_schedule(ctx, field)
 			}
@@ -24149,6 +24183,8 @@ func (ec *executionContext) fieldContext_ChannelModelPriceVersion_price(_ contex
 			switch field.Name {
 			case "items":
 				return ec.fieldContext_ModelPrice_items(ctx, field)
+			case "volumeTiers":
+				return ec.fieldContext_ModelPrice_volumeTiers(ctx, field)
 			case "schedule":
 				return ec.fieldContext_ModelPrice_schedule(ctx, field)
 			}
@@ -30913,6 +30949,8 @@ func (ec *executionContext) fieldContext_Model_modelCard(_ context.Context, fiel
 				return ec.fieldContext_ModelCard_vision(ctx, field)
 			case "cost":
 				return ec.fieldContext_ModelCard_cost(ctx, field)
+			case "price":
+				return ec.fieldContext_ModelCard_price(ctx, field)
 			case "limit":
 				return ec.fieldContext_ModelCard_limit(ctx, field)
 			case "knowledge":
@@ -31649,6 +31687,43 @@ func (ec *executionContext) fieldContext_ModelCard_cost(_ context.Context, field
 				return ec.fieldContext_ModelCardCost_cacheWrite(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type ModelCardCost", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelCard_price(ctx context.Context, field graphql.CollectedField, obj *objects.ModelCard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelCard_price,
+		func(ctx context.Context) (any, error) {
+			return obj.Price, nil
+		},
+		nil,
+		ec.marshalOModelPrice2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPrice,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelCard_price(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelCard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "items":
+				return ec.fieldContext_ModelPrice_items(ctx, field)
+			case "volumeTiers":
+				return ec.fieldContext_ModelPrice_volumeTiers(ctx, field)
+			case "schedule":
+				return ec.fieldContext_ModelPrice_schedule(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ModelPrice", field.Name)
 		},
 	}
 	return fc, nil
@@ -32809,6 +32884,41 @@ func (ec *executionContext) fieldContext_ModelPrice_items(_ context.Context, fie
 	return fc, nil
 }
 
+func (ec *executionContext) _ModelPrice_volumeTiers(ctx context.Context, field graphql.CollectedField, obj *objects.ModelPrice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelPrice_volumeTiers,
+		func(ctx context.Context) (any, error) {
+			return obj.VolumeTiers, nil
+		},
+		nil,
+		ec.marshalOModelPriceVolumeTier2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPriceVolumeTierᚄ,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelPrice_volumeTiers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelPrice",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "above":
+				return ec.fieldContext_ModelPriceVolumeTier_above(ctx, field)
+			case "items":
+				return ec.fieldContext_ModelPriceVolumeTier_items(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ModelPriceVolumeTier", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _ModelPrice_schedule(ctx context.Context, field graphql.CollectedField, obj *objects.ModelPrice) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -32942,6 +33052,72 @@ func (ec *executionContext) fieldContext_ModelPriceItem_promptWriteCacheVariants
 				return ec.fieldContext_PromptWriteCacheVariant_pricing(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type PromptWriteCacheVariant", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelPriceVolumeTier_above(ctx context.Context, field graphql.CollectedField, obj *objects.ModelPriceVolumeTier) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelPriceVolumeTier_above,
+		func(ctx context.Context) (any, error) {
+			return obj.Above, nil
+		},
+		nil,
+		ec.marshalNInt2int64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelPriceVolumeTier_above(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelPriceVolumeTier",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelPriceVolumeTier_items(ctx context.Context, field graphql.CollectedField, obj *objects.ModelPriceVolumeTier) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelPriceVolumeTier_items,
+		func(ctx context.Context) (any, error) {
+			return obj.Items, nil
+		},
+		nil,
+		ec.marshalNModelPriceItem2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPriceItemᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelPriceVolumeTier_items(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelPriceVolumeTier",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "itemCode":
+				return ec.fieldContext_ModelPriceItem_itemCode(ctx, field)
+			case "pricing":
+				return ec.fieldContext_ModelPriceItem_pricing(ctx, field)
+			case "promptWriteCacheVariants":
+				return ec.fieldContext_ModelPriceItem_promptWriteCacheVariants(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ModelPriceItem", field.Name)
 		},
 	}
 	return fc, nil
@@ -74440,54 +74616,6 @@ func (ec *executionContext) unmarshalInputModelAssociationWhenInput(ctx context.
 	return it, nil
 }
 
-func (ec *executionContext) unmarshalInputModelCardCostInput(ctx context.Context, obj any) (objects.ModelCardCost, error) {
-	var it objects.ModelCardCost
-	asMap := map[string]any{}
-	for k, v := range obj.(map[string]any) {
-		asMap[k] = v
-	}
-
-	fieldsInOrder := [...]string{"input", "output", "cacheRead", "cacheWrite"}
-	for _, k := range fieldsInOrder {
-		v, ok := asMap[k]
-		if !ok {
-			continue
-		}
-		switch k {
-		case "input":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("input"))
-			data, err := ec.unmarshalOFloat2float64(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.Input = data
-		case "output":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("output"))
-			data, err := ec.unmarshalOFloat2float64(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.Output = data
-		case "cacheRead":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("cacheRead"))
-			data, err := ec.unmarshalOFloat2float64(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.CacheRead = data
-		case "cacheWrite":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("cacheWrite"))
-			data, err := ec.unmarshalOFloat2float64(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.CacheWrite = data
-		}
-	}
-
-	return it, nil
-}
-
 func (ec *executionContext) unmarshalInputModelCardInput(ctx context.Context, obj any) (objects.ModelCard, error) {
 	var it objects.ModelCard
 	asMap := map[string]any{}
@@ -74495,7 +74623,7 @@ func (ec *executionContext) unmarshalInputModelCardInput(ctx context.Context, ob
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"reasoning", "toolCall", "temperature", "modalities", "vision", "cost", "limit", "knowledge", "releaseDate", "lastUpdated"}
+	fieldsInOrder := [...]string{"reasoning", "toolCall", "temperature", "modalities", "vision", "price", "limit", "knowledge", "releaseDate", "lastUpdated"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -74537,13 +74665,13 @@ func (ec *executionContext) unmarshalInputModelCardInput(ctx context.Context, ob
 				return it, err
 			}
 			it.Vision = data
-		case "cost":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("cost"))
-			data, err := ec.unmarshalOModelCardCostInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelCardCost(ctx, v)
+		case "price":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("price"))
+			data, err := ec.unmarshalOModelPriceInput2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPrice(ctx, v)
 			if err != nil {
 				return it, err
 			}
-			it.Cost = data
+			it.Price = data
 		case "limit":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("limit"))
 			data, err := ec.unmarshalOModelCardLimitInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelCardLimit(ctx, v)
@@ -74793,7 +74921,7 @@ func (ec *executionContext) unmarshalInputModelPriceInput(ctx context.Context, o
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"items", "schedule"}
+	fieldsInOrder := [...]string{"items", "volumeTiers", "schedule"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -74807,6 +74935,13 @@ func (ec *executionContext) unmarshalInputModelPriceInput(ctx context.Context, o
 				return it, err
 			}
 			it.Items = data
+		case "volumeTiers":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("volumeTiers"))
+			data, err := ec.unmarshalOModelPriceVolumeTierInput2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPriceVolumeTierᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.VolumeTiers = data
 		case "schedule":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("schedule"))
 			data, err := ec.unmarshalOPriceScheduleInput2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐPriceSchedule(ctx, v)
@@ -74855,6 +74990,40 @@ func (ec *executionContext) unmarshalInputModelPriceItemInput(ctx context.Contex
 				return it, err
 			}
 			it.PromptWriteCacheVariants = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputModelPriceVolumeTierInput(ctx context.Context, obj any) (objects.ModelPriceVolumeTier, error) {
+	var it objects.ModelPriceVolumeTier
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"above", "items"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "above":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("above"))
+			data, err := ec.unmarshalNInt2int64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Above = data
+		case "items":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("items"))
+			data, err := ec.unmarshalNModelPriceItemInput2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPriceItemᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Items = data
 		}
 	}
 
@@ -99185,6 +99354,8 @@ func (ec *executionContext) _ModelCard(ctx context.Context, sel ast.SelectionSet
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "price":
+			out.Values[i] = ec._ModelCard_price(ctx, field, obj)
 		case "limit":
 			out.Values[i] = ec._ModelCard_limit(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -99778,6 +99949,8 @@ func (ec *executionContext) _ModelPrice(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "volumeTiers":
+			out.Values[i] = ec._ModelPrice_volumeTiers(ctx, field, obj)
 		case "schedule":
 			out.Values[i] = ec._ModelPrice_schedule(ctx, field, obj)
 		default:
@@ -99826,6 +99999,50 @@ func (ec *executionContext) _ModelPriceItem(ctx context.Context, sel ast.Selecti
 			}
 		case "promptWriteCacheVariants":
 			out.Values[i] = ec._ModelPriceItem_promptWriteCacheVariants(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var modelPriceVolumeTierImplementors = []string{"ModelPriceVolumeTier"}
+
+func (ec *executionContext) _ModelPriceVolumeTier(ctx context.Context, sel ast.SelectionSet, obj *objects.ModelPriceVolumeTier) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, modelPriceVolumeTierImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ModelPriceVolumeTier")
+		case "above":
+			out.Values[i] = ec._ModelPriceVolumeTier_above(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "items":
+			out.Values[i] = ec._ModelPriceVolumeTier_items(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -116533,6 +116750,15 @@ func (ec *executionContext) unmarshalNModelPriceItemInput2ᚕgithubᚗcomᚋloop
 	return res, nil
 }
 
+func (ec *executionContext) marshalNModelPriceVolumeTier2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPriceVolumeTier(ctx context.Context, sel ast.SelectionSet, v objects.ModelPriceVolumeTier) graphql.Marshaler {
+	return ec._ModelPriceVolumeTier(ctx, sel, &v)
+}
+
+func (ec *executionContext) unmarshalNModelPriceVolumeTierInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPriceVolumeTier(ctx context.Context, v any) (objects.ModelPriceVolumeTier, error) {
+	res, err := ec.unmarshalInputModelPriceVolumeTierInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) marshalNModelProtocol2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelProtocol(ctx context.Context, sel ast.SelectionSet, v objects.ModelProtocol) graphql.Marshaler {
 	return ec._ModelProtocol(ctx, sel, &v)
 }
@@ -122246,17 +122472,6 @@ func (ec *executionContext) unmarshalOFilterConditionInput2ᚖgithubᚗcomᚋloo
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
-func (ec *executionContext) unmarshalOFloat2float64(ctx context.Context, v any) (float64, error) {
-	res, err := graphql.UnmarshalFloatContext(ctx, v)
-	return res, graphql.ErrorOnPath(ctx, err)
-}
-
-func (ec *executionContext) marshalOFloat2float64(ctx context.Context, sel ast.SelectionSet, v float64) graphql.Marshaler {
-	_ = sel
-	res := graphql.MarshalFloatContext(v)
-	return graphql.WrapContextMarshaler(ctx, res)
-}
-
 func (ec *executionContext) unmarshalOFloat2ᚕfloat64ᚄ(ctx context.Context, v any) ([]float64, error) {
 	if v == nil {
 		return nil, nil
@@ -122676,11 +122891,6 @@ func (ec *executionContext) unmarshalOModelAssociationWhenInput2ᚖgithubᚗcom�
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
-func (ec *executionContext) unmarshalOModelCardCostInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelCardCost(ctx context.Context, v any) (objects.ModelCardCost, error) {
-	res, err := ec.unmarshalInputModelCardCostInput(ctx, v)
-	return res, graphql.ErrorOnPath(ctx, err)
-}
-
 func (ec *executionContext) unmarshalOModelCardInput2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelCard(ctx context.Context, v any) (*objects.ModelCard, error) {
 	if v == nil {
 		return nil, nil
@@ -122838,6 +123048,86 @@ func (ec *executionContext) unmarshalOModelOrder2ᚖgithubᚗcomᚋloopljᚋaxon
 	}
 	res, err := ec.unmarshalInputModelOrder(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOModelPrice2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPrice(ctx context.Context, sel ast.SelectionSet, v *objects.ModelPrice) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._ModelPrice(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOModelPriceInput2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPrice(ctx context.Context, v any) (*objects.ModelPrice, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputModelPriceInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOModelPriceVolumeTier2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPriceVolumeTierᚄ(ctx context.Context, sel ast.SelectionSet, v []objects.ModelPriceVolumeTier) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNModelPriceVolumeTier2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPriceVolumeTier(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) unmarshalOModelPriceVolumeTierInput2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPriceVolumeTierᚄ(ctx context.Context, v any) ([]objects.ModelPriceVolumeTier, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]objects.ModelPriceVolumeTier, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNModelPriceVolumeTierInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelPriceVolumeTier(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
 }
 
 func (ec *executionContext) marshalOModelProtocol2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelProtocolᚄ(ctx context.Context, sel ast.SelectionSet, v []objects.ModelProtocol) graphql.Marshaler {

@@ -4,8 +4,8 @@ import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
-import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 
@@ -74,29 +74,71 @@ type Tier = NonNullable<NonNullable<NonNullable<PriceItem['pricing']['usageTiere
 type ModelPriceEditorProps = {
   control: Control<PriceEditorFormValues>;
   priceIndex: number;
+  itemsPath?: string;
+  perUnitOnly?: boolean;
+  lockStructure?: boolean;
   currencyCode?: string;
   hideHeader?: boolean;
-  onAddItem: (priceIndex: number) => void;
-  onRemoveItem: (priceIndex: number, itemIndex: number) => void;
-  onAddVariant: (priceIndex: number, itemIndex: number) => void;
-  onRemoveVariant: (priceIndex: number, itemIndex: number, variantIndex: number) => void;
+  onAddItem?: (priceIndex: number) => void;
+  onRemoveItem?: (priceIndex: number, itemIndex: number) => void;
+  onAddVariant?: (priceIndex: number, itemIndex: number) => void;
+  onRemoveVariant?: (priceIndex: number, itemIndex: number, variantIndex: number) => void;
 };
 
 export const ModelPriceEditor = memo(function ChannelModelPriceEditor({
   control,
   priceIndex,
+  itemsPath = `prices.${priceIndex}.price.items`,
+  perUnitOnly,
+  lockStructure,
   currencyCode,
   hideHeader,
-  onAddItem,
-  onRemoveItem,
-  onAddVariant,
-  onRemoveVariant,
+  onAddItem: addItem,
+  onRemoveItem: removeItem,
+  onAddVariant: addVariant,
+  onRemoveVariant: removeVariant,
 }: ModelPriceEditorProps) {
   const { t } = useTranslation();
   const { fields } = useFieldArray({
     control,
-    name: asFieldArrayPath(`prices.${priceIndex}.price.items`),
+    name: asFieldArrayPath(`${itemsPath}`),
   });
+  const items = usePriceEditorWatch<PriceItem[] | undefined>(control, itemsPath) ?? [];
+  const allItemsAdded = priceItemCodes.every((code) => items.some((item) => item.itemCode === code));
+  const { getValues, setValue } = useFormContext<PriceEditorFormValues>();
+  const updateItems = (update: (items: PriceItem[]) => PriceItem[]) => {
+    const items = (getValues(asFieldPath(itemsPath)) as PriceItem[] | undefined) ?? [];
+    setValue(asFieldPath(itemsPath), update(items), { shouldDirty: true, shouldValidate: true });
+  };
+  const onAddItem =
+    addItem ??
+    (() =>
+      updateItems((items) => {
+        const itemCode = priceItemCodes.find((code) => !items.some((item) => item.itemCode === code));
+        return itemCode ? [...items, { itemCode, pricing: { mode: 'usage_per_unit', usagePerUnit: '' } }] : items;
+      }));
+  const onRemoveItem = removeItem ?? ((_: number, index: number) => updateItems((items) => items.filter((_, i) => i !== index)));
+  const onAddVariant =
+    addVariant ??
+    ((_: number, index: number) =>
+      updateItems((items) =>
+        items.map((item, i) => {
+          if (i !== index) return item;
+          const variants = item.promptWriteCacheVariants ?? [];
+          const variantCode = promptWriteCacheVariantCodes.find((code) => !variants.some((variant) => variant.variantCode === code));
+          return variantCode
+            ? { ...item, promptWriteCacheVariants: [...variants, { variantCode, pricing: { mode: 'usage_per_unit', usagePerUnit: '' } }] }
+            : item;
+        })
+      ));
+  const onRemoveVariant =
+    removeVariant ??
+    ((_: number, index: number, variantIndex: number) =>
+      updateItems((items) =>
+        items.map((item, i) =>
+          i === index ? { ...item, promptWriteCacheVariants: item.promptWriteCacheVariants?.filter((_, j) => j !== variantIndex) } : item
+        )
+      ));
 
   return (
     <div className='min-w-0 space-y-4'>
@@ -105,12 +147,14 @@ export const ModelPriceEditor = memo(function ChannelModelPriceEditor({
           <Label className='text-sm font-medium'>{t('price.items')}</Label>
         </div>
       )}
-      {/* <Separator /> */}
       {fields.map((field, itemIndex) => (
         <PriceItemRow
           key={field.id}
           control={control}
           priceIndex={priceIndex}
+          itemsPath={itemsPath}
+          perUnitOnly={perUnitOnly}
+          lockStructure={lockStructure}
           itemIndex={itemIndex}
           itemCount={fields.length}
           currencyCode={currencyCode}
@@ -126,10 +170,12 @@ export const ModelPriceEditor = memo(function ChannelModelPriceEditor({
             variant='outline'
             className='w-full'
             size='sm'
+            disabled={lockStructure || allItemsAdded}
             onClick={() => onAddItem(priceIndex)}
-            title={t('price.addItem')}
+            title={t(lockStructure ? 'price.volume.structureLocked' : allItemsAdded ? 'price.allItemsAdded' : 'price.addItem')}
           >
             <IconPlus size={14} />
+            {t(allItemsAdded ? 'price.allItemsAdded' : 'price.addItem')}
           </Button>
         </div>
       </div>
@@ -140,6 +186,9 @@ export const ModelPriceEditor = memo(function ChannelModelPriceEditor({
 const PriceItemRow = memo(function PriceItemRow({
   control,
   priceIndex,
+  itemsPath,
+  perUnitOnly,
+  lockStructure,
   itemIndex,
   itemCount,
   currencyCode,
@@ -149,26 +198,23 @@ const PriceItemRow = memo(function PriceItemRow({
 }: {
   control: Control<PriceEditorFormValues>;
   priceIndex: number;
+  itemsPath: string;
+  perUnitOnly?: boolean;
+  lockStructure?: boolean;
   itemIndex: number;
-  itemCount: number;
   currencyCode?: string;
+  itemCount: number;
   onRemoveItem: (priceIndex: number, itemIndex: number) => void;
   onAddVariant: (priceIndex: number, itemIndex: number) => void;
   onRemoveVariant: (priceIndex: number, itemIndex: number, variantIndex: number) => void;
 }) {
   const { t } = useTranslation();
-  const itemCode = usePriceEditorWatch<PriceItem['itemCode'] | undefined>(
-    control,
-    `prices.${priceIndex}.price.items.${itemIndex}.itemCode`
-  );
-  const pricingMode = usePriceEditorWatch<PriceItem['pricing']['mode'] | undefined>(
-    control,
-    `prices.${priceIndex}.price.items.${itemIndex}.pricing.mode`
-  );
-  const items = usePriceEditorWatch<PriceItem[] | undefined>(control, `prices.${priceIndex}.price.items`);
+  const itemCode = usePriceEditorWatch<PriceItem['itemCode'] | undefined>(control, `${itemsPath}.${itemIndex}.itemCode`);
+  const pricingMode = usePriceEditorWatch<PriceItem['pricing']['mode'] | undefined>(control, `${itemsPath}.${itemIndex}.pricing.mode`);
+  const items = usePriceEditorWatch<PriceItem[] | undefined>(control, `${itemsPath}`);
   const { fields: variantFields } = useFieldArray({
     control,
-    name: asFieldArrayPath(`prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants`),
+    name: asFieldArrayPath(`${itemsPath}.${itemIndex}.promptWriteCacheVariants`),
   });
   const {
     fields: tierFields,
@@ -176,12 +222,9 @@ const PriceItemRow = memo(function PriceItemRow({
     remove: removeTier,
   } = useFieldArray({
     control,
-    name: asFieldArrayPath(`prices.${priceIndex}.price.items.${itemIndex}.pricing.usageTiered.tiers`),
+    name: asFieldArrayPath(`${itemsPath}.${itemIndex}.pricing.usageTiered.tiers`),
   });
-  const tiers = usePriceEditorWatch<Tier[] | undefined>(
-    control,
-    `prices.${priceIndex}.price.items.${itemIndex}.pricing.usageTiered.tiers`
-  );
+  const tiers = usePriceEditorWatch<Tier[] | undefined>(control, `${itemsPath}.${itemIndex}.pricing.usageTiered.tiers`);
   const { setValue } = useFormContext<PriceEditorFormValues>();
   const requiredMessage = t('price.validation.priceRequired');
 
@@ -196,14 +239,12 @@ const PriceItemRow = memo(function PriceItemRow({
     const lastIndex = tiers.length - 1;
     if (tiers[lastIndex]?.upTo !== null) {
       setValue(
-        asFieldPath(
-          `prices.${priceIndex}.price.items.${itemIndex}.pricing.usageTiered.tiers.${lastIndex}.upTo`
-        ) as FieldPath<PriceEditorFormValues>,
+        asFieldPath(`${itemsPath}.${itemIndex}.pricing.usageTiered.tiers.${lastIndex}.upTo`) as FieldPath<PriceEditorFormValues>,
         null,
         { shouldDirty: true, shouldValidate: true }
       );
     }
-  }, [itemIndex, priceIndex, setValue, tiers]);
+  }, [itemIndex, itemsPath, setValue, tiers]);
 
   const availableItemCodes = priceItemCodes.filter((code) => {
     if (code === itemCode) return true;
@@ -225,10 +266,10 @@ const PriceItemRow = memo(function PriceItemRow({
         <div className='min-w-0 pt-0 sm:pt-0'>
           <FormField
             control={control}
-            name={asFieldPath(`prices.${priceIndex}.price.items.${itemIndex}.itemCode`)}
+            name={asFieldPath(`${itemsPath}.${itemIndex}.itemCode`)}
             render={({ field }) => (
               <FormItem>
-                <Select onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
+                <Select disabled={lockStructure} onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
                   <FormControl>
                     <SelectTrigger size='sm' className='h-8 w-full min-w-0'>
                       <SelectValue placeholder={t('price.itemCode')} className='truncate' />
@@ -250,10 +291,10 @@ const PriceItemRow = memo(function PriceItemRow({
         <div className='min-w-0'>
           <FormField
             control={control}
-            name={asFieldPath(`prices.${priceIndex}.price.items.${itemIndex}.pricing.mode`)}
+            name={asFieldPath(`${itemsPath}.${itemIndex}.pricing.mode`)}
             render={({ field }) => (
               <FormItem>
-                <Select onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
+                <Select disabled={perUnitOnly} onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
                   <FormControl>
                     <SelectTrigger size='sm' className='h-8 w-full min-w-0'>
                       <SelectValue placeholder={t('price.mode')} className='truncate' />
@@ -274,7 +315,7 @@ const PriceItemRow = memo(function PriceItemRow({
           {pricingMode === 'usage_per_unit' && (
             <FormField
               control={control}
-              name={asFieldPath(`prices.${priceIndex}.price.items.${itemIndex}.pricing.usagePerUnit`)}
+              name={asFieldPath(`${itemsPath}.${itemIndex}.pricing.usagePerUnit`)}
               render={({ field }) => (
                 <FormItem className='relative'>
                   <FormControl>
@@ -284,8 +325,8 @@ const PriceItemRow = memo(function PriceItemRow({
                       )}
                       <Input
                         {...field}
-                        value={(field.value as unknown as string | null | undefined) || ''}
-                        placeholder='0.00'
+                        value={(field.value as unknown as string | null | undefined) ?? ''}
+                        placeholder={t('price.enterPrice')}
                         className={`h-8 text-right ${currencyPrefix ? 'pl-8' : ''}`}
                       />
                     </div>
@@ -299,7 +340,7 @@ const PriceItemRow = memo(function PriceItemRow({
           {pricingMode === 'flat_fee' && (
             <FormField
               control={control}
-              name={asFieldPath(`prices.${priceIndex}.price.items.${itemIndex}.pricing.flatFee`)}
+              name={asFieldPath(`${itemsPath}.${itemIndex}.pricing.flatFee`)}
               render={({ field }) => (
                 <FormItem className='relative'>
                   <FormControl>
@@ -309,8 +350,8 @@ const PriceItemRow = memo(function PriceItemRow({
                       )}
                       <Input
                         {...field}
-                        value={(field.value as unknown as string | null | undefined) || ''}
-                        placeholder='0.00'
+                        value={(field.value as unknown as string | null | undefined) ?? ''}
+                        placeholder={t('price.enterPrice')}
                         className={`h-8 text-right ${currencyPrefix ? 'pl-8' : ''}`}
                       />
                     </div>
@@ -328,7 +369,7 @@ const PriceItemRow = memo(function PriceItemRow({
             variant='ghost'
             size='icon-sm'
             className='text-destructive'
-            disabled={itemCount <= 1}
+            disabled={lockStructure || itemCount <= 1}
             onClick={() => onRemoveItem(priceIndex, itemIndex)}
           >
             <IconTrash size={14} />
@@ -336,7 +377,7 @@ const PriceItemRow = memo(function PriceItemRow({
         </div>
 
         {(pricingMode === 'usage_tiered' || pricingMode === 'usage_volume') && (
-          <div className='col-span-full ml-4 mt-2 min-w-0 space-y-2 rounded-md border border-dashed p-3'>
+          <div className='col-span-full mt-2 ml-4 min-w-0 space-y-2 rounded-md border border-dashed p-3'>
             <div className='text-muted-foreground flex items-center justify-between text-xs'>
               <span>{t('price.tiers')}</span>
               <Button type='button' variant='outline' size='icon-sm' onClick={() => appendTier({ upTo: null, pricePerUnit: '0' })}>
@@ -347,7 +388,7 @@ const PriceItemRow = memo(function PriceItemRow({
               <div key={field.id} className='flex items-center gap-2'>
                 <FormField
                   control={control}
-                  name={asFieldPath(`prices.${priceIndex}.price.items.${itemIndex}.pricing.usageTiered.tiers.${tierIndex}.upTo`)}
+                  name={asFieldPath(`${itemsPath}.${itemIndex}.pricing.usageTiered.tiers.${tierIndex}.upTo`)}
                   render={({ field }) => {
                     const isLastTier = tierIndex === tierFields.length - 1;
                     return (
@@ -356,11 +397,9 @@ const PriceItemRow = memo(function PriceItemRow({
                           <Input
                             type='number'
                             {...field}
-                            value={isLastTier ? '' : (field.value as unknown as number | null | undefined) ?? ''}
+                            value={isLastTier ? '' : ((field.value as unknown as number | null | undefined) ?? '')}
                             onChange={(e) =>
-                              isLastTier
-                                ? field.onChange(null)
-                                : field.onChange(e.target.value ? parseInt(e.target.value) : null)
+                              isLastTier ? field.onChange(null) : field.onChange(e.target.value ? parseInt(e.target.value) : null)
                             }
                             placeholder={isLastTier ? '∞' : t('price.upTo')}
                             disabled={isLastTier}
@@ -381,7 +420,7 @@ const PriceItemRow = memo(function PriceItemRow({
                 />
                 <FormField
                   control={control}
-                  name={asFieldPath(`prices.${priceIndex}.price.items.${itemIndex}.pricing.usageTiered.tiers.${tierIndex}.pricePerUnit`)}
+                  name={asFieldPath(`${itemsPath}.${itemIndex}.pricing.usageTiered.tiers.${tierIndex}.pricePerUnit`)}
                   render={({ field }) => (
                     <FormItem className='flex-1'>
                       <FormControl>
@@ -393,7 +432,7 @@ const PriceItemRow = memo(function PriceItemRow({
                           )}
                           <Input
                             {...field}
-                            value={(field.value as unknown as string | null | undefined) || ''}
+                            value={(field.value as unknown as string | null | undefined) ?? ''}
                             placeholder={t('price.pricePerUnit')}
                             className={`h-7 text-right text-xs ${currencyPrefix ? 'pl-7' : ''}`}
                           />
@@ -421,7 +460,7 @@ const PriceItemRow = memo(function PriceItemRow({
               type='button'
               variant='outline'
               size='icon-sm'
-              disabled={variantFields.length >= promptWriteCacheVariantCodes.length}
+              disabled={lockStructure || variantFields.length >= promptWriteCacheVariantCodes.length}
               onClick={() => onAddVariant(priceIndex, itemIndex)}
               title={t('price.addVariant')}
             >
@@ -433,6 +472,9 @@ const PriceItemRow = memo(function PriceItemRow({
               key={field.id}
               control={control}
               priceIndex={priceIndex}
+              itemsPath={itemsPath}
+              perUnitOnly={perUnitOnly}
+              lockStructure={lockStructure}
               itemIndex={itemIndex}
               variantIndex={variantIndex}
               currencyCode={currencyCode}
@@ -450,6 +492,9 @@ const PriceItemRow = memo(function PriceItemRow({
 const PriceVariantRow = memo(function PriceVariantRow({
   control,
   priceIndex,
+  itemsPath,
+  perUnitOnly,
+  lockStructure,
   itemIndex,
   variantIndex,
   currencyCode,
@@ -457,6 +502,9 @@ const PriceVariantRow = memo(function PriceVariantRow({
 }: {
   control: Control<PriceEditorFormValues>;
   priceIndex: number;
+  itemsPath: string;
+  perUnitOnly?: boolean;
+  lockStructure?: boolean;
   itemIndex: number;
   variantIndex: number;
   currencyCode?: string;
@@ -465,15 +513,15 @@ const PriceVariantRow = memo(function PriceVariantRow({
   const { t } = useTranslation();
   const pricingMode = usePriceEditorWatch<PriceItemVariant['pricing']['mode'] | undefined>(
     control,
-    `prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.mode`
+    `${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.mode`
   );
   const variantCode = usePriceEditorWatch<PriceItemVariant['variantCode'] | undefined>(
     control,
-    `prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants.${variantIndex}.variantCode`
+    `${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.variantCode`
   );
   const watchedVariants = usePriceEditorWatch<PriceItemVariant[] | null | undefined>(
     control,
-    `prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants`
+    `${itemsPath}.${itemIndex}.promptWriteCacheVariants`
   );
   const {
     fields: tierFields,
@@ -481,13 +529,11 @@ const PriceVariantRow = memo(function PriceVariantRow({
     remove: removeTier,
   } = useFieldArray({
     control,
-    name: asFieldArrayPath(
-      `prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usageTiered.tiers`
-    ),
+    name: asFieldArrayPath(`${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usageTiered.tiers`),
   });
   const tiers = usePriceEditorWatch<Tier[] | undefined>(
     control,
-    `prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usageTiered.tiers`
+    `${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usageTiered.tiers`
   );
   const { setValue } = useFormContext<PriceEditorFormValues>();
   const requiredMessage = t('price.validation.priceRequired');
@@ -520,23 +566,23 @@ const PriceVariantRow = memo(function PriceVariantRow({
     if (tiers[lastIndex]?.upTo !== null) {
       setValue(
         asFieldPath(
-          `prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usageTiered.tiers.${lastIndex}.upTo`
+          `${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usageTiered.tiers.${lastIndex}.upTo`
         ) as FieldPath<PriceEditorFormValues>,
         null,
         { shouldDirty: true, shouldValidate: true }
       );
     }
-  }, [itemIndex, priceIndex, setValue, tiers, variantIndex]);
+  }, [itemIndex, itemsPath, setValue, tiers, variantIndex]);
 
   return (
     <div className='space-y-2'>
       <div className='flex items-center gap-2'>
         <FormField
           control={control}
-          name={asFieldPath(`prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants.${variantIndex}.variantCode`)}
+          name={asFieldPath(`${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.variantCode`)}
           render={({ field }) => (
             <FormItem className='min-w-0 flex-1'>
-              <Select onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
+              <Select disabled={lockStructure} onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
                 <FormControl>
                   <SelectTrigger size='sm' className='h-7 text-xs'>
                     <SelectValue placeholder={t('price.variantCode')} />
@@ -556,10 +602,10 @@ const PriceVariantRow = memo(function PriceVariantRow({
         />
         <FormField
           control={control}
-          name={asFieldPath(`prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.mode`)}
+          name={asFieldPath(`${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.mode`)}
           render={({ field }) => (
             <FormItem className='min-w-0 flex-1'>
-              <Select onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
+              <Select disabled={perUnitOnly} onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
                 <FormControl>
                   <SelectTrigger size='sm' className='h-7 text-xs'>
                     <SelectValue placeholder={t('price.mode')} />
@@ -578,9 +624,7 @@ const PriceVariantRow = memo(function PriceVariantRow({
         {pricingMode === 'usage_per_unit' && (
           <FormField
             control={control}
-            name={asFieldPath(
-              `prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usagePerUnit`
-            )}
+            name={asFieldPath(`${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usagePerUnit`)}
             render={({ field }) => (
               <FormItem className='min-w-0 flex-1'>
                 <FormControl>
@@ -590,8 +634,8 @@ const PriceVariantRow = memo(function PriceVariantRow({
                     )}
                     <Input
                       {...field}
-                      value={(field.value as unknown as string | null | undefined) || ''}
-                      placeholder='0.00'
+                      value={(field.value as unknown as string | null | undefined) ?? ''}
+                      placeholder={t('price.enterPrice')}
                       className={`h-7 text-right text-xs ${currencyPrefix ? 'pl-7' : ''}`}
                     />
                   </div>
@@ -605,9 +649,7 @@ const PriceVariantRow = memo(function PriceVariantRow({
         {pricingMode === 'flat_fee' && (
           <FormField
             control={control}
-            name={asFieldPath(
-              `prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.flatFee`
-            )}
+            name={asFieldPath(`${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.flatFee`)}
             render={({ field }) => (
               <FormItem className='min-w-0 flex-1'>
                 <FormControl>
@@ -617,8 +659,8 @@ const PriceVariantRow = memo(function PriceVariantRow({
                     )}
                     <Input
                       {...field}
-                      value={(field.value as unknown as string | null | undefined) || ''}
-                      placeholder='0.00'
+                      value={(field.value as unknown as string | null | undefined) ?? ''}
+                      placeholder={t('price.enterPrice')}
                       className={`h-7 text-right text-xs ${currencyPrefix ? 'pl-7' : ''}`}
                     />
                   </div>
@@ -629,7 +671,13 @@ const PriceVariantRow = memo(function PriceVariantRow({
             rules={{ required: requiredMessage }}
           />
         )}
-        <Button type='button' variant='ghost' size='icon-sm' onClick={() => onRemoveVariant(priceIndex, itemIndex, variantIndex)}>
+        <Button
+          type='button'
+          variant='ghost'
+          size='icon-sm'
+          disabled={lockStructure}
+          onClick={() => onRemoveVariant(priceIndex, itemIndex, variantIndex)}
+        >
           <IconTrash size={14} className='text-destructive' />
         </Button>
       </div>
@@ -653,7 +701,7 @@ const PriceVariantRow = memo(function PriceVariantRow({
               <FormField
                 control={control}
                 name={asFieldPath(
-                  `prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usageTiered.tiers.${tierIndex}.upTo`
+                  `${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usageTiered.tiers.${tierIndex}.upTo`
                 )}
                 render={({ field }) => {
                   const isLastTier = tierIndex === tierFields.length - 1;
@@ -663,11 +711,9 @@ const PriceVariantRow = memo(function PriceVariantRow({
                         <Input
                           type='number'
                           {...field}
-                          value={isLastTier ? '' : (field.value as unknown as number | null | undefined) ?? ''}
+                          value={isLastTier ? '' : ((field.value as unknown as number | null | undefined) ?? '')}
                           onChange={(e) =>
-                            isLastTier
-                              ? field.onChange(null)
-                              : field.onChange(e.target.value ? parseInt(e.target.value) : null)
+                            isLastTier ? field.onChange(null) : field.onChange(e.target.value ? parseInt(e.target.value) : null)
                           }
                           placeholder={isLastTier ? '∞' : t('price.upTo')}
                           disabled={isLastTier}
@@ -689,7 +735,7 @@ const PriceVariantRow = memo(function PriceVariantRow({
               <FormField
                 control={control}
                 name={asFieldPath(
-                  `prices.${priceIndex}.price.items.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usageTiered.tiers.${tierIndex}.pricePerUnit`
+                  `${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usageTiered.tiers.${tierIndex}.pricePerUnit`
                 )}
                 render={({ field }) => (
                   <FormItem className='flex-1'>
@@ -702,7 +748,7 @@ const PriceVariantRow = memo(function PriceVariantRow({
                         )}
                         <Input
                           {...field}
-                          value={(field.value as unknown as string | null | undefined) || ''}
+                          value={(field.value as unknown as string | null | undefined) ?? ''}
                           placeholder={t('price.pricePerUnit')}
                           className={`h-6 text-right text-[10px] ${currencyPrefix ? 'pl-6' : ''}`}
                         />
@@ -713,12 +759,7 @@ const PriceVariantRow = memo(function PriceVariantRow({
                 )}
                 rules={{ required: requiredMessage }}
               />
-              <Button
-                type='button'
-                variant='ghost'
-                size='icon-sm'
-                onClick={() => removeTier(tierIndex)}
-              >
+              <Button type='button' variant='ghost' size='icon-sm' onClick={() => removeTier(tierIndex)}>
                 <IconTrash size={10} className='text-destructive' />
               </Button>
             </div>

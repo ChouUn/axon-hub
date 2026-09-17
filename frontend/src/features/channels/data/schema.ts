@@ -531,8 +531,15 @@ export const priceScheduleSchema = z.object({
 });
 export type PriceSchedule = z.infer<typeof priceScheduleSchema>;
 
+export const modelPriceVolumeTierSchema = z.object({
+  above: z.number().int().nonnegative(),
+  items: z.array(modelPriceItemSchema),
+});
+export type ModelPriceVolumeTier = z.infer<typeof modelPriceVolumeTierSchema>;
+
 export const modelPriceSchema = z.object({
   items: z.array(modelPriceItemSchema),
+  volumeTiers: z.array(modelPriceVolumeTierSchema).optional().nullable(),
   schedule: priceScheduleSchema.optional().nullable(),
 });
 export type ModelPrice = z.infer<typeof modelPriceSchema>;
@@ -558,9 +565,7 @@ function validateOAuthCredentials(type: string, apiKey: string | undefined, ctx:
   if (requiresJSON && !apiKey.trim().startsWith('{')) {
     ctx.addIssue({
       code: 'custom' as const,
-      message: isCopilot
-        ? 'channels.dialogs.oauth.errors.copilotCredentialsInvalid'
-        : 'channels.dialogs.oauth.errors.credentialsInvalid',
+      message: isCopilot ? 'channels.dialogs.oauth.errors.copilotCredentialsInvalid' : 'channels.dialogs.oauth.errors.credentialsInvalid',
       path: ['credentials', 'apiKey'],
     });
     return;

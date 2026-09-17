@@ -12,6 +12,7 @@ import { AutoCompleteSelect } from '@/components/auto-complete-select';
 import { useModels } from '../context/models-context';
 import { DEVELOPER_IDS, DEVELOPER_ICONS } from '../data/constants';
 import { useBulkCreateModels } from '../data/models';
+import { priceFromCatalog } from '../data/pricing';
 import { useDevelopersData } from '../data/providers';
 import { type Provider, type ProviderModel, resolveVision } from '../data/providers.schema';
 import { CreateModelInput, ModelCard, ModelType, modelTypeSchema } from '../data/schema';
@@ -159,12 +160,7 @@ export function ModelsBatchCreateDialog() {
                 output: selectedModel.modalities?.output || [],
               },
               vision: resolveVision(selectedModel),
-              cost: {
-                input: selectedModel.cost?.input || 0,
-                output: selectedModel.cost?.output || 0,
-                cacheRead: selectedModel.cost?.cache_read,
-                cacheWrite: selectedModel.cost?.cache_write,
-              },
+              price: priceFromCatalog(selectedModel),
               limit: {
                 context: selectedModel.limit?.context || 0,
                 output: selectedModel.limit?.output || 0,
@@ -174,9 +170,8 @@ export function ModelsBatchCreateDialog() {
               lastUpdated: selectedModel.last_updated,
             };
             const normalizedType = selectedModel.type?.replace(/-/g, '_');
-            const modelType = normalizedType && modelTypeSchema.safeParse(normalizedType).success
-              ? (normalizedType as ModelType)
-              : 'chat' as ModelType;
+            const modelType =
+              normalizedType && modelTypeSchema.safeParse(normalizedType).success ? (normalizedType as ModelType) : ('chat' as ModelType);
             return {
               ...row,
               modelId,
@@ -281,7 +276,6 @@ export function ModelsBatchCreateDialog() {
         temperature: false,
         modalities: { input: [], output: [] },
         vision: false,
-        cost: { input: 0, output: 0 },
         limit: { context: 0, output: 0 },
       },
       settings: {

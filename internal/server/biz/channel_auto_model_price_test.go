@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"sync/atomic"
 	"testing"
 
 	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 
 	"github.com/looplj/axonhub/internal/authz"
@@ -22,104 +22,81 @@ import (
 	"github.com/looplj/axonhub/internal/objects"
 )
 
-func TestModelCardToChannelModelPrice(t *testing.T) {
-	tests := []struct {
-		name      string
-		card      *objects.ModelCard
-		wantOK    bool
-		wantCodes []objects.PriceItemCode
-		wantCosts []string
-	}{
-		{
-			name: "all supported costs preserve deterministic order",
-			card: &objects.ModelCard{Cost: objects.ModelCardCost{
-				Input:      1.25,
-				Output:     2.5,
-				CacheRead:  0.125,
-				CacheWrite: 0.25,
+func TestChannelService_AutoPricingPreservesFullModelPrice(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := channelAutoPriceTestContext(client)
+	price := &objects.ModelPrice{
+		Items: []objects.ModelPriceItem{{
+			ItemCode: objects.PriceItemCodeUsage,
+			Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("0")},
+		}, {
+			ItemCode: objects.PriceItemCodeWriteCachedTokens,
+			Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("3")},
+			PromptWriteCacheVariants: []objects.PromptWriteCacheVariant{{
+				VariantCode: objects.PromptWriteCacheVariantCode1Hour,
+				Pricing:     objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("5")},
 			}},
-			wantOK: true,
-			wantCodes: []objects.PriceItemCode{
-				objects.PriceItemCodeUsage,
-				objects.PriceItemCodeCompletion,
-				objects.PriceItemCodePromptCachedToken,
-				objects.PriceItemCodeWriteCachedTokens,
-			},
-			wantCosts: []string{"1.25", "2.5", "0.125", "0.25"},
-		},
-		{
-			name: "only positive costs are included",
-			card: &objects.ModelCard{Cost: objects.ModelCardCost{
-				Input:      1,
-				Output:     0,
-				CacheRead:  -1,
-				CacheWrite: 0.5,
+		}},
+		VolumeTiers: []objects.ModelPriceVolumeTier{{
+			Above: 200000,
+			Items: []objects.ModelPriceItem{{
+				ItemCode: objects.PriceItemCodeUsage,
+				Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("2")},
+			}, {
+				ItemCode: objects.PriceItemCodeWriteCachedTokens,
+				Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("6")},
+				PromptWriteCacheVariants: []objects.PromptWriteCacheVariant{{
+					VariantCode: objects.PromptWriteCacheVariantCode1Hour,
+					Pricing:     objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("10")},
+				}},
 			}},
-			wantOK: true,
-			wantCodes: []objects.PriceItemCode{
-				objects.PriceItemCodeUsage,
-				objects.PriceItemCodeWriteCachedTokens,
-			},
-			wantCosts: []string{"1", "0.5"},
-		},
-		{
-			name:   "nil model card is not priceable",
-			card:   nil,
-			wantOK: false,
-		},
-		{
-			name: "non-positive model card is not priceable",
-			card: &objects.ModelCard{Cost: objects.ModelCardCost{
-				Input:      0,
-				Output:     -1,
-				CacheRead:  -2,
-				CacheWrite: 0,
+		}},
+		Schedule: &objects.PriceSchedule{
+			Timezone: "UTC",
+			Overrides: []objects.PriceOverride{{
+				Name: "night", Priority: 1,
+				When: objects.OverrideWhen{DailyTime: &objects.DailyTimeRange{Start: "00:00", End: "06:00"}},
+				Items: []objects.ModelPriceItem{{
+					ItemCode: objects.PriceItemCodeUsage,
+					Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("0.5")},
+				}},
 			}},
-			wantOK: false,
-		},
-		{
-			name: "non-finite costs are ignored while finite costs remain",
-			card: &objects.ModelCard{Cost: objects.ModelCardCost{
-				Input:      math.NaN(),
-				Output:     2,
-				CacheRead:  math.Inf(1),
-				CacheWrite: math.Inf(-1),
-			}},
-			wantOK:    true,
-			wantCodes: []objects.PriceItemCode{objects.PriceItemCodeCompletion},
-			wantCosts: []string{"2"},
-		},
-		{
-			name: "all non-finite costs are not priceable",
-			card: &objects.ModelCard{Cost: objects.ModelCardCost{
-				Input:      math.NaN(),
-				Output:     math.Inf(1),
-				CacheRead:  math.Inf(-1),
-				CacheWrite: math.NaN(),
-			}},
-			wantOK: false,
 		},
 	}
+	catalog := createModelLibraryEntry(t, ctx, client, "full-price", model.StatusEnabled, price)
+	ch := createAutoPriceTestChannel(t, ctx, client, "Full price", []string{"full-price"})
+	_, err := svc.ensureChannelModelPrices(ctx, ch.ID, []string{"full-price"})
+	require.NoError(t, err)
+	current := queryChannelModelPrice(t, ctx, client, ch.ID, "full-price")
+	require.True(t, price.Equals(current.Price))
+	version, err := client.ChannelModelPriceVersion.Query().Where(channelmodelpriceversion.ChannelID(ch.ID)).Only(ctx)
+	require.NoError(t, err)
+	require.True(t, price.Equals(version.Price))
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			price, ok := modelCardToChannelModelPrice(tt.card)
-			require.Equal(t, tt.wantOK, ok)
-			if !tt.wantOK {
-				require.Empty(t, price.Items)
+	_, err = client.Model.UpdateOne(catalog).SetModelCard(&objects.ModelCard{Price: &objects.ModelPrice{
+		Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{
+			Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("99"),
+		}}},
+	}}).Save(ctx)
+	require.NoError(t, err)
+	_, err = svc.ensureChannelModelPrices(ctx, ch.ID, []string{"full-price"})
+	require.NoError(t, err)
+	unchanged := queryChannelModelPrice(t, ctx, client, ch.ID, "full-price")
+	require.True(t, price.Equals(unchanged.Price))
+	require.Equal(t, current.ReferenceID, unchanged.ReferenceID)
+	require.Equal(t, 1, countChannelModelPriceVersions(t, ctx, client, current.ID))
+	version, err = client.ChannelModelPriceVersion.Get(ctx, version.ID)
+	require.NoError(t, err)
+	require.True(t, price.Equals(version.Price))
 
-				return
-			}
-
-			require.Len(t, price.Items, len(tt.wantCodes))
-			for i, item := range price.Items {
-				require.Equal(t, tt.wantCodes[i], item.ItemCode)
-				require.Equal(t, objects.PricingModeUsagePerUnit, item.Pricing.Mode)
-				require.NotNil(t, item.Pricing.UsagePerUnit)
-				require.Equal(t, tt.wantCosts[i], item.Pricing.UsagePerUnit.String())
-			}
-		})
-	}
+	scheduled := &objects.ModelPrice{Schedule: price.Schedule}
+	createModelLibraryEntry(t, ctx, client, "scheduled-only", model.StatusEnabled, scheduled)
+	createModelLibraryEntry(t, ctx, client, "empty-price", model.StatusEnabled, &objects.ModelPrice{})
+	_, err = svc.ensureChannelModelPrices(ctx, ch.ID, []string{"scheduled-only", "empty-price"})
+	require.NoError(t, err)
+	require.True(t, scheduled.Equals(queryChannelModelPrice(t, ctx, client, ch.ID, "scheduled-only").Price))
+	require.False(t, channelModelPriceExists(t, ctx, client, ch.ID, "empty-price"))
 }
 
 func TestChannelService_EnsureChannelModelPrices_EligibilityAndIdempotence(t *testing.T) {
@@ -137,12 +114,12 @@ func TestChannelService_EnsureChannelModelPrices_EligibilityAndIdempotence(t *te
 		"deleted-model",
 	})
 
-	createModelLibraryEntry(t, ctx, client, "enabled-model", model.StatusEnabled, objects.ModelCardCost{Input: 1})
-	createModelLibraryEntry(t, ctx, client, "disabled-model", model.StatusDisabled, objects.ModelCardCost{Output: 2})
-	createModelLibraryEntry(t, ctx, client, "archived-model", model.StatusArchived, objects.ModelCardCost{Input: 3})
-	createModelLibraryEntry(t, ctx, client, "no-cost-model", model.StatusEnabled, objects.ModelCardCost{})
-	createModelLibraryEntry(t, ctx, client, "Case-Model", model.StatusEnabled, objects.ModelCardCost{Input: 4})
-	deletedModel := createModelLibraryEntry(t, ctx, client, "deleted-model", model.StatusEnabled, objects.ModelCardCost{Input: 5})
+	createModelLibraryEntry(t, ctx, client, "enabled-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}})
+	createModelLibraryEntry(t, ctx, client, "disabled-model", model.StatusDisabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}}})
+	createModelLibraryEntry(t, ctx, client, "archived-model", model.StatusArchived, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(3))}}}})
+	createModelLibraryEntry(t, ctx, client, "no-cost-model", model.StatusEnabled, nil)
+	createModelLibraryEntry(t, ctx, client, "Case-Model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(4))}}}})
+	deletedModel := createModelLibraryEntry(t, ctx, client, "deleted-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(5))}}}})
 	require.NoError(t, client.Model.DeleteOne(deletedModel).Exec(ctx))
 
 	candidates := []string{
@@ -197,8 +174,8 @@ func TestChannelService_CreateChannel_AutoFillsEligibleInitialModels(t *testing.
 	defer client.Close()
 
 	ctx := channelAutoPriceTestContext(client)
-	createModelLibraryEntry(t, ctx, client, "priced-model", model.StatusDisabled, objects.ModelCardCost{Input: 1, Output: 2})
-	createModelLibraryEntry(t, ctx, client, "zero-model", model.StatusEnabled, objects.ModelCardCost{})
+	createModelLibraryEntry(t, ctx, client, "priced-model", model.StatusDisabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}}})
+	createModelLibraryEntry(t, ctx, client, "zero-model", model.StatusEnabled, nil)
 
 	ch, err := svc.CreateChannel(ctx, ent.CreateChannelInput{
 		Type:             channel.TypeOpenai,
@@ -232,7 +209,7 @@ func TestChannelService_CreateChannel_DefersReloadForCallerOwnedTransaction(t *t
 	defer client.Close()
 
 	ctx := channelAutoPriceTestContext(client)
-	createModelLibraryEntry(t, ctx, client, "outer-tx-model", model.StatusEnabled, objects.ModelCardCost{Input: 1})
+	createModelLibraryEntry(t, ctx, client, "outer-tx-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}})
 
 	notifier := &channelSyncNotifierSpy{}
 	svc.channelNotifier = notifier
@@ -291,7 +268,7 @@ func TestChannelService_EnsureChannelModelPrices_RecreatesSoftDeletedPrice(t *te
 	defer client.Close()
 
 	ctx := channelAutoPriceTestContext(client)
-	createModelLibraryEntry(t, ctx, client, "recreated-model", model.StatusEnabled, objects.ModelCardCost{Input: 3})
+	createModelLibraryEntry(t, ctx, client, "recreated-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(3))}}}})
 	ch := createAutoPriceTestChannel(t, ctx, client, "Recreate soft-deleted price", []string{"recreated-model"})
 
 	customPrice := objects.ModelPrice{Items: []objects.ModelPriceItem{{
@@ -340,7 +317,7 @@ func TestChannelService_UpdateChannel_RetriesSupportedModelsAndPreservesExisting
 	defer client.Close()
 
 	ctx := channelAutoPriceTestContext(client)
-	createModelLibraryEntry(t, ctx, client, "existing-model", model.StatusEnabled, objects.ModelCardCost{Input: 1})
+	createModelLibraryEntry(t, ctx, client, "existing-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}})
 
 	ch, err := svc.CreateChannel(ctx, ent.CreateChannelInput{
 		Type:             channel.TypeOpenai,
@@ -355,8 +332,8 @@ func TestChannelService_UpdateChannel_RetriesSupportedModelsAndPreservesExisting
 	existingPrice := queryChannelModelPrice(t, ctx, client, ch.ID, "existing-model")
 	existingVersionCount := countChannelModelPriceVersions(t, ctx, client, existingPrice.ID)
 
-	createModelLibraryEntry(t, ctx, client, "late-library-model", model.StatusEnabled, objects.ModelCardCost{Input: 2})
-	createModelLibraryEntry(t, ctx, client, "added-model", model.StatusEnabled, objects.ModelCardCost{Output: 3})
+	createModelLibraryEntry(t, ctx, client, "late-library-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}}})
+	createModelLibraryEntry(t, ctx, client, "added-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(3))}}}})
 
 	_, err = svc.UpdateChannel(ctx, ch.ID, &ent.UpdateChannelInput{Name: lo.ToPtr("Auto Price Update Renamed")})
 	require.NoError(t, err)
@@ -395,9 +372,9 @@ func TestChannelService_DuplicateChannel_PreservesSourcePriceAndFillsGaps(t *tes
 	defer client.Close()
 
 	ctx := channelAutoPriceTestContext(client)
-	createModelLibraryEntry(t, ctx, client, "custom-model", model.StatusEnabled, objects.ModelCardCost{Input: 9})
-	createModelLibraryEntry(t, ctx, client, "gap-model", model.StatusDisabled, objects.ModelCardCost{Input: 2, Output: 4})
-	createModelLibraryEntry(t, ctx, client, "no-cost-model", model.StatusEnabled, objects.ModelCardCost{})
+	createModelLibraryEntry(t, ctx, client, "custom-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(9))}}}})
+	createModelLibraryEntry(t, ctx, client, "gap-model", model.StatusDisabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(4))}}}})
+	createModelLibraryEntry(t, ctx, client, "no-cost-model", model.StatusEnabled, nil)
 
 	source := createAutoPriceTestChannel(t, ctx, client, "Duplicate Source", []string{"custom-model", "gap-model", "no-cost-model"})
 	customPrice := objects.ModelPrice{Items: []objects.ModelPriceItem{
@@ -451,7 +428,7 @@ func TestChannelService_UpdateChannel_RollsBackModelsWhenPriceVersionFails(t *te
 	defer client.Close()
 
 	ctx := channelAutoPriceTestContext(client)
-	createModelLibraryEntry(t, ctx, client, "rollback-model", model.StatusEnabled, objects.ModelCardCost{Input: 1})
+	createModelLibraryEntry(t, ctx, client, "rollback-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}})
 	ch := createAutoPriceTestChannel(t, ctx, client, "Update rollback", []string{"existing-model"})
 
 	errInjected := errors.New("injected update price version failure")
@@ -484,7 +461,7 @@ func TestChannelService_BulkCreateChannels_RollsBackWholeBatchWhenPriceVersionFa
 	defer client.Close()
 
 	ctx := channelAutoPriceTestContext(client)
-	createModelLibraryEntry(t, ctx, client, "bulk-model", model.StatusEnabled, objects.ModelCardCost{Input: 1})
+	createModelLibraryEntry(t, ctx, client, "bulk-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}})
 
 	errInjected := errors.New("injected channel model price version failure")
 	var versionCreates atomic.Int32
@@ -519,7 +496,7 @@ func TestChannelService_BulkCreateChannels_ReturnsQueryableEntities(t *testing.T
 	defer client.Close()
 
 	ctx := channelAutoPriceTestContext(client)
-	createModelLibraryEntry(t, ctx, client, "bulk-query-model", model.StatusEnabled, objects.ModelCardCost{Input: 1})
+	createModelLibraryEntry(t, ctx, client, "bulk-query-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}})
 
 	channels, err := svc.BulkCreateChannels(ctx, BulkCreateChannelsInput{
 		Type:             channel.TypeOpenai,
@@ -544,9 +521,9 @@ func TestChannelService_BulkImportChannels_RollsBackOnlyFailingItem(t *testing.T
 	defer client.Close()
 
 	ctx := channelAutoPriceTestContext(client)
-	createModelLibraryEntry(t, ctx, client, "import-good-1", model.StatusEnabled, objects.ModelCardCost{Input: 1})
-	createModelLibraryEntry(t, ctx, client, "import-fail", model.StatusEnabled, objects.ModelCardCost{Input: 2})
-	createModelLibraryEntry(t, ctx, client, "import-good-2", model.StatusEnabled, objects.ModelCardCost{Input: 3})
+	createModelLibraryEntry(t, ctx, client, "import-good-1", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}})
+	createModelLibraryEntry(t, ctx, client, "import-fail", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}}})
+	createModelLibraryEntry(t, ctx, client, "import-good-2", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(3))}}}})
 
 	errInjected := errors.New("injected import price version failure")
 	client.ChannelModelPriceVersion.Use(func(next ent.Mutator) ent.Mutator {
@@ -603,7 +580,7 @@ func TestChannelService_AutoPricingSupportsWriteOnlyChannelMutations(t *testing.
 	defer client.Close()
 
 	setupCtx := channelAutoPriceTestContext(client)
-	createModelLibraryEntry(t, setupCtx, client, "write-only-model", model.StatusEnabled, objects.ModelCardCost{Input: 1})
+	createModelLibraryEntry(t, setupCtx, client, "write-only-model", model.StatusEnabled, &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}})
 	channelToUpdate := createAutoPriceTestChannel(t, setupCtx, client, "Write-only update", []string{"old-model"})
 
 	writeCtx := authz.NewUserContext(ent.NewContext(context.Background(), client), 42)
@@ -641,7 +618,7 @@ func createModelLibraryEntry(
 	client *ent.Client,
 	modelID string,
 	status model.Status,
-	cost objects.ModelCardCost,
+	price *objects.ModelPrice,
 ) *ent.Model {
 	t.Helper()
 
@@ -651,7 +628,7 @@ func createModelLibraryEntry(
 		SetName("Test " + modelID).
 		SetIcon("test").
 		SetGroup("test").
-		SetModelCard(&objects.ModelCard{Cost: cost}).
+		SetModelCard(&objects.ModelCard{Price: price}).
 		SetSettings(&objects.ModelSettings{}).
 		SetStatus(status).
 		Save(ctx)

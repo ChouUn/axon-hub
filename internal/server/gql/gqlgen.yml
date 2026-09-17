@@ -424,6 +424,12 @@ models:
   ModelPriceInput:
     model:
       - github.com/looplj/axonhub/internal/objects.ModelPrice
+  ModelPriceVolumeTier:
+    model:
+      - github.com/looplj/axonhub/internal/objects.ModelPriceVolumeTier
+  ModelPriceVolumeTierInput:
+    model:
+      - github.com/looplj/axonhub/internal/objects.ModelPriceVolumeTier
   ModelPriceItem:
     model:
       - github.com/looplj/axonhub/internal/objects.ModelPriceItem
@@ -512,9 +518,6 @@ models:
     model:
       - github.com/looplj/axonhub/internal/objects.ModelCardModalities
   ModelCardCost:
-    model:
-      - github.com/looplj/axonhub/internal/objects.ModelCardCost
-  ModelCardCostInput:
     model:
       - github.com/looplj/axonhub/internal/objects.ModelCardCost
   ModelCardLimit:

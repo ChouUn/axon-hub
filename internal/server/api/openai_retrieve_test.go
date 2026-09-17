@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 
 	"github.com/looplj/axonhub/internal/authz"
@@ -160,14 +162,10 @@ func TestOpenAIHandlers_RetrieveModel_ReturnsExtendedConfiguredModel(t *testing.
 		SetGroup("gpt").
 		SetIcon("openai").
 		SetRemark(remark).
-		SetModelCard(&objects.ModelCard{
-			Vision:     true,
-			ToolCall:   true,
-			Reasoning:  objects.ModelCardReasoning{Supported: true},
-			Limit:      objects.ModelCardLimit{Context: 200000, Output: 8192},
-			Cost:       objects.ModelCardCost{Input: 2, Output: 8, CacheRead: 0.5, CacheWrite: 1},
-			Modalities: objects.ModelCardModalities{Input: []string{"text", "image"}, Output: []string{"text"}},
-		}).
+		SetModelCard(&objects.ModelCard{Vision: true,
+			ToolCall:  true,
+			Reasoning: objects.ModelCardReasoning{Supported: true},
+			Limit:     objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}, {ItemCode: objects.PriceItemCodePromptCachedToken, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.5))}}, {ItemCode: objects.PriceItemCodeWriteCachedTokens, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}}, Modalities: objects.ModelCardModalities{Input: []string{"text", "image"}, Output: []string{"text"}}}).
 		SetSettings(&objects.ModelSettings{
 			Associations: []*objects.ModelAssociation{
 				{
@@ -241,12 +239,9 @@ func TestOpenAIHandlers_RetrieveModel_ReturnsEmptyModalitiesWhenZeroValue(t *tes
 		SetType(model.TypeChat).
 		SetGroup("gpt").
 		SetIcon("openai").
-		SetModelCard(&objects.ModelCard{
-			Vision:   true,
+		SetModelCard(&objects.ModelCard{Vision: true,
 			ToolCall: true,
-			Limit:    objects.ModelCardLimit{Context: 200000, Output: 8192},
-			Cost:     objects.ModelCardCost{Input: 2, Output: 8},
-		}).
+			Limit:    objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}}}}).
 		SetSettings(&objects.ModelSettings{
 			Associations: []*objects.ModelAssociation{
 				{
@@ -323,14 +318,10 @@ func TestOpenAIHandlers_ListModels_UsesBasicFieldsByDefault(t *testing.T) {
 		SetGroup("gpt").
 		SetIcon("openai").
 		SetRemark(remark).
-		SetModelCard(&objects.ModelCard{
-			Vision:     true,
-			ToolCall:   true,
-			Reasoning:  objects.ModelCardReasoning{Supported: true},
-			Limit:      objects.ModelCardLimit{Context: 200000, Output: 8192},
-			Cost:       objects.ModelCardCost{Input: 2, Output: 8, CacheRead: 0.5, CacheWrite: 1},
-			Modalities: objects.ModelCardModalities{Input: []string{"text", "image"}, Output: []string{"text"}},
-		}).
+		SetModelCard(&objects.ModelCard{Vision: true,
+			ToolCall:  true,
+			Reasoning: objects.ModelCardReasoning{Supported: true},
+			Limit:     objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}, {ItemCode: objects.PriceItemCodePromptCachedToken, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.5))}}, {ItemCode: objects.PriceItemCodeWriteCachedTokens, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}}, Modalities: objects.ModelCardModalities{Input: []string{"text", "image"}, Output: []string{"text"}}}).
 		SetSettings(&objects.ModelSettings{
 			Associations: []*objects.ModelAssociation{
 				{
@@ -398,14 +389,10 @@ func TestOpenAIHandlers_ListModels_UsesExtendedFieldsWhenConfiguredAsDefault(t *
 		SetGroup("gpt").
 		SetIcon("openai").
 		SetRemark(remark).
-		SetModelCard(&objects.ModelCard{
-			Vision:     true,
-			ToolCall:   true,
-			Reasoning:  objects.ModelCardReasoning{Supported: true},
-			Limit:      objects.ModelCardLimit{Context: 200000, Output: 8192},
-			Cost:       objects.ModelCardCost{Input: 2, Output: 8, CacheRead: 0.5, CacheWrite: 1},
-			Modalities: objects.ModelCardModalities{Input: []string{"text", "image"}, Output: []string{"text"}},
-		}).
+		SetModelCard(&objects.ModelCard{Vision: true,
+			ToolCall:  true,
+			Reasoning: objects.ModelCardReasoning{Supported: true},
+			Limit:     objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}, {ItemCode: objects.PriceItemCodePromptCachedToken, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.5))}}, {ItemCode: objects.PriceItemCodeWriteCachedTokens, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}}, Modalities: objects.ModelCardModalities{Input: []string{"text", "image"}, Output: []string{"text"}}}).
 		SetSettings(&objects.ModelSettings{
 			Associations: []*objects.ModelAssociation{
 				{
@@ -487,12 +474,9 @@ func TestOpenAIHandlers_ListModels_ExtendedModeRespectsAPIKeyProfile(t *testing.
 		SetType(model.TypeChat).
 		SetGroup("gpt").
 		SetIcon("openai").
-		SetModelCard(&objects.ModelCard{
-			Vision:   true,
+		SetModelCard(&objects.ModelCard{Vision: true,
 			ToolCall: true,
-			Limit:    objects.ModelCardLimit{Context: 200000, Output: 8192},
-			Cost:     objects.ModelCardCost{Input: 2, Output: 8},
-		}).
+			Limit:    objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}}}}).
 		SetSettings(&objects.ModelSettings{
 			Associations: []*objects.ModelAssociation{{
 				Type: "channel_model",
@@ -513,12 +497,9 @@ func TestOpenAIHandlers_ListModels_ExtendedModeRespectsAPIKeyProfile(t *testing.
 		SetType(model.TypeChat).
 		SetGroup("claude").
 		SetIcon("anthropic").
-		SetModelCard(&objects.ModelCard{
-			Vision:   true,
+		SetModelCard(&objects.ModelCard{Vision: true,
 			ToolCall: true,
-			Limit:    objects.ModelCardLimit{Context: 200000, Output: 4096},
-			Cost:     objects.ModelCardCost{Input: 15, Output: 75},
-		}).
+			Limit:    objects.ModelCardLimit{Context: 200000, Output: 4096}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(15))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(75))}}}}}).
 		SetSettings(&objects.ModelSettings{
 			Associations: []*objects.ModelAssociation{{
 				Type: "channel_model",
@@ -615,11 +596,8 @@ func TestOpenAIHandlers_ListModels_ExtendedModeFallsBackToBasicForMissingDBModel
 		SetType(model.TypeChat).
 		SetGroup("gpt").
 		SetIcon("openai").
-		SetModelCard(&objects.ModelCard{
-			Vision: true, ToolCall: true,
-			Limit: objects.ModelCardLimit{Context: 200000, Output: 8192},
-			Cost:  objects.ModelCardCost{Input: 2, Output: 8},
-		}).
+		SetModelCard(&objects.ModelCard{Vision: true, ToolCall: true,
+			Limit: objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}}}}).
 		SetSettings(&objects.ModelSettings{
 			Associations: []*objects.ModelAssociation{{
 				Type:         "channel_model",

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 
@@ -74,23 +75,16 @@ func createBackupTestChannel(t *testing.T, client *ent.Client, ctx context.Conte
 }
 
 func createBackupTestModel(t *testing.T, client *ent.Client, ctx context.Context, developer, modelID string) *ent.Model {
-	modelCard := &objects.ModelCard{
-		Reasoning: objects.ModelCardReasoning{
-			Supported: true,
-			Default:   false,
-		},
+	modelCard := &objects.ModelCard{Reasoning: objects.ModelCardReasoning{
+		Supported: true,
+		Default:   false,
+	},
 		ToolCall:    true,
 		Temperature: true,
-		Vision:      false,
-		Cost: objects.ModelCardCost{
-			Input:  0.001,
-			Output: 0.002,
-		},
-		Limit: objects.ModelCardLimit{
+		Vision:      false, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.001))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.002))}}}}, Limit: objects.ModelCardLimit{
 			Context: 8192,
 			Output:  4096,
-		},
-	}
+		}}
 
 	settings := &objects.ModelSettings{
 		Associations: []*objects.ModelAssociation{},

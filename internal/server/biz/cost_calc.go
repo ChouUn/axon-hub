@@ -144,6 +144,16 @@ func getUpToOrZero(v *int64) int64 {
 func ComputeUsageCost(usage *llm.Usage, price objects.ModelPrice, now time.Time) ([]objects.CostItem, decimal.Decimal) {
 	effectiveItems := price.Items
 
+	for idx := range price.VolumeTiers {
+		tier := &price.VolumeTiers[idx]
+		if usage.PromptTokens <= tier.Above {
+			break
+		}
+
+		effectiveItems = tier.Items
+	}
+
+	// A matching schedule remains a complete override of the model's prices.
 	if price.Schedule != nil {
 		if override := findMatchingOverride(now, price.Schedule); override != nil {
 			effectiveItems = override.Items

@@ -6,6 +6,7 @@ type ModelCard {
   modalities: ModelCardModalities!
   vision: Boolean
   cost: ModelCardCost!
+  price: ModelPrice
   limit: ModelCardLimit!
   knowledge: String
   releaseDate: String
@@ -103,7 +104,7 @@ input ModelCardInput {
   temperature: Boolean
   modalities: ModelCardModalitiesInput
   vision: Boolean
-  cost: ModelCardCostInput
+  price: ModelPriceInput
   limit: ModelCardLimitInput
   knowledge: String
   releaseDate: String
@@ -118,13 +119,6 @@ input ModelCardReasoningInput {
 input ModelCardModalitiesInput {
   input: [String!]
   output: [String!]
-}
-
-input ModelCardCostInput {
-  input: Float
-  output: Float
-  cacheRead: Float
-  cacheWrite: Float
 }
 
 input ModelCardLimitInput {

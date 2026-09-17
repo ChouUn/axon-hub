@@ -21,7 +21,13 @@ enum PromptWriteCacheVariantCode {
 # ModelPrice represents pricing configuration for a model
 type ModelPrice {
   items: [ModelPriceItem!]!
+  volumeTiers: [ModelPriceVolumeTier!]
   schedule: PriceSchedule
+}
+
+type ModelPriceVolumeTier {
+  above: Int!
+  items: [ModelPriceItem!]!
 }
 
 type ModelPriceItem {
@@ -83,7 +89,13 @@ type PromptWriteCacheVariant {
 # Input types for ModelPrice
 input ModelPriceInput {
   items: [ModelPriceItemInput!]!
+  volumeTiers: [ModelPriceVolumeTierInput!]
   schedule: PriceScheduleInput
+}
+
+input ModelPriceVolumeTierInput {
+  above: Int!
+  items: [ModelPriceItemInput!]!
 }
 
 input ModelPriceItemInput {

@@ -2,6 +2,7 @@ package objects
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -88,9 +89,17 @@ func (p *Pricing) Validate() error {
 		if p.FlatFee == nil {
 			return fmt.Errorf("flatFee is required")
 		}
+
+		if p.FlatFee.IsNegative() {
+			return fmt.Errorf("flatFee must be non-negative")
+		}
 	case PricingModeUsagePerUnit:
 		if p.UsagePerUnit == nil {
 			return fmt.Errorf("usagePerUnit is required")
+		}
+
+		if p.UsagePerUnit.IsNegative() {
+			return fmt.Errorf("usagePerUnit must be non-negative")
 		}
 	case PricingModeTiered, PricingModeVolume:
 		if p.UsageTiered == nil {
@@ -119,6 +128,10 @@ func (p *TieredPricing) Validate() error {
 	lastIdx := len(p.Tiers) - 1
 	for i := range p.Tiers {
 		tier := p.Tiers[i]
+		if tier.PricePerUnit.IsNegative() {
+			return fmt.Errorf("tiers[%d].pricePerUnit must be non-negative", i)
+		}
+
 		if i == lastIdx {
 			if tier.UpTo != nil {
 				return fmt.Errorf("tiers[%d].upTo must be null", i)
@@ -170,15 +183,112 @@ func (p *ModelPrice) Validate() error {
 		return fmt.Errorf("modelPrice is nil")
 	}
 
-	for idx := range p.Items {
-		if err := p.Items[idx].Validate(); err != nil {
-			return fmt.Errorf("items[%d]: %w", idx, err)
+	if len(p.VolumeTiers) > 0 {
+		if err := p.validateVolumeTiers(); err != nil {
+			return err
+		}
+	} else {
+		for idx := range p.Items {
+			if err := p.Items[idx].Validate(); err != nil {
+				return fmt.Errorf("items[%d]: %w", idx, err)
+			}
 		}
 	}
 
 	if p.Schedule != nil {
 		if err := p.Schedule.Validate(); err != nil {
 			return fmt.Errorf("schedule: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (p *ModelPrice) validateVolumeTiers() error {
+	if err := validateVolumePriceItems(p.Items); err != nil {
+		return err
+	}
+
+	for idx := range p.VolumeTiers {
+		tier := &p.VolumeTiers[idx]
+		if tier.Above < 0 {
+			return fmt.Errorf("volumeTiers[%d].above must be non-negative", idx)
+		}
+
+		if idx > 0 && tier.Above <= p.VolumeTiers[idx-1].Above {
+			return fmt.Errorf("volumeTiers[%d].above must be strictly increasing", idx)
+		}
+
+		if len(tier.Items) != len(p.Items) {
+			return fmt.Errorf("volumeTiers[%d].items must match the base item set", idx)
+		}
+
+		if err := validateVolumePriceItems(tier.Items); err != nil {
+			return fmt.Errorf("volumeTiers[%d]: %w", idx, err)
+		}
+
+		for itemIdx := range tier.Items {
+			item := &tier.Items[itemIdx]
+			baseIdx := slices.IndexFunc(p.Items, func(base ModelPriceItem) bool {
+				return base.ItemCode == item.ItemCode
+			})
+			if baseIdx < 0 {
+				return fmt.Errorf("volumeTiers[%d].items[%d].itemCode is not in the base item set", idx, itemIdx)
+			}
+
+			baseVariants := p.Items[baseIdx].PromptWriteCacheVariants
+			if len(item.PromptWriteCacheVariants) != len(baseVariants) {
+				return fmt.Errorf("volumeTiers[%d].items[%d].promptWriteCacheVariants must match the base variant set", idx, itemIdx)
+			}
+
+			for _, variant := range item.PromptWriteCacheVariants {
+				if !slices.ContainsFunc(baseVariants, func(base PromptWriteCacheVariant) bool {
+					return base.VariantCode == variant.VariantCode
+				}) {
+					return fmt.Errorf("volumeTiers[%d].items[%d].promptWriteCacheVariants contains a variant outside the base variant set", idx, itemIdx)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func validateVolumePriceItems(items []ModelPriceItem) error {
+	if len(items) == 0 {
+		return fmt.Errorf("items is required for volume pricing")
+	}
+
+	for idx := range items {
+		item := &items[idx]
+		if err := item.Validate(); err != nil {
+			return fmt.Errorf("items[%d]: %w", idx, err)
+		}
+
+		if item.Pricing.Mode != PricingModeUsagePerUnit {
+			return fmt.Errorf("items[%d].pricing.mode must be usage_per_unit for volume pricing", idx)
+		}
+
+		if slices.ContainsFunc(items[:idx], func(previous ModelPriceItem) bool {
+			return previous.ItemCode == item.ItemCode
+		}) {
+			return fmt.Errorf("items[%d].itemCode must be unique", idx)
+		}
+
+		if len(item.PromptWriteCacheVariants) > 0 && item.ItemCode != PriceItemCodeWriteCachedTokens {
+			return fmt.Errorf("items[%d].promptWriteCacheVariants requires prompt_write_cached_tokens", idx)
+		}
+
+		for variantIdx, variant := range item.PromptWriteCacheVariants {
+			if variant.Pricing.Mode != PricingModeUsagePerUnit {
+				return fmt.Errorf("items[%d].promptWriteCacheVariants[%d].pricing.mode must be usage_per_unit for volume pricing", idx, variantIdx)
+			}
+
+			if slices.ContainsFunc(item.PromptWriteCacheVariants[:variantIdx], func(previous PromptWriteCacheVariant) bool {
+				return previous.VariantCode == variant.VariantCode
+			}) {
+				return fmt.Errorf("items[%d].promptWriteCacheVariants[%d].variantCode must be unique", idx, variantIdx)
+			}
 		}
 	}
 
@@ -336,8 +446,35 @@ type ModelPrice struct {
 	// Items is the list of price items for the price.
 	Items []ModelPriceItem `json:"items"`
 
+	// VolumeTiers replaces all item rates when total prompt tokens strictly exceed Above.
+	VolumeTiers []ModelPriceVolumeTier `json:"volumeTiers,omitempty"`
+
 	// Schedule is the optional time-based price override configuration.
 	Schedule *PriceSchedule `json:"schedule,omitempty"`
+}
+
+// ModelPriceVolumeTier applies one complete set of per-unit rates to all usage.
+type ModelPriceVolumeTier struct {
+	Above int64            `json:"above"`
+	Items []ModelPriceItem `json:"items"`
+}
+
+func (t *ModelPriceVolumeTier) Equals(other *ModelPriceVolumeTier) bool {
+	if t == nil || other == nil {
+		return t == other
+	}
+
+	if t.Above != other.Above || len(t.Items) != len(other.Items) {
+		return false
+	}
+
+	for i := range t.Items {
+		if !t.Items[i].Equals(&other.Items[i]) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (p *ModelPrice) Equals(other ModelPrice) bool {
@@ -347,6 +484,16 @@ func (p *ModelPrice) Equals(other ModelPrice) bool {
 
 	for i := range p.Items {
 		if !p.Items[i].Equals(&other.Items[i]) {
+			return false
+		}
+	}
+
+	if len(p.VolumeTiers) != len(other.VolumeTiers) {
+		return false
+	}
+
+	for i := range p.VolumeTiers {
+		if !p.VolumeTiers[i].Equals(&other.VolumeTiers[i]) {
 			return false
 		}
 	}

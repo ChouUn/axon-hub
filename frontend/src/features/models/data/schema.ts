@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { pageInfoSchema } from '@/gql/pagination';
+import { modelPriceSchema } from '@/features/channels/data/schema';
 
 export const modelTypeSchema = z.enum(['chat', 'embedding', 'rerank', 'image_generation', 'video_generation']);
 export type ModelType = z.infer<typeof modelTypeSchema>;
@@ -40,12 +41,15 @@ export const modelCardSchema = z.object({
   modalities: modelModalitiesSchema.optional(),
   vision: z.boolean().optional(),
   cost: modelCostSchema.optional(),
+  price: modelPriceSchema.optional().nullable(),
   limit: modelLimitSchema.optional(),
   knowledge: z.string().optional(),
   releaseDate: z.string().optional(),
   lastUpdated: z.string().optional(),
 });
 export type ModelCard = z.infer<typeof modelCardSchema>;
+
+export const modelCardInputSchema = modelCardSchema.omit({ cost: true });
 
 export const channelModelAssociationSchema = z.object({
   channelId: z.number(),
@@ -102,7 +106,10 @@ export type FilterCondition = {
 export const filterConditionSchema: z.ZodType<FilterCondition> = z.object({
   type: z.enum(['condition', 'group']).default('condition'),
   logic: z.string().optional(),
-  conditions: z.array(z.lazy(() => filterConditionSchema)).optional().default([]),
+  conditions: z
+    .array(z.lazy(() => filterConditionSchema))
+    .optional()
+    .default([]),
   field: z.string().optional(),
   operator: z.string().optional(),
   value: z.any().optional(),
@@ -128,7 +135,7 @@ export const modelAssociationSchema = z.object({
 });
 export type ModelAssociation = z.infer<typeof modelAssociationSchema>;
 
-export function normalizeModelRoutingPolicyValue(value?: string | null): string {
+export function normalizeModelRoutingPolicyValue<T extends string>(value?: T | null): T | 'default' {
   if (!value || value === 'system_default') {
     return 'default';
   }
@@ -169,7 +176,7 @@ export const createModelInputSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   icon: z.string().min(1, 'Icon is required'),
   group: z.string().min(1, 'Group is required'),
-  modelCard: modelCardSchema,
+  modelCard: modelCardInputSchema,
   settings: modelSettingsSchema.optional(),
   status: modelStatusSchema.optional(),
   remark: z.string().optional(),
@@ -183,7 +190,7 @@ export const updateModelInputSchema = z.object({
   name: z.string().min(1, 'Name is required').optional(),
   icon: z.string().min(1, 'Icon is required').optional(),
   group: z.string().min(1, 'Group is required').optional(),
-  modelCard: modelCardSchema.optional(),
+  modelCard: modelCardInputSchema.optional(),
   settings: modelSettingsSchema.optional(),
   status: modelStatusSchema.optional(),
   remark: z.string().optional().nullable(),

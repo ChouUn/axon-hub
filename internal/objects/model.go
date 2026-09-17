@@ -1,5 +1,12 @@
 package objects
 
+import (
+	"encoding/json"
+
+	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
+)
+
 type ModelCardReasoning struct {
 	Supported bool `json:"supported"`
 	Default   bool `json:"default"`
@@ -29,11 +36,104 @@ type ModelCard struct {
 	Temperature bool                `json:"temperature"`
 	Modalities  ModelCardModalities `json:"modalities"`
 	Vision      bool                `json:"vision"`
-	Cost        ModelCardCost       `json:"cost"`
-	Limit       ModelCardLimit      `json:"limit"`
-	Knowledge   string              `json:"knowledge"`
-	ReleaseDate string              `json:"releaseDate"`
-	LastUpdated string              `json:"lastUpdated"`
+	// Price is authoritative. Keep null in JSON to distinguish an unpriced card
+	// from legacy cost-only persisted data, including old cache entries.
+	Price       *ModelPrice    `json:"price"`
+	Cost        ModelCardCost  `json:"cost"`
+	Limit       ModelCardLimit `json:"limit"`
+	Knowledge   string         `json:"knowledge"`
+	ReleaseDate string         `json:"releaseDate"`
+	LastUpdated string         `json:"lastUpdated"`
+}
+
+// UnmarshalJSON upgrades legacy persisted cards without changing database or
+// cache envelopes. Explicit price (including null or empty) always wins.
+func (c *ModelCard) UnmarshalJSON(data []byte) error {
+	type cardJSON ModelCard
+	var decoded struct {
+		cardJSON
+		Price json.RawMessage `json:"price"`
+		Cost  *struct {
+			Input      *float64 `json:"input"`
+			Output     *float64 `json:"output"`
+			CacheRead  *float64 `json:"cacheRead"`
+			CacheWrite *float64 `json:"cacheWrite"`
+		} `json:"cost"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	card := ModelCard(decoded.cardJSON)
+	if decoded.Price != nil {
+		if err := json.Unmarshal(decoded.Price, &card.Price); err != nil {
+			return err
+		}
+	} else if decoded.Cost != nil {
+		items := make([]ModelPriceItem, 0, 4)
+		add := func(code PriceItemCode, value *float64) {
+			if value != nil && *value >= 0 {
+				items = append(items, ModelPriceItem{
+					ItemCode: code,
+					Pricing:  Pricing{Mode: PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(*value))},
+				})
+			}
+		}
+		add(PriceItemCodeUsage, decoded.Cost.Input)
+		add(PriceItemCodeCompletion, decoded.Cost.Output)
+		add(PriceItemCodePromptCachedToken, decoded.Cost.CacheRead)
+		add(PriceItemCodeWriteCachedTokens, decoded.Cost.CacheWrite)
+		if len(items) != 0 {
+			card.Price = &ModelPrice{Items: items}
+		}
+	}
+	card.Cost = card.PriceSummary()
+	*c = card
+	return nil
+}
+
+// MarshalJSON never persists Cost as an independent pricing source.
+func (c ModelCard) MarshalJSON() ([]byte, error) {
+	type cardJSON ModelCard
+	c.Cost = c.PriceSummary()
+	return json.Marshal(cardJSON(c))
+}
+
+// PriceSummary describes base token rates only; volume tiers and schedules
+// remain available in Price. Flat request fees have no per-token summary.
+func (c *ModelCard) PriceSummary() ModelCardCost {
+	var summary ModelCardCost
+	if c == nil || c.Price == nil {
+		return summary
+	}
+	for _, item := range c.Price.Items {
+		var rate decimal.Decimal
+		switch item.Pricing.Mode {
+		case PricingModeUsagePerUnit:
+			if item.Pricing.UsagePerUnit == nil {
+				continue
+			}
+			rate = *item.Pricing.UsagePerUnit
+		case PricingModeTiered, PricingModeVolume:
+			if item.Pricing.UsageTiered == nil || len(item.Pricing.UsageTiered.Tiers) == 0 {
+				continue
+			}
+			rate = item.Pricing.UsageTiered.Tiers[0].PricePerUnit
+		default:
+			continue
+		}
+		value := rate.InexactFloat64()
+		switch item.ItemCode {
+		case PriceItemCodeUsage:
+			summary.Input = value
+		case PriceItemCodeCompletion:
+			summary.Output = value
+		case PriceItemCodePromptCachedToken:
+			summary.CacheRead = value
+		case PriceItemCodeWriteCachedTokens:
+			summary.CacheWrite = value
+		}
+	}
+	return summary
 }
 
 type ModelSettings struct {

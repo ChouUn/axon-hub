@@ -1141,3 +1141,89 @@ func TestModelService_UpdateModel_WithRegexValidation(t *testing.T) {
 		require.Contains(t, err.Error(), "invalid regex pattern")
 	})
 }
+
+func TestModelService_ModelPriceLifecycle(t *testing.T) {
+	client := enttest.NewEntClient(t, "sqlite3", "file:ent?mode=memory&_fk=0")
+	defer client.Close()
+	ctx := authz.WithTestBypass(ent.NewContext(context.Background(), client))
+	svc := &ModelService{AbstractService: &AbstractService{db: client}}
+	price := &objects.ModelPrice{
+		Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{
+			Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("0"),
+		}}},
+		VolumeTiers: []objects.ModelPriceVolumeTier{{Above: 200000, Items: []objects.ModelPriceItem{{
+			ItemCode: objects.PriceItemCodeUsage,
+			Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("2")},
+		}}}},
+	}
+	input := ent.CreateModelInput{
+		Developer: "test", ModelID: "price-lifecycle", Name: "Price lifecycle", Icon: "test", Group: "test",
+		ModelCard: &objects.ModelCard{Price: price}, Settings: &objects.ModelSettings{},
+	}
+	created, err := svc.CreateModel(ctx, input)
+	require.NoError(t, err)
+	persisted, err := client.Model.Get(ctx, created.ID)
+	require.NoError(t, err)
+	require.True(t, price.Equals(*persisted.ModelCard.Price))
+
+	input.ModelID = "price-bulk"
+	input.Name = "Price bulk"
+	bulk, err := svc.BulkCreateModels(ctx, []*ent.CreateModelInput{&input})
+	require.NoError(t, err)
+	persisted, err = client.Model.Get(ctx, bulk[0].ID)
+	require.NoError(t, err)
+	require.True(t, price.Equals(*persisted.ModelCard.Price))
+
+	// Omitting the card preserves pricing; an explicitly empty price clears it
+	// without resurrecting old cost metadata on the next JSON read.
+	_, err = svc.UpdateModel(ctx, created.ID, &ent.UpdateModelInput{Name: lo.ToPtr("Renamed")})
+	require.NoError(t, err)
+	persisted, err = client.Model.Get(ctx, created.ID)
+	require.NoError(t, err)
+	require.True(t, price.Equals(*persisted.ModelCard.Price))
+	_, err = svc.UpdateModel(ctx, created.ID, &ent.UpdateModelInput{ModelCard: &objects.ModelCard{Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{}}}})
+	require.NoError(t, err)
+	persisted, err = client.Model.Get(ctx, created.ID)
+	require.NoError(t, err)
+	require.NotNil(t, persisted.ModelCard.Price)
+	require.Empty(t, persisted.ModelCard.Price.Items)
+	_, err = svc.UpdateModel(ctx, created.ID, &ent.UpdateModelInput{ModelCard: &objects.ModelCard{Price: price}})
+	require.NoError(t, err)
+	persisted, err = client.Model.Get(ctx, created.ID)
+	require.NoError(t, err)
+	require.True(t, price.Equals(*persisted.ModelCard.Price))
+}
+
+func TestModelService_RejectsInvalidPriceAcrossMutations(t *testing.T) {
+	client := enttest.NewEntClient(t, "sqlite3", "file:ent?mode=memory&_fk=0")
+	defer client.Close()
+	ctx := authz.WithTestBypass(ent.NewContext(context.Background(), client))
+	svc := &ModelService{AbstractService: &AbstractService{db: client}}
+	input := ent.CreateModelInput{
+		Developer: "test", ModelID: "valid-price", Name: "Valid price", Icon: "test", Group: "test",
+		ModelCard: &objects.ModelCard{}, Settings: &objects.ModelSettings{},
+	}
+	created, err := svc.CreateModel(ctx, input)
+	require.NoError(t, err)
+	invalid := &objects.ModelCard{Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{
+		ItemCode: objects.PriceItemCodeUsage,
+		Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit},
+	}}}}
+	input.ModelID = "invalid-price"
+	input.ModelCard = invalid
+	_, err = svc.CreateModel(ctx, input)
+	require.Error(t, err)
+	valid := input
+	valid.ModelID = "bulk-valid-price"
+	valid.ModelCard = &objects.ModelCard{}
+	_, err = svc.BulkCreateModels(ctx, []*ent.CreateModelInput{&valid, &input})
+	require.Error(t, err)
+	count, err := client.Model.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	_, err = svc.UpdateModel(ctx, created.ID, &ent.UpdateModelInput{ModelCard: invalid})
+	require.Error(t, err)
+	persisted, err := client.Model.Get(ctx, created.ID)
+	require.NoError(t, err)
+	require.Nil(t, persisted.ModelCard.Price)
+}

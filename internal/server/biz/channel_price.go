@@ -3,12 +3,10 @@ package biz
 import (
 	"context"
 	"fmt"
-	"math"
 	"math/rand/v2"
 	"time"
 
 	"github.com/samber/lo"
-	"github.com/shopspring/decimal"
 
 	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/ent"
@@ -56,35 +54,15 @@ func uniqueNonEmptyModelIDs(modelIDs []string) []string {
 }
 
 func modelCardToChannelModelPrice(card *objects.ModelCard) (objects.ModelPrice, bool) {
-	if card == nil {
+	if card == nil || card.Price == nil {
+		return objects.ModelPrice{}, false
+	}
+	if len(card.Price.Items) == 0 && len(card.Price.VolumeTiers) == 0 &&
+		(card.Price.Schedule == nil || len(card.Price.Schedule.Overrides) == 0) {
 		return objects.ModelPrice{}, false
 	}
 
-	items := make([]objects.ModelPriceItem, 0, 4)
-	addItem := func(code objects.PriceItemCode, cost float64) {
-		if cost <= 0 || math.IsNaN(cost) || math.IsInf(cost, 0) {
-			return
-		}
-
-		items = append(items, objects.ModelPriceItem{
-			ItemCode: code,
-			Pricing: objects.Pricing{
-				Mode:         objects.PricingModeUsagePerUnit,
-				UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(cost)),
-			},
-		})
-	}
-
-	addItem(objects.PriceItemCodeUsage, card.Cost.Input)
-	addItem(objects.PriceItemCodeCompletion, card.Cost.Output)
-	addItem(objects.PriceItemCodePromptCachedToken, card.Cost.CacheRead)
-	addItem(objects.PriceItemCodeWriteCachedTokens, card.Cost.CacheWrite)
-
-	if len(items) == 0 {
-		return objects.ModelPrice{}, false
-	}
-
-	return objects.ModelPrice{Items: items}, true
+	return *card.Price, true
 }
 
 // createChannelModelPriceIfMissing atomically creates a current price when the

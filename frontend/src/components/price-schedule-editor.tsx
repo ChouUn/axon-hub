@@ -1,21 +1,22 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { format } from 'date-fns';
 import { useFieldArray, useFormContext, useWatch, type Control, type FieldArrayPath, type FieldPath } from 'react-hook-form';
 import { IconPlus, IconTrash, IconClock, IconCalendar, IconChevronDown, IconCheck } from '@tabler/icons-react';
-import { format } from 'date-fns';
+import { Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useClickOutside } from '@/hooks/use-click-outside';
 import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { AutoCompleteSelect } from '@/components/auto-complete-select';
 import { GMTTimeZoneOptions } from '@/features/system/data/timezones';
-import { Clock } from 'lucide-react';
 
 const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -101,22 +102,28 @@ function pad2(n: number) {
 type PriceScheduleEditorProps = {
   control: Control<ScheduleFormValues>;
   priceIndex: number;
+  pricePath?: string;
   currencyCode?: string;
   defaultTimezone?: string;
+  renderItems?: (itemsPath: string) => ReactNode;
+  portalContainer?: HTMLDivElement | null;
 };
 
 export const PriceScheduleEditor = memo(function PriceScheduleEditor({
   control,
   priceIndex,
+  pricePath = `prices.${priceIndex}.price`,
   currencyCode,
   defaultTimezone = 'UTC',
+  renderItems,
+  portalContainer,
 }: PriceScheduleEditorProps) {
   const { t } = useTranslation();
   const { setValue } = useFormContext<ScheduleFormValues>();
 
   const schedule = useScheduleWatch<ScheduleFormValues['prices'][number]['price']['schedule'] | null | undefined>(
     control,
-    `prices.${priceIndex}.price.schedule`
+    `${pricePath}.schedule`
   );
 
   const isEnabled = schedule != null;
@@ -124,18 +131,22 @@ export const PriceScheduleEditor = memo(function PriceScheduleEditor({
   const handleToggle = useCallback(
     (checked: boolean) => {
       if (checked) {
-        setValue(asFieldPath(`prices.${priceIndex}.price.schedule`) as FieldPath<ScheduleFormValues>, {
-          timezone: defaultTimezone,
-          overrides: [],
-        } as never, { shouldDirty: true, shouldValidate: true });
+        setValue(
+          asFieldPath(`${pricePath}.schedule`) as FieldPath<ScheduleFormValues>,
+          {
+            timezone: defaultTimezone,
+            overrides: [],
+          } as never,
+          { shouldDirty: true, shouldValidate: true }
+        );
       } else {
-        setValue(asFieldPath(`prices.${priceIndex}.price.schedule`) as FieldPath<ScheduleFormValues>, null as never, {
+        setValue(asFieldPath(`${pricePath}.schedule`) as FieldPath<ScheduleFormValues>, null as never, {
           shouldDirty: true,
           shouldValidate: true,
         });
       }
     },
-    [defaultTimezone, priceIndex, setValue]
+    [defaultTimezone, pricePath, setValue]
   );
 
   return (
@@ -149,9 +160,11 @@ export const PriceScheduleEditor = memo(function PriceScheduleEditor({
       {isEnabled && (
         <ScheduleContent
           control={control}
-          priceIndex={priceIndex}
+          pricePath={pricePath}
           currencyCode={currencyCode}
           defaultTimezone={defaultTimezone}
+          renderItems={renderItems}
+          portalContainer={portalContainer}
         />
       )}
     </div>
@@ -162,14 +175,18 @@ export const PriceScheduleEditor = memo(function PriceScheduleEditor({
 
 const ScheduleContent = memo(function ScheduleContent({
   control,
-  priceIndex,
+  pricePath,
   currencyCode,
   defaultTimezone,
+  renderItems,
+  portalContainer,
 }: {
   control: Control<ScheduleFormValues>;
-  priceIndex: number;
+  pricePath: string;
   currencyCode?: string;
   defaultTimezone: string;
+  renderItems?: (itemsPath: string) => ReactNode;
+  portalContainer?: HTMLDivElement | null;
 }) {
   const { t } = useTranslation();
   const { setValue } = useFormContext<ScheduleFormValues>();
@@ -182,7 +199,7 @@ const ScheduleContent = memo(function ScheduleContent({
     remove: removeOverride,
   } = useFieldArray({
     control,
-    name: asFieldArrayPath(`prices.${priceIndex}.price.schedule.overrides`),
+    name: asFieldArrayPath(`${pricePath}.schedule.overrides`),
   });
 
   const handleAddOverride = useCallback(() => {
@@ -199,7 +216,7 @@ const ScheduleContent = memo(function ScheduleContent({
     });
   }, [appendOverride]);
 
-  const timezoneValue = useScheduleWatch<string>(control, `prices.${priceIndex}.price.schedule.timezone`);
+  const timezoneValue = useScheduleWatch<string>(control, `${pricePath}.schedule.timezone`);
 
   return (
     <div className='space-y-4 rounded-md border border-dashed p-4'>
@@ -209,13 +226,14 @@ const ScheduleContent = memo(function ScheduleContent({
           <AutoCompleteSelect
             selectedValue={timezoneValue || defaultTimezone}
             onSelectedValueChange={(v) =>
-              setValue(asFieldPath(`prices.${priceIndex}.price.schedule.timezone`) as FieldPath<ScheduleFormValues>, v as never, {
+              setValue(asFieldPath(`${pricePath}.schedule.timezone`) as FieldPath<ScheduleFormValues>, v as never, {
                 shouldDirty: true,
                 shouldValidate: true,
               })
             }
             items={timezoneItems}
             placeholder={t('system.general.timezone.placeholder', { defaultValue: 'Select timezone...' })}
+            portalContainer={portalContainer}
           />
         </div>
       </div>
@@ -232,18 +250,15 @@ const ScheduleContent = memo(function ScheduleContent({
           <OverrideCard
             key={field.id}
             control={control}
-            priceIndex={priceIndex}
+            pricePath={pricePath}
             overrideIndex={overrideIndex}
             currencyCode={currencyCode}
+            renderItems={renderItems}
             onRemove={() => removeOverride(overrideIndex)}
           />
         ))}
 
-        {overrideFields.length === 0 && (
-          <p className='text-muted-foreground py-4 text-center text-xs'>
-            {t('price.schedule.noOverrides')}
-          </p>
-        )}
+        {overrideFields.length === 0 && <p className='text-muted-foreground py-4 text-center text-xs'>{t('price.schedule.noOverrides')}</p>}
       </div>
     </div>
   );
@@ -257,22 +272,24 @@ const CONDITION_TYPES: ConditionType[] = ['dailyTime', 'weekdays', 'dateRange'];
 
 const OverrideCard = memo(function OverrideCard({
   control,
-  priceIndex,
+  pricePath,
   overrideIndex,
   currencyCode,
   onRemove,
+  renderItems,
 }: {
   control: Control<ScheduleFormValues>;
-  priceIndex: number;
+  pricePath: string;
   overrideIndex: number;
   currencyCode?: string;
   onRemove: () => void;
+  renderItems?: (itemsPath: string) => ReactNode;
 }) {
   const { t } = useTranslation();
   const { setValue } = useFormContext<ScheduleFormValues>();
 
-  const base = `prices.${priceIndex}.price.schedule.overrides.${overrideIndex}`;
-  const when = useScheduleWatch<ScheduleFormValues['prices'][number]['price']['schedule']['overrides'][number]['when']>(
+  const base = `${pricePath}.schedule.overrides.${overrideIndex}`;
+  const when = useScheduleWatch<NonNullable<ScheduleFormValues['prices'][number]['price']['schedule']>['overrides'][number]['when']>(
     control,
     `${base}.when`
   );
@@ -289,20 +306,28 @@ const OverrideCard = memo(function OverrideCard({
     if (available.length === 0) return;
     const nextType = available[0];
     if (nextType === 'dailyTime') {
-      setValue(asFieldPath(`${base}.when.dailyTime`) as FieldPath<ScheduleFormValues>, {
-        start: '00:00',
-        end: '08:00',
-      } as never, { shouldDirty: true, shouldValidate: true });
+      setValue(
+        asFieldPath(`${base}.when.dailyTime`) as FieldPath<ScheduleFormValues>,
+        {
+          start: '00:00',
+          end: '08:00',
+        } as never,
+        { shouldDirty: true, shouldValidate: true }
+      );
     } else if (nextType === 'weekdays') {
       setValue(asFieldPath(`${base}.when.weekdays`) as FieldPath<ScheduleFormValues>, [1] as never, {
         shouldDirty: true,
         shouldValidate: true,
       });
     } else if (nextType === 'dateRange') {
-      setValue(asFieldPath(`${base}.when.dateRange`) as FieldPath<ScheduleFormValues>, {
-        start: '',
-        end: '',
-      } as never, { shouldDirty: true, shouldValidate: true });
+      setValue(
+        asFieldPath(`${base}.when.dateRange`) as FieldPath<ScheduleFormValues>,
+        {
+          start: '',
+          end: '',
+        } as never,
+        { shouldDirty: true, shouldValidate: true }
+      );
     }
   }, [base, conditions, setValue]);
 
@@ -316,20 +341,28 @@ const OverrideCard = memo(function OverrideCard({
       });
       // Set new with default value
       if (newType === 'dailyTime') {
-        setValue(asFieldPath(`${base}.when.dailyTime`) as FieldPath<ScheduleFormValues>, {
-          start: '00:00',
-          end: '08:00',
-        } as never, { shouldDirty: true, shouldValidate: true });
+        setValue(
+          asFieldPath(`${base}.when.dailyTime`) as FieldPath<ScheduleFormValues>,
+          {
+            start: '00:00',
+            end: '08:00',
+          } as never,
+          { shouldDirty: true, shouldValidate: true }
+        );
       } else if (newType === 'weekdays') {
         setValue(asFieldPath(`${base}.when.weekdays`) as FieldPath<ScheduleFormValues>, [1] as never, {
           shouldDirty: true,
           shouldValidate: true,
         });
       } else if (newType === 'dateRange') {
-        setValue(asFieldPath(`${base}.when.dateRange`) as FieldPath<ScheduleFormValues>, {
-          start: '',
-          end: '',
-        } as never, { shouldDirty: true, shouldValidate: true });
+        setValue(
+          asFieldPath(`${base}.when.dateRange`) as FieldPath<ScheduleFormValues>,
+          {
+            start: '',
+            end: '',
+          } as never,
+          { shouldDirty: true, shouldValidate: true }
+        );
       }
     },
     [base, setValue]
@@ -349,11 +382,10 @@ const OverrideCard = memo(function OverrideCard({
     (day: number) => {
       const current = when?.weekdays || [];
       const next = current.includes(day) ? current.filter((d) => d !== day) : [...current, day].sort();
-      setValue(
-        asFieldPath(`${base}.when.weekdays`) as FieldPath<ScheduleFormValues>,
-        next.length > 0 ? (next as never) : (null as never),
-        { shouldDirty: true, shouldValidate: true }
-      );
+      setValue(asFieldPath(`${base}.when.weekdays`) as FieldPath<ScheduleFormValues>, next.length > 0 ? (next as never) : (null as never), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
     },
     [base, setValue, when?.weekdays]
   );
@@ -369,7 +401,12 @@ const OverrideCard = memo(function OverrideCard({
               <FormItem>
                 <FormLabel className='text-xs'>{t('price.schedule.override.name')}</FormLabel>
                 <FormControl>
-                  <Input {...field} value={(field.value as string) || ''} placeholder={t('price.schedule.override.namePlaceholder')} className='h-8 text-sm' />
+                  <Input
+                    {...field}
+                    value={(field.value as string) || ''}
+                    placeholder={t('price.schedule.override.namePlaceholder')}
+                    className='h-8 text-sm'
+                  />
                 </FormControl>
                 <FormMessage className='text-[10px]' />
               </FormItem>
@@ -406,7 +443,13 @@ const OverrideCard = memo(function OverrideCard({
         <div className='space-y-2'>
           <div className='flex items-center justify-between'>
             <span className='text-muted-foreground text-xs font-medium'>{t('price.schedule.override.when')}</span>
-            <Button type='button' variant='outline' size='icon-sm' onClick={handleAddCondition} disabled={conditions.length >= CONDITION_TYPES.length}>
+            <Button
+              type='button'
+              variant='outline'
+              size='icon-sm'
+              onClick={handleAddCondition}
+              disabled={conditions.length >= CONDITION_TYPES.length}
+            >
               <IconPlus size={14} />
             </Button>
           </div>
@@ -417,7 +460,7 @@ const OverrideCard = memo(function OverrideCard({
               type={condType}
               allActiveTypes={conditions}
               control={control}
-              priceIndex={priceIndex}
+              pricePath={pricePath}
               overrideIndex={overrideIndex}
               weekdays={when?.weekdays}
               onTypeChange={(newType) => handleChangeConditionType(condType, newType)}
@@ -427,18 +470,15 @@ const OverrideCard = memo(function OverrideCard({
           ))}
 
           {conditions.length === 0 && (
-            <p className='text-muted-foreground py-2 text-center text-xs'>
-              {t('price.schedule.when.atLeastOne')}
-            </p>
+            <p className='text-muted-foreground py-2 text-center text-xs'>{t('price.schedule.when.atLeastOne')}</p>
           )}
         </div>
 
-        <OverrideItemsEditor
-          control={control}
-          priceIndex={priceIndex}
-          overrideIndex={overrideIndex}
-          currencyCode={currencyCode}
-        />
+        {renderItems ? (
+          renderItems(`${base}.items`)
+        ) : (
+          <OverrideItemsEditor control={control} pricePath={pricePath} overrideIndex={overrideIndex} currencyCode={currencyCode} />
+        )}
       </CollapsibleContent>
     </Collapsible>
   );
@@ -450,7 +490,7 @@ const ConditionRow = memo(function ConditionRow({
   type,
   allActiveTypes,
   control,
-  priceIndex,
+  pricePath,
   overrideIndex,
   weekdays,
   onTypeChange,
@@ -460,7 +500,7 @@ const ConditionRow = memo(function ConditionRow({
   type: ConditionType;
   allActiveTypes: ConditionType[];
   control: Control<ScheduleFormValues>;
-  priceIndex: number;
+  pricePath: string;
   overrideIndex: number;
   weekdays?: number[] | null;
   onTypeChange: (newType: ConditionType) => void;
@@ -469,12 +509,10 @@ const ConditionRow = memo(function ConditionRow({
 }) {
   const { t } = useTranslation();
 
-  const base = `prices.${priceIndex}.price.schedule.overrides.${overrideIndex}.when`;
+  const base = `${pricePath}.schedule.overrides.${overrideIndex}.when`;
 
   // Filter out types already used by OTHER rows, but keep current row's type
-  const availableTypes = CONDITION_TYPES.filter(
-    (ct) => ct === type || !allActiveTypes.includes(ct)
-  );
+  const availableTypes = CONDITION_TYPES.filter((ct) => ct === type || !allActiveTypes.includes(ct));
 
   return (
     <div className='grid grid-cols-[7rem_1fr_auto_1fr_2rem] items-center gap-1'>
@@ -493,9 +531,7 @@ const ConditionRow = memo(function ConditionRow({
       </Select>
 
       {/* Col 2: first value */}
-      {type === 'dailyTime' && (
-        <HHMMTimePicker control={control} path={`${base}.dailyTime.start`} />
-      )}
+      {type === 'dailyTime' && <HHMMTimePicker control={control} path={`${base}.dailyTime.start`} />}
       {type === 'weekdays' && (
         <div className='col-span-3'>
           <WeekdaysEditor weekdays={weekdays} onToggle={onToggleWeekday} />
@@ -509,9 +545,7 @@ const ConditionRow = memo(function ConditionRow({
       {type !== 'weekdays' && <span className='text-muted-foreground text-xs'>→</span>}
 
       {/* Col 4: second value */}
-      {type === 'dailyTime' && (
-        <HHMMTimePicker control={control} path={`${base}.dailyTime.end`} />
-      )}
+      {type === 'dailyTime' && <HHMMTimePicker control={control} path={`${base}.dailyTime.end`} />}
       {type === 'dateRange' && (
         <DateRangeSinglePicker control={control} path={`${base}.dateRange.end`} placeholder={t('price.schedule.when.dateRange.end')} />
       )}
@@ -526,13 +560,7 @@ const ConditionRow = memo(function ConditionRow({
 
 // HH:MM time picker with the same visual style as TimeField from date-range-picker
 // Reads/writes a single string in "HH:mm" format (e.g. "03:00")
-const HHMMTimePicker = memo(function HHMMTimePicker({
-  control,
-  path,
-}: {
-  control: Control<ScheduleFormValues>;
-  path: string;
-}) {
+const HHMMTimePicker = memo(function HHMMTimePicker({ control, path }: { control: Control<ScheduleFormValues>; path: string }) {
   const { setValue } = useFormContext<ScheduleFormValues>();
   const value = useScheduleWatch<string>(control, path);
   const [open, setOpen] = useState(false);
@@ -570,7 +598,7 @@ const HHMMTimePicker = memo(function HHMMTimePicker({
       {open && (
         <div
           className={cn(
-            'absolute left-0 top-[calc(100%+8px)] z-50 flex h-[220px] w-full overflow-hidden rounded-md',
+            'absolute top-[calc(100%+8px)] left-0 z-50 flex h-[220px] w-full overflow-hidden rounded-md',
             'border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#121214]'
           )}
           role='dialog'
@@ -587,17 +615,7 @@ const HHMMTimePicker = memo(function HHMMTimePicker({
   );
 });
 
-function TimeColInner({
-  label,
-  items,
-  active,
-  onPick,
-}: {
-  label: string;
-  items: number[];
-  active: string;
-  onPick: (val: string) => void;
-}) {
+function TimeColInner({ label, items, active, onPick }: { label: string; items: number[]; active: string; onPick: (val: string) => void }) {
   return (
     <>
       <span className='sr-only'>{label}</span>
@@ -612,7 +630,7 @@ function TimeColInner({
             className={cn(
               'w-full rounded-md py-2 text-sm transition-colors',
               isActive
-                ? 'glass-highlight border border-primary/20 font-semibold text-primary'
+                ? 'glass-highlight border-primary/20 text-primary border font-semibold'
                 : 'text-gray-400 hover:bg-gray-100 dark:text-gray-500 dark:hover:bg-white/5'
             )}
             onClick={() => onPick(txt)}
@@ -638,9 +656,7 @@ const WeekdaysEditor = memo(function WeekdaysEditor({
   const [open, setOpen] = useState(false);
 
   const selected = weekdays || [];
-  const displayText = selected.length > 0
-    ? selected.map((d) => t(`price.schedule.weekdays.${d}`)).join(', ')
-    : '';
+  const displayText = selected.length > 0 ? selected.map((d) => t(`price.schedule.weekdays.${d}`)).join(', ') : '';
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -666,7 +682,7 @@ const WeekdaysEditor = memo(function WeekdaysEditor({
             <button
               key={day}
               type='button'
-              className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent'
+              className='hover:bg-accent flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs'
               onClick={() => onToggle(day)}
             >
               <div
@@ -708,11 +724,11 @@ const DateRangeSinglePicker = memo(function DateRangeSinglePicker({
               <FormControl>
                 <Button
                   variant='outline'
-                  className={`!bg-transparent h-8 w-full justify-start pl-2 text-left text-xs font-normal ${
+                  className={`h-8 w-full justify-start !bg-transparent pl-2 text-left text-xs font-normal ${
                     !field.value && 'text-muted-foreground'
                   }`}
                 >
-                  {field.value || placeholder}
+                  {typeof field.value === 'string' && field.value ? field.value : placeholder}
                   <IconCalendar className='ml-auto h-3.5 w-3.5 opacity-50' />
                 </Button>
               </FormControl>
@@ -720,7 +736,7 @@ const DateRangeSinglePicker = memo(function DateRangeSinglePicker({
             <PopoverContent className='w-auto p-0' align='start'>
               <Calendar
                 mode='single'
-                selected={field.value ? new Date(field.value) : undefined}
+                selected={typeof field.value === 'string' && field.value ? new Date(field.value) : undefined}
                 onSelect={(date) => field.onChange(date ? format(date, 'yyyy-MM-dd') : '')}
                 initialFocus
               />
@@ -737,12 +753,12 @@ const DateRangeSinglePicker = memo(function DateRangeSinglePicker({
 
 const OverrideItemsEditor = memo(function OverrideItemsEditor({
   control,
-  priceIndex,
+  pricePath,
   overrideIndex,
   currencyCode,
 }: {
   control: Control<ScheduleFormValues>;
-  priceIndex: number;
+  pricePath: string;
   overrideIndex: number;
   currencyCode?: string;
 }) {
@@ -751,9 +767,9 @@ const OverrideItemsEditor = memo(function OverrideItemsEditor({
 
   const items = useWatch({
     control,
-    name: asFieldPath(`prices.${priceIndex}.price.schedule.overrides.${overrideIndex}.items`) as FieldPath<ScheduleFormValues>,
+    name: asFieldPath(`${pricePath}.schedule.overrides.${overrideIndex}.items`) as FieldPath<ScheduleFormValues>,
     compute: (value) => value,
-  }) as unknown as ScheduleFormValues['prices'][number]['price']['schedule']['overrides'][number]['items'] | undefined;
+  }) as unknown as NonNullable<ScheduleFormValues['prices'][number]['price']['schedule']>['overrides'][number]['items'] | undefined;
 
   const handleAddItem = useCallback(() => {
     const currentItems = items || [];
@@ -761,24 +777,24 @@ const OverrideItemsEditor = memo(function OverrideItemsEditor({
     const nextCode = priceItemCodes.find((code) => !existingCodes.has(code));
     if (!nextCode) return;
 
-    const path = `prices.${priceIndex}.price.schedule.overrides.${overrideIndex}.items` as string;
-    setValue(asFieldPath(path) as FieldPath<ScheduleFormValues>, [
-      ...currentItems,
-      { itemCode: nextCode, pricing: { mode: 'usage_per_unit', usagePerUnit: '0' } },
-    ] as never, { shouldDirty: true, shouldValidate: true });
-  }, [items, overrideIndex, priceIndex, setValue]);
+    const path = `${pricePath}.schedule.overrides.${overrideIndex}.items` as string;
+    setValue(
+      asFieldPath(path) as FieldPath<ScheduleFormValues>,
+      [...currentItems, { itemCode: nextCode, pricing: { mode: 'usage_per_unit', usagePerUnit: '0' } }] as never,
+      { shouldDirty: true, shouldValidate: true }
+    );
+  }, [items, overrideIndex, pricePath, setValue]);
 
   const handleRemoveItem = useCallback(
     (itemIndex: number) => {
       const currentItems = items || [];
-      const path = `prices.${priceIndex}.price.schedule.overrides.${overrideIndex}.items` as string;
-      setValue(
-        asFieldPath(path) as FieldPath<ScheduleFormValues>,
-        currentItems.filter((_, i) => i !== itemIndex) as never,
-        { shouldDirty: true, shouldValidate: true }
-      );
+      const path = `${pricePath}.schedule.overrides.${overrideIndex}.items` as string;
+      setValue(asFieldPath(path) as FieldPath<ScheduleFormValues>, currentItems.filter((_, i) => i !== itemIndex) as never, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
     },
-    [items, overrideIndex, priceIndex, setValue]
+    [items, overrideIndex, pricePath, setValue]
   );
 
   return (
@@ -790,11 +806,11 @@ const OverrideItemsEditor = memo(function OverrideItemsEditor({
         </Button>
       </div>
 
-      {(items || []).map((item, itemIndex) => (
+      {(items || []).map((_, itemIndex) => (
         <OverrideItemRow
           key={itemIndex}
           control={control}
-          priceIndex={priceIndex}
+          pricePath={pricePath}
           overrideIndex={overrideIndex}
           itemIndex={itemIndex}
           itemCount={(items || []).length}
@@ -810,7 +826,7 @@ const OverrideItemsEditor = memo(function OverrideItemsEditor({
 
 const OverrideItemRow = memo(function OverrideItemRow({
   control,
-  priceIndex,
+  pricePath,
   overrideIndex,
   itemIndex,
   itemCount,
@@ -818,7 +834,7 @@ const OverrideItemRow = memo(function OverrideItemRow({
   onRemove,
 }: {
   control: Control<ScheduleFormValues>;
-  priceIndex: number;
+  pricePath: string;
   overrideIndex: number;
   itemIndex: number;
   itemCount: number;
@@ -827,8 +843,8 @@ const OverrideItemRow = memo(function OverrideItemRow({
 }) {
   const { t } = useTranslation();
   const { setValue } = useFormContext<ScheduleFormValues>();
-  const base = `prices.${priceIndex}.price.schedule.overrides.${overrideIndex}.items.${itemIndex}`;
-  const itemsBase = `prices.${priceIndex}.price.schedule.overrides.${overrideIndex}.items`;
+  const base = `${pricePath}.schedule.overrides.${overrideIndex}.items.${itemIndex}`;
+  const itemsBase = `${pricePath}.schedule.overrides.${overrideIndex}.items`;
 
   const pricingMode = useScheduleWatch<string | undefined>(control, `${base}.pricing.mode`);
   const currentItems = useScheduleWatch<Array<{ itemCode: string }> | undefined>(control, itemsBase);
@@ -866,11 +882,10 @@ const OverrideItemRow = memo(function OverrideItemRow({
     if (!tiers?.length) return;
     const lastIndex = tiers.length - 1;
     if (tiers[lastIndex]?.upTo !== null) {
-      setValue(
-        asFieldPath(`${base}.pricing.usageTiered.tiers.${lastIndex}.upTo`) as FieldPath<ScheduleFormValues>,
-        null,
-        { shouldDirty: true, shouldValidate: true }
-      );
+      setValue(asFieldPath(`${base}.pricing.usageTiered.tiers.${lastIndex}.upTo`) as FieldPath<ScheduleFormValues>, null, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
     }
   }, [base, setValue, tiers]);
 
@@ -937,9 +952,7 @@ const OverrideItemRow = memo(function OverrideItemRow({
                 <FormControl>
                   <div className='relative'>
                     {currencyPrefix && (
-                      <span className='text-muted-foreground absolute top-1/2 left-2 -translate-y-1/2 text-[10px]'>
-                        {currencyPrefix}
-                      </span>
+                      <span className='text-muted-foreground absolute top-1/2 left-2 -translate-y-1/2 text-[10px]'>{currencyPrefix}</span>
                     )}
                     <Input
                       {...field}
@@ -963,9 +976,7 @@ const OverrideItemRow = memo(function OverrideItemRow({
                 <FormControl>
                   <div className='relative'>
                     {currencyPrefix && (
-                      <span className='text-muted-foreground absolute top-1/2 left-2 -translate-y-1/2 text-[10px]'>
-                        {currencyPrefix}
-                      </span>
+                      <span className='text-muted-foreground absolute top-1/2 left-2 -translate-y-1/2 text-[10px]'>{currencyPrefix}</span>
                     )}
                     <Input
                       {...field}
@@ -1015,11 +1026,9 @@ const OverrideItemRow = memo(function OverrideItemRow({
                         <Input
                           type='number'
                           {...field}
-                          value={isLastTier ? '' : (field.value as number | null | undefined) ?? ''}
+                          value={isLastTier ? '' : ((field.value as number | null | undefined) ?? '')}
                           onChange={(e) =>
-                            isLastTier
-                              ? field.onChange(null)
-                              : field.onChange(e.target.value ? parseInt(e.target.value) : null)
+                            isLastTier ? field.onChange(null) : field.onChange(e.target.value ? parseInt(e.target.value) : null)
                           }
                           placeholder={isLastTier ? '∞' : t('price.upTo')}
                           disabled={isLastTier}

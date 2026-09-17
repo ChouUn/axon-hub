@@ -2,22 +2,22 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useFieldArray, useForm, useWatch, type Control } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconCopy, IconDownload, IconPlus, IconTrash, IconUpload } from '@tabler/icons-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { AutoCompleteSelect } from '@/components/auto-complete-select';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AutoCompleteSelect } from '@/components/auto-complete-select';
 import { ModelPriceEditor } from '@/components/model-price-editor';
 import { PriceScheduleEditor } from '@/components/price-schedule-editor';
-import { type ProviderModel, type ProvidersData } from '@/features/models/data/providers.schema';
 import { useProvidersData } from '@/features/models/data/providers';
+import { type ProviderModel, type ProvidersData } from '@/features/models/data/providers.schema';
 import { useGeneralSettings } from '@/features/system/data/system';
 import { useChannels } from '../context/channels-context';
 import { useChannelModelPrices, useSaveChannelModelPrices } from '../data/channels';
@@ -25,6 +25,8 @@ import {
   PricingMode,
   PriceItemCode,
   saveChannelModelPriceInputSchema,
+  modelPriceVolumeTierSchema,
+  promptWriteCacheVariantSchema,
   type ModelPrice,
   type SaveChannelModelPriceInput,
 } from '../data/schema';
@@ -40,6 +42,7 @@ const createPriceFormSchema = (t: (key: string) => string) =>
         z.object({
           modelId: z.string().min(1, { message: t('price.validation.modelRequired') }),
           price: z.object({
+            volumeTiers: z.array(modelPriceVolumeTierSchema).optional().nullable(),
             items: z.array(
               z.object({
                 itemCode: z.enum(priceItemCodes),
@@ -112,6 +115,7 @@ const createPriceFormSchema = (t: (key: string) => string) =>
                     items: z.array(
                       z.object({
                         itemCode: z.enum(priceItemCodes),
+                        promptWriteCacheVariants: z.array(promptWriteCacheVariantSchema).optional().nullable(),
                         pricing: z.object({
                           mode: z.enum(pricingModes),
                           flatFee: z.string().optional().nullable(),
@@ -213,7 +217,6 @@ const createPriceFormSchema = (t: (key: string) => string) =>
       };
 
       data.prices.forEach((price, priceIndex) => {
-        // Check for duplicate item codes
         const itemCodes = new Map<string, number[]>();
         price.price.items.forEach((item, itemIndex) => {
           const code = item.itemCode;
@@ -329,6 +332,7 @@ function buildAvailableModelsByIndex(prices: Array<PriceFormData['prices'][numbe
 
 function mapPriceToForm(price: ModelPrice): PriceFormData['prices'][number]['price'] {
   return {
+    volumeTiers: price.volumeTiers,
     items: price.items.map((item) => ({
       itemCode: item.itemCode,
       pricing: {
@@ -375,6 +379,7 @@ function mapPriceToForm(price: ModelPrice): PriceFormData['prices'][number]['pri
             },
             items: o.items.map((item) => ({
               itemCode: item.itemCode,
+              promptWriteCacheVariants: item.promptWriteCacheVariants,
               pricing: {
                 mode: item.pricing.mode,
                 flatFee: item.pricing.flatFee?.toString() || '',
@@ -537,6 +542,10 @@ const PriceCard = memo(function PriceCard({
   onAddVariant: (priceIndex: number, itemIndex: number) => void;
   onRemoveVariant: (priceIndex: number, itemIndex: number, variantIndex: number) => void;
 }) {
+  const volumeTiers = useWatch({
+    control,
+    name: `prices.${priceIndex}.price.volumeTiers`,
+  }) as PriceFormData['prices'][number]['price']['volumeTiers'];
   return (
     <Card className='overflow-hidden'>
       <CardContent className='pt-6'>
@@ -571,13 +580,7 @@ const PriceCard = memo(function PriceCard({
           </div>
 
           <div className='hidden items-start justify-end md:flex'>
-            <Button
-              type='button'
-              variant='ghost'
-              size='icon-sm'
-              className='text-destructive'
-              onClick={() => onRemovePrice(priceIndex)}
-            >
+            <Button type='button' variant='ghost' size='icon-sm' className='text-destructive' onClick={() => onRemovePrice(priceIndex)}>
               <IconTrash size={16} />
             </Button>
           </div>
@@ -618,22 +621,22 @@ const PriceCard = memo(function PriceCard({
             <div className='flex h-8 items-center md:hidden'>
               <FormLabel className='truncate'>{t('price.items')}</FormLabel>
             </div>
+            {Boolean(volumeTiers?.length) && (
+              <p className='text-muted-foreground mb-3 text-xs'>{t('price.volume.structureLocked')}</p>
+            )}
             <ModelPriceEditor
               control={control}
               priceIndex={priceIndex}
+              onAddItem={onAddItem}
               currencyCode={currencyCode}
               hideHeader
-              onAddItem={onAddItem}
+              lockStructure={Boolean(volumeTiers?.length)}
+              perUnitOnly={Boolean(volumeTiers?.length)}
               onRemoveItem={onRemoveItem}
               onAddVariant={onAddVariant}
               onRemoveVariant={onRemoveVariant}
             />
-            <PriceScheduleEditor
-              control={control}
-              priceIndex={priceIndex}
-              currencyCode={currencyCode}
-              defaultTimezone={defaultTimezone}
-            />
+            <PriceScheduleEditor control={control} priceIndex={priceIndex} currencyCode={currencyCode} defaultTimezone={defaultTimezone} />
           </div>
 
           <div />
@@ -785,7 +788,11 @@ export function ChannelsModelPriceDialog() {
     const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
-    const safeName = currentRow.name.trim().replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '') || 'channel';
+    const safeName =
+      currentRow.name
+        .trim()
+        .replace(/[^\p{L}\p{N}._-]+/gu, '-')
+        .replace(/^-+|-+$/g, '') || 'channel';
     anchor.href = url;
     anchor.download = `${safeName}-model-prices.json`;
     document.body.appendChild(anchor);
@@ -866,9 +873,7 @@ export function ChannelsModelPriceDialog() {
       // so scroll it into view before surfacing the error message.
       const priceErrors = errors?.prices;
       if (Array.isArray(priceErrors)) {
-        const firstIndex = priceErrors.findIndex(
-          (e) => e && typeof e === 'object' && Object.keys(e).length > 0
-        );
+        const firstIndex = priceErrors.findIndex((e) => e && typeof e === 'object' && Object.keys(e).length > 0);
         if (firstIndex >= 0) {
           rowVirtualizer.scrollToIndex(firstIndex, { align: 'start' });
         }
@@ -903,6 +908,7 @@ export function ChannelsModelPriceDialog() {
         const input = data.prices.map((p) => ({
           modelId: p.modelId,
           price: {
+            volumeTiers: p.price.volumeTiers,
             items: p.price.items.map((item) => ({
               itemCode: item.itemCode as PriceItemCode,
               pricing: {
@@ -952,6 +958,7 @@ export function ChannelsModelPriceDialog() {
                     },
                     items: o.items.map((item) => ({
                       itemCode: item.itemCode as PriceItemCode,
+                      promptWriteCacheVariants: item.promptWriteCacheVariants,
                       pricing: {
                         mode: item.pricing.mode as PricingMode,
                         flatFee: item.pricing.flatFee || null,
@@ -993,7 +1000,7 @@ export function ChannelsModelPriceDialog() {
         items: [
           {
             itemCode: 'prompt_tokens',
-            pricing: { mode: 'usage_per_unit', usagePerUnit: '0' },
+            pricing: { mode: 'usage_per_unit', usagePerUnit: '' },
           },
         ],
       },
@@ -1005,8 +1012,12 @@ export function ChannelsModelPriceDialog() {
   const applyProviderModelToIndex = useCallback(
     (priceIndex: number, providerModel: ProviderModel) => {
       const currentItems = getValues(`prices.${priceIndex}.price.items`) || [];
-      const merged = mergeItemsWithProviderCost(currentItems, providerModel, multiplier);
-      setValue(`prices.${priceIndex}.price.items`, merged, { shouldDirty: true, shouldValidate: true });
+      const currentPrice = getValues(`prices.${priceIndex}.price`);
+      const mergedItems = mergeItemsWithProviderCost(currentItems, providerModel, multiplier);
+      const items = currentPrice.volumeTiers?.length
+        ? mergedItems.filter((item) => currentItems.some((current) => current.itemCode === item.itemCode))
+        : mergedItems;
+      setValue(`prices.${priceIndex}.price.items`, items, { shouldDirty: true, shouldValidate: true });
     },
     [getValues, setValue, multiplier]
   );
@@ -1042,8 +1053,7 @@ export function ChannelsModelPriceDialog() {
   const onModelSelected = useCallback(
     (priceIndex: number, modelId: string) => {
       if (!modelId || !providersData) return;
-      const preferredProviderId =
-        defaultProviderId && providersData.providers[defaultProviderId] ? defaultProviderId : selectedProviderId;
+      const preferredProviderId = defaultProviderId && providersData.providers[defaultProviderId] ? defaultProviderId : selectedProviderId;
       const found = findProviderModelById(providersData, modelId, preferredProviderId);
       if (!found) return;
       applyProviderModelToIndex(priceIndex, found.model);
@@ -1063,7 +1073,7 @@ export function ChannelsModelPriceDialog() {
           ...currentItems,
           {
             itemCode: nextCode,
-            pricing: { mode: 'usage_per_unit', usagePerUnit: '0' },
+            pricing: { mode: 'usage_per_unit', usagePerUnit: '' },
           },
         ]);
       }
@@ -1100,7 +1110,7 @@ export function ChannelsModelPriceDialog() {
         ...currentVariants,
         {
           variantCode: nextCode,
-          pricing: { mode: 'usage_per_unit', usagePerUnit: '0' },
+          pricing: { mode: 'usage_per_unit', usagePerUnit: '' },
         },
       ]);
     },
@@ -1138,10 +1148,7 @@ export function ChannelsModelPriceDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent
-        ref={setDialogContent}
-        className='flex h-[85vh] max-h-[800px] flex-col overflow-hidden sm:max-w-4xl'
-      >
+      <DialogContent ref={setDialogContent} className='flex h-[85vh] max-h-[800px] flex-col overflow-hidden sm:max-w-4xl'>
         <DialogHeader>
           <DialogTitle>{t('price.title')}</DialogTitle>
           <DialogDescription>{t('price.description', { name: currentRow?.name })}</DialogDescription>
@@ -1151,9 +1158,7 @@ export function ChannelsModelPriceDialog() {
           <form onSubmit={form.handleSubmit(onSubmit, onSubmitError)} className='flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'>
             <Card className='mb-4 max-h-[15vh] shrink-0 overflow-y-auto md:max-h-none md:overflow-visible'>
               <CardContent className='pt-0 md:pt-4'>
-                <div className='mb-3 text-xs text-muted-foreground'>
-                  {t('price.apply.usdHint')}
-                </div>
+                <div className='text-muted-foreground mb-3 text-xs'>{t('price.apply.usdHint')}</div>
                 <div className='grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_80px_auto] md:items-end'>
                   <div className='min-w-0'>
                     <FormLabel className='text-sm'>{t('price.apply.provider')}</FormLabel>
@@ -1251,7 +1256,7 @@ export function ChannelsModelPriceDialog() {
                 </div>
               </CardContent>
             </Card>
-            <div ref={priceListRef} className='min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden pt-4 pr-4'>
+            <div ref={priceListRef} className='min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4 pr-4'>
               {fields.length === 0 && !isLoading && (
                 <div className='text-muted-foreground flex flex-col items-center justify-center py-12'>
                   <p>{t('price.noPrices')}</p>

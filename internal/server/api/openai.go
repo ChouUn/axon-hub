@@ -637,7 +637,7 @@ func convertModelFacadeToOpenAIModel(m biz.ModelFacade) OpenAIModel {
 }
 
 // convertModelToOpenAIExtended transforms an ent.Model to OpenAIModel with extended metadata fields.
-// It safely handles nil ModelCard, Cost, and Limit fields.
+// It safely handles absent model cards and unconfigured pricing.
 // The include set specifies which optional fields to populate. If nil or empty, all fields are populated.
 // Supported field names: name, description, context_length, max_output_tokens, modalities, capabilities, pricing, icon, type.
 func convertModelToOpenAIExtended(m *ent.Model, include map[string]bool) OpenAIModel {
@@ -704,12 +704,13 @@ func convertModelToOpenAIExtended(m *ent.Model, include map[string]bool) OpenAIM
 		if shouldInclude("max_output_tokens") {
 			result.MaxOutputTokens = m.ModelCard.Limit.Output
 		}
-		if shouldInclude("pricing") {
+		if shouldInclude("pricing") && m.ModelCard.Price != nil && len(m.ModelCard.Price.Items) != 0 {
+			cost := m.ModelCard.PriceSummary()
 			pricing := Pricing{
-				Input:      m.ModelCard.Cost.Input,
-				Output:     m.ModelCard.Cost.Output,
-				CacheRead:  m.ModelCard.Cost.CacheRead,
-				CacheWrite: m.ModelCard.Cost.CacheWrite,
+				Input:      cost.Input,
+				Output:     cost.Output,
+				CacheRead:  cost.CacheRead,
+				CacheWrite: cost.CacheWrite,
 				Unit:       "per_1m_tokens",
 				Currency:   "USD",
 			}

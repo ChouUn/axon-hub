@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { graphqlRequest } from '@/gql/graphql';
+import { MODEL_PRICE_FIELDS } from '@/gql/prices';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useErrorHandler } from '@/hooks/use-error-handler';
 import { Model, ModelConnection, CreateModelInput, UpdateModelInput, modelConnectionSchema, modelSchema } from './schema';
+import { modelCardInputSchema } from './schema';
 
 const MODELS_QUERY = `
   query GetModels(
@@ -38,12 +40,7 @@ const MODELS_QUERY = `
               output
             }
             vision
-            cost {
-              input
-              output
-              cacheRead
-              cacheWrite
-            }
+            price { ${MODEL_PRICE_FIELDS} }
             limit {
               context
               output
@@ -159,12 +156,7 @@ const CREATE_MODEL_MUTATION = `
           output
         }
         vision
-        cost {
-          input
-          output
-          cacheRead
-          cacheWrite
-        }
+        price { ${MODEL_PRICE_FIELDS} }
         limit {
           context
           output
@@ -262,12 +254,7 @@ const BULK_CREATE_MODELS_MUTATION = `
           output
         }
         vision
-        cost {
-          input
-          output
-          cacheRead
-          cacheWrite
-        }
+        price { ${MODEL_PRICE_FIELDS} }
         limit {
           context
           output
@@ -365,12 +352,7 @@ const UPDATE_MODEL_MUTATION = `
           output
         }
         vision
-        cost {
-          input
-          output
-          cacheRead
-          cacheWrite
-        }
+        price { ${MODEL_PRICE_FIELDS} }
         limit {
           context
           output
@@ -523,7 +505,9 @@ export function useCreateModel() {
 
   return useMutation({
     mutationFn: async (input: CreateModelInput) => {
-      const data = await graphqlRequest<{ createModel: Model }>(CREATE_MODEL_MUTATION, { input });
+      const data = await graphqlRequest<{ createModel: Model }>(CREATE_MODEL_MUTATION, {
+        input: { ...input, modelCard: modelCardInputSchema.parse(input.modelCard) },
+      });
       return modelSchema.parse(data.createModel);
     },
     onSuccess: () => {
@@ -543,7 +527,9 @@ export function useBulkCreateModels() {
 
   return useMutation({
     mutationFn: async (inputs: CreateModelInput[]) => {
-      const data = await graphqlRequest<{ bulkCreateModels: Model[] }>(BULK_CREATE_MODELS_MUTATION, { inputs });
+      const data = await graphqlRequest<{ bulkCreateModels: Model[] }>(BULK_CREATE_MODELS_MUTATION, {
+        inputs: inputs.map((input) => ({ ...input, modelCard: modelCardInputSchema.parse(input.modelCard) })),
+      });
       return data.bulkCreateModels.map((model) => modelSchema.parse(model));
     },
     onSuccess: (_data, variables) => {
@@ -563,7 +549,10 @@ export function useUpdateModel() {
 
   return useMutation({
     mutationFn: async ({ id, input }: { id: string; input: UpdateModelInput }) => {
-      const data = await graphqlRequest<{ updateModel: Model }>(UPDATE_MODEL_MUTATION, { id, input });
+      const data = await graphqlRequest<{ updateModel: Model }>(UPDATE_MODEL_MUTATION, {
+        id,
+        input: { ...input, ...(input.modelCard ? { modelCard: modelCardInputSchema.parse(input.modelCard) } : {}) },
+      });
       return modelSchema.parse(data.updateModel);
     },
     onSuccess: () => {

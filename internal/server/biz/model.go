@@ -351,8 +351,25 @@ func filterConditionValueToInt64(condition objects.Condition) (int64, bool, erro
 	return value, ok, nil
 }
 
+func validateModelCard(card *objects.ModelCard) error {
+	if card == nil {
+		return nil
+	}
+	if card.Price != nil {
+		if err := card.Price.Validate(); err != nil {
+			return fmt.Errorf("invalid model price: %w", err)
+		}
+	}
+	card.Cost = card.PriceSummary()
+	return nil
+}
+
 // CreateModel creates a new model with the provided input.
 func (svc *ModelService) CreateModel(ctx context.Context, input ent.CreateModelInput) (*ent.Model, error) {
+	if err := validateModelCard(input.ModelCard); err != nil {
+		return nil, err
+	}
+
 	// Validate regex patterns in settings if provided
 	if input.Settings != nil {
 		if err := svc.validateModelSettings(input.Settings); err != nil {
@@ -393,6 +410,10 @@ func (svc *ModelService) BulkCreateModels(ctx context.Context, inputs []*ent.Cre
 	inputMap := make(map[string]bool)
 
 	for _, input := range inputs {
+		if err := validateModelCard(input.ModelCard); err != nil {
+			return nil, err
+		}
+
 		if input.Settings != nil {
 			if err := svc.validateModelSettings(input.Settings); err != nil {
 				return nil, err
@@ -456,6 +477,10 @@ func (svc *ModelService) BulkCreateModels(ctx context.Context, inputs []*ent.Cre
 
 // UpdateModel updates an existing model with the provided input.
 func (svc *ModelService) UpdateModel(ctx context.Context, id int, input *ent.UpdateModelInput) (*ent.Model, error) {
+	if err := validateModelCard(input.ModelCard); err != nil {
+		return nil, err
+	}
+
 	// Validate regex patterns in settings if provided
 	if input.Settings != nil {
 		if err := svc.validateModelSettings(input.Settings); err != nil {

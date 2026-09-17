@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { format } from 'date-fns';
-import { useForm } from 'react-hook-form';
+import { useForm, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toc } from '@lobehub/icons';
 import { CalendarIcon } from 'lucide-react';
@@ -21,6 +21,7 @@ import { AutoCompleteSelect } from '@/components/auto-complete-select';
 import { useModels } from '../context/models-context';
 import { DEVELOPER_IDS, DEVELOPER_ICONS } from '../data/constants';
 import { useCreateModel, useUpdateModel } from '../data/models';
+import { createPriceValidationSchema, priceFromCatalog } from '../data/pricing';
 import { useDevelopersData } from '../data/providers';
 import { type Provider, type ProviderModel, resolveVision } from '../data/providers.schema';
 import {
@@ -31,11 +32,24 @@ import {
   ModelType,
   modelTypeSchema,
   normalizeModelRoutingPolicyValue,
-  updateModelInputSchema,
 } from '../data/schema';
+import { modelCardInputSchema } from '../data/schema';
+import { ModelsPriceEditor } from './models-price-editor';
 
 function isDeveloper(provider: string) {
   return DEVELOPER_IDS.includes(provider);
+}
+
+function modelCardFormValues(card?: ModelCard | null): ModelCard {
+  return {
+    ...card,
+    price: {
+      ...card?.price,
+      items: card?.price?.items ?? [],
+      // Field-array reset requires an explicit empty array to remove the previous model's tiers.
+      volumeTiers: card?.price?.volumeTiers ?? [],
+    },
+  };
 }
 
 export function ModelsActionDialog() {
@@ -109,8 +123,16 @@ export function ModelsActionDialog() {
     );
   }, []);
 
+  const formSchema = useMemo(
+    () =>
+      createModelInputSchema.extend({
+        modelCard: modelCardInputSchema.extend({ price: createPriceValidationSchema(t).optional().nullable() }),
+      }),
+    [t]
+  );
   const form = useForm<CreateModelInput>({
-    resolver: zodResolver(isEdit ? updateModelInputSchema : createModelInputSchema) as any,
+    // The form initializes the defaults that the schema also applies when parsing.
+    resolver: zodResolver(formSchema) as Resolver<CreateModelInput>,
     defaultValues: {
       developer: '',
       modelID: '',
@@ -118,7 +140,7 @@ export function ModelsActionDialog() {
       name: '',
       icon: '',
       group: '',
-      modelCard: {},
+      modelCard: modelCardFormValues(),
       settings: { associations: [], loadBalancerStrategy: 'default', traceStickyMode: 'default' },
       remark: '',
     },
@@ -133,7 +155,7 @@ export function ModelsActionDialog() {
         name: currentRow.name,
         icon: currentRow.icon,
         group: currentRow.group,
-        modelCard: currentRow.modelCard,
+        modelCard: modelCardFormValues(currentRow.modelCard),
         settings: {
           ...currentRow.settings,
           associations: currentRow.settings?.associations ?? [],
@@ -154,7 +176,7 @@ export function ModelsActionDialog() {
         name: '',
         icon: '',
         group: '',
-        modelCard: {},
+        modelCard: modelCardFormValues(),
         settings: { associations: [], loadBalancerStrategy: 'default', traceStickyMode: 'default' },
         remark: '',
       });
@@ -185,7 +207,7 @@ export function ModelsActionDialog() {
         form.setValue('modelID', '');
         form.setValue('name', '');
         form.setValue('group', '');
-        form.setValue('modelCard', {});
+        form.reset({ ...form.getValues(), modelCard: modelCardFormValues() }, { keepDefaultValues: true });
         setSelectedModelCard({});
       }
     },
@@ -231,12 +253,7 @@ export function ModelsActionDialog() {
             output: selectedModel.modalities?.output || [],
           },
           vision: resolveVision(selectedModel),
-          cost: {
-            input: selectedModel.cost?.input || 0,
-            output: selectedModel.cost?.output || 0,
-            cacheRead: selectedModel.cost?.cache_read,
-            cacheWrite: selectedModel.cost?.cache_write,
-          },
+          price: priceFromCatalog(selectedModel),
           limit: {
             context: selectedModel.limit?.context || 0,
             output: selectedModel.limit?.output || 0,
@@ -245,7 +262,8 @@ export function ModelsActionDialog() {
           releaseDate: selectedModel.release_date,
           lastUpdated: selectedModel.last_updated,
         };
-        form.setValue('modelCard', modelCard);
+        // Replacing the card must refresh nested price and tier field arrays together.
+        form.reset({ ...form.getValues(), modelCard: modelCardFormValues(modelCard) }, { keepDefaultValues: true });
         setSelectedModelCard(modelCard);
       } else {
         const currentModelCard = form.getValues('modelCard');
@@ -301,12 +319,12 @@ export function ModelsActionDialog() {
           <form id='model-form' onSubmit={form.handleSubmit(onSubmit)} className='flex min-h-0 flex-1 flex-col overflow-hidden'>
             <div className='flex min-h-0 flex-1 gap-6 overflow-x-auto overflow-y-hidden md:overflow-hidden'>
               {/* Left Panel - Basic Information */}
-              <div className='min-h-0 w-1/2 md:w-1/3 flex-shrink-0 overflow-y-auto pr-4'>
+              <div className='min-h-0 w-1/2 flex-shrink-0 overflow-y-auto pr-4 md:w-1/3'>
                 <div className='space-y-4'>
                   <FormField
                     control={form.control}
                     name='developer'
-                    render={({ field }) => (
+                    render={() => (
                       <FormItem>
                         <FormLabel>{t('models.fields.developer')}</FormLabel>
                         <FormControl>
@@ -329,7 +347,7 @@ export function ModelsActionDialog() {
                   <FormField
                     control={form.control}
                     name='modelID'
-                    render={({ field }) => (
+                    render={() => (
                       <FormItem>
                         <FormLabel>{t('models.fields.modelId')}</FormLabel>
                         <FormControl>
@@ -453,7 +471,7 @@ export function ModelsActionDialog() {
               </div>
 
               {/* Right Panel - Model Card Fields */}
-              <div className='min-h-0 min-w-full md:min-w-0 flex-1 overflow-y-auto border-l pl-6'>
+              <div className='min-h-0 min-w-full flex-1 overflow-y-auto border-l pl-6 md:min-w-0'>
                 <div className='space-y-4 pb-4'>
                   <h3 className='text-lg font-semibold'>{t('models.modelCard.title')}</h3>
 
@@ -601,92 +619,7 @@ export function ModelsActionDialog() {
                     </div>
                   </div>
 
-                  <div className='space-y-2'>
-                    <FormLabel>{t('models.modelCard.cost')} ($/M tokens)</FormLabel>
-                    <p className='text-xs text-muted-foreground'>{t('models.modelCard.costHint')}</p>
-                    <div className='grid grid-cols-2 gap-2'>
-                      <FormField
-                        control={form.control}
-                        name='modelCard.cost.input'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className='text-xs'>{t('models.modelCard.input')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type='number'
-                                step='0.01'
-                                {...field}
-                                value={field.value ?? ''}
-                                onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
-                                placeholder='0'
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name='modelCard.cost.output'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className='text-xs'>{t('models.modelCard.output')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type='number'
-                                step='0.01'
-                                {...field}
-                                value={field.value ?? ''}
-                                onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
-                                placeholder='0'
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name='modelCard.cost.cacheRead'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className='text-xs'>{t('models.modelCard.cacheRead')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type='number'
-                                step='0.01'
-                                {...field}
-                                value={field.value ?? ''}
-                                onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
-                                placeholder='0'
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name='modelCard.cost.cacheWrite'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className='text-xs'>{t('models.modelCard.cacheWrite')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type='number'
-                                step='0.01'
-                                {...field}
-                                value={field.value ?? ''}
-                                onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
-                                placeholder='0'
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
+                  <ModelsPriceEditor portalContainer={dialogContent} />
 
                   <div className='space-y-2'>
                     <FormLabel>{t('models.modelCard.limit')}</FormLabel>

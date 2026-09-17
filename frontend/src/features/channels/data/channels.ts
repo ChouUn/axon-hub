@@ -1,12 +1,14 @@
-import { z } from 'zod';
 import { useEffect } from 'react';
+import { z } from 'zod';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { graphqlRequest } from '@/gql/graphql';
 import { pageInfoSchema } from '@/gql/pagination';
-import { shouldNotifyChannelQueryError } from './channel-query-error';
+import { MODEL_PRICE_FIELDS } from '@/gql/prices';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useErrorHandler } from '@/hooks/use-error-handler';
+import { mergeChannelSettingsForUpdate } from '../utils/merge';
+import { shouldNotifyChannelQueryError } from './channel-query-error';
 import {
   Channel,
   ChannelConnection,
@@ -34,7 +36,6 @@ import {
   TestAPIKeyResult,
   testAPIKeyResultSchema,
 } from './schema';
-import { mergeChannelSettingsForUpdate } from '../utils/merge';
 
 const QUERY_CHANNEL_NAMES_QUERY = `
   query QueryChannelNames($input: QueryChannelInput!) {
@@ -630,66 +631,7 @@ const GET_CHANNEL_MODEL_PRICES_QUERY = `
         id
         modelID
         price {
-          items {
-            itemCode
-            pricing {
-              mode
-              flatFee
-              usagePerUnit
-              usageTiered {
-                tiers {
-                  upTo
-                  pricePerUnit
-                }
-              }
-            }
-            promptWriteCacheVariants {
-              variantCode
-              pricing {
-                mode
-                flatFee
-                usagePerUnit
-                usageTiered {
-                  tiers {
-                    upTo
-                    pricePerUnit
-                  }
-                }
-              }
-            }
-          }
-          schedule {
-            timezone
-            overrides {
-              name
-              priority
-              when {
-                dailyTime {
-                  start
-                  end
-                }
-                weekdays
-                dateRange {
-                  start
-                  end
-                }
-              }
-              items {
-                itemCode
-                pricing {
-                  mode
-                  flatFee
-                  usagePerUnit
-                  usageTiered {
-                    tiers {
-                      upTo
-                      pricePerUnit
-                    }
-                  }
-                }
-              }
-            }
-          }
+          ${MODEL_PRICE_FIELDS}
         }
       }
     }
@@ -703,34 +645,7 @@ const SAVE_CHANNEL_MODEL_PRICES_MUTATION = `
       id
       modelID
       price {
-        items {
-          itemCode
-          pricing {
-            mode
-            flatFee
-            usagePerUnit
-            usageTiered {
-              tiers {
-                upTo
-                pricePerUnit
-              }
-            }
-          }
-          promptWriteCacheVariants {
-            variantCode
-            pricing {
-              mode
-              flatFee
-              usagePerUnit
-              usageTiered {
-                tiers {
-                  upTo
-                  pricePerUnit
-                }
-              }
-            }
-          }
-        }
+        ${MODEL_PRICE_FIELDS}
       }
     }
   }
@@ -1075,10 +990,7 @@ function isChannelColumnVisible(columnVisibility: ChannelListColumnVisibility | 
   return columnVisibility?.[columnID] !== false;
 }
 
-export function buildQueryChannelsQuery(
-  columnVisibility?: ChannelListColumnVisibility,
-  options?: { full?: boolean }
-): string {
+export function buildQueryChannelsQuery(columnVisibility?: ChannelListColumnVisibility, options?: { full?: boolean }): string {
   const nodeSelection = options?.full
     ? CHANNEL_QUERY_FULL_NODE_SELECTION
     : [
@@ -1682,15 +1594,7 @@ export function useTestChannel(options?: { silent?: boolean }) {
   const silent = options?.silent ?? false;
 
   return useMutation({
-    mutationFn: async ({
-      channelID,
-      modelID,
-      proxy,
-    }: {
-      channelID: string;
-      modelID?: string;
-      proxy?: ProxyConfig;
-    }) => {
+    mutationFn: async ({ channelID, modelID, proxy }: { channelID: string; modelID?: string; proxy?: ProxyConfig }) => {
       try {
         const data = await graphqlRequest<{
           testChannel: {
