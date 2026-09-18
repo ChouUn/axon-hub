@@ -6,8 +6,6 @@ import (
 
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/log"
-	"github.com/looplj/axonhub/internal/objects"
-	"github.com/looplj/axonhub/internal/pkg/xregexp"
 	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
@@ -127,7 +125,7 @@ func (m *ModelMapper) MapModel(ctx context.Context, apiKey *ent.APIKey, original
 	}
 
 	// Apply model mapping
-	mappedModel := m.applyModelMapping(activeProfile.ModelMappings, originalModel)
+	mappedModel := activeProfile.MapModel(originalModel)
 
 	if mappedModel != originalModel {
 		log.Debug(ctx, "Model mapped using API key profile",
@@ -143,24 +141,6 @@ func (m *ModelMapper) MapModel(ctx context.Context, apiKey *ent.APIKey, original
 	}
 
 	return mappedModel
-}
-
-// applyModelMapping applies model mappings from the given list
-// Returns the mapped model or the original if no mapping is found.
-func (m *ModelMapper) applyModelMapping(mappings []objects.ModelMapping, model string) string {
-	for _, mapping := range mappings {
-		if m.matchesMapping(mapping.From, model) {
-			return mapping.To
-		}
-	}
-
-	return model
-}
-
-// matchesMapping checks if a model matches a mapping pattern using cached regex
-// Supports exact match and regex patterns (including wildcard conversion).
-func (m *ModelMapper) matchesMapping(pattern, model string) bool {
-	return xregexp.MatchString(pattern, model)
 }
 
 // ReplaceResponseModel replaces the model field in llm.Response with the original client request model.

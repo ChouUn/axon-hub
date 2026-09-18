@@ -32,8 +32,6 @@ func TestDefaultSelector_Select_InheritsDeveloperAssociations(t *testing.T) {
 	systemService := newTestSystemService(client)
 
 	err = systemService.SetModelSettings(ctx, biz.SystemModelSettings{
-		FallbackToChannelsOnModelNotFound: true,
-		QueryAllChannelModels:             true,
 		DeveloperSettings: []*biz.DeveloperModelSettings{
 			{
 				Developer: "anthropic",
@@ -98,7 +96,6 @@ func TestDefaultSelector_Select_InvalidatesCacheWhenDeveloperAssociationsChange(
 	selector := NewDefaultSelector(channelService, modelService, systemService)
 
 	err := systemService.SetModelSettings(ctx, biz.SystemModelSettings{
-		QueryAllChannelModels: true,
 		DeveloperSettings: []*biz.DeveloperModelSettings{
 			{
 				Developer: "openai",
@@ -138,7 +135,6 @@ func TestDefaultSelector_Select_InvalidatesCacheWhenDeveloperAssociationsChange(
 	require.NotNil(t, initialEntry)
 
 	err = systemService.SetModelSettings(ctx, biz.SystemModelSettings{
-		QueryAllChannelModels: true,
 		DeveloperSettings: []*biz.DeveloperModelSettings{
 			{
 				Developer: "openai",

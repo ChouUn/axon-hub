@@ -32,6 +32,48 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
+func TestPlaygroundChannelOverrideRequiresChannelWriteScope(t *testing.T) {
+	for _, useHeader := range []bool{false, true} {
+		t.Run(fmt.Sprintf("header=%t", useHeader), func(t *testing.T) {
+			handlers := &PlaygroundHandlers{}
+			router := gin.New()
+			router.POST("/admin/playground/chat", handlers.ChatCompletion)
+			url := "/admin/playground/chat"
+			if !useHeader {
+				url += "?channel_id=1"
+			}
+			req := httptest.NewRequest(http.MethodPost, url, strings.NewReader(`{"model":"channel-only"}`))
+			req.Header.Set("Content-Type", "application/json")
+			if useHeader {
+				req.Header.Set("X-Channel-ID", "1")
+			}
+			ctx := authz.NewUserContext(req.Context(), 1)
+			ctx = contexts.WithUser(ctx, &ent.User{ID: 1})
+			req = req.WithContext(ctx)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, req)
+			require.Equal(t, http.StatusForbidden, recorder.Code)
+		})
+	}
+}
+
+func TestPlaygroundChannelOverrideRejectsProjectOwner(t *testing.T) {
+	handlers := &PlaygroundHandlers{}
+	router := gin.New()
+	router.POST("/admin/playground/chat", handlers.ChatCompletion)
+	req := httptest.NewRequest(http.MethodPost,
+		"/admin/playground/chat?channel_id=gid://axonhub/Channel/1&project_id=gid://axonhub/Project/7",
+		strings.NewReader(`{"model":"channel-only"}`))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := authz.NewUserContext(req.Context(), 1)
+	ctx = contexts.WithUser(ctx, &ent.User{ID: 1, Edges: ent.UserEdges{
+		ProjectUsers: []*ent.UserProject{{ProjectID: 7, IsOwner: true}},
+	}})
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req.WithContext(ctx))
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+}
+
 func setupUpstreamErrorPolicyTest(t *testing.T, policy biz.UpstreamErrorPolicy) (context.Context, *biz.SystemService) {
 	t.Helper()
 

@@ -20,17 +20,17 @@ import (
 type GeminiHandlersParams struct {
 	fx.In
 
-	ChannelService  *biz.ChannelService
-	ModelService    *biz.ModelService
-	DefaultSelector *orchestrator.DefaultSelector
-	RequestService  *biz.RequestService
-	SystemService   *biz.SystemService
-	UsageLogService *biz.UsageLogService
-	PromptService   *biz.PromptService
+	ChannelService              *biz.ChannelService
+	ModelService                *biz.ModelService
+	DefaultSelector             *orchestrator.DefaultSelector
+	RequestService              *biz.RequestService
+	SystemService               *biz.SystemService
+	UsageLogService             *biz.UsageLogService
+	PromptService               *biz.PromptService
 	PromptProtectionRuleService *biz.PromptProtectionRuleService
-	QuotaService    *biz.QuotaService
-	HttpClient      *httpclient.HttpClient
-	LiveStreamRegistry *biz.LiveStreamRegistry
+	QuotaService                *biz.QuotaService
+	HttpClient                  *httpclient.HttpClient
+	LiveStreamRegistry          *biz.LiveStreamRegistry
 	ChannelLimiterManager       *orchestrator.ChannelLimiterManager
 	ProviderQuotaStatusProvider orchestrator.ProviderQuotaStatusProvider
 }
@@ -137,7 +137,7 @@ type GeminiModel struct {
 
 // ListModels returns all available Gemini models.
 // This endpoint is compatible with Gemini's /v1/models API.
-// It uses QueryAllChannelModels setting from system config to determine model source.
+// Only enabled registered models and aliases resolving to them are exposed.
 func (handlers *GeminiHandlers) ListModels(c *gin.Context) {
 	ctx := c.Request.Context()
 

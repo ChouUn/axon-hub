@@ -7,12 +7,14 @@ import (
 
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/llm"
 )
 
 // TestDefaultChannelSelector_Select_SingleChannel tests selection when only one channel is available.
 func TestDefaultChannelSelector_Select_SingleChannel(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	ch, err := client.Channel.Create().
 		SetType(channel.TypeOpenai).
@@ -44,6 +46,7 @@ func TestDefaultChannelSelector_Select_SingleChannel(t *testing.T) {
 // TestDefaultSelector_Select tests DefaultSelector returns all enabled channels supporting the model.
 func TestDefaultSelector_Select(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channels := createTestChannels(t, ctx, client)
 
@@ -77,6 +80,7 @@ func TestDefaultSelector_Select(t *testing.T) {
 // TestDefaultChannelSelector_Select_NoChannelsAvailable tests error when no channels are available.
 func TestDefaultChannelSelector_Select_NoChannelsAvailable(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channelService := newTestChannelServiceForChannels(client)
 	systemService := newTestSystemService(client)
@@ -96,6 +100,7 @@ func TestDefaultChannelSelector_Select_NoChannelsAvailable(t *testing.T) {
 // TestDefaultChannelSelector_Select_ModelNotSupported tests when requested model is not supported.
 func TestDefaultChannelSelector_Select_ModelNotSupported(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	// Create channel that doesn't support the requested model
 	_, err := client.Channel.Create().
@@ -136,12 +141,12 @@ func TestDefaultChannelSelector_Select_EmptyRequest(t *testing.T) {
 
 	selector := newTestLoadBalancedSelector(channelService, client, systemService, requestService)
 
-	// Empty request should still work
+	// An empty request cannot resolve an enabled registered model.
 	req := &llm.Request{}
 
 	result, err := selector.Select(ctx, req)
-	require.NoError(t, err)
-	require.Empty(t, result) // Empty model should return empty slice
+	require.ErrorIs(t, err, biz.ErrInvalidModel)
+	require.Empty(t, result)
 }
 
 // TestSpecifiedChannelSelector_Select_ValidChannel tests SpecifiedChannelSelector with valid channel.
@@ -221,6 +226,7 @@ func TestSpecifiedChannelSelector_Select_ChannelNotFound(t *testing.T) {
 // TestSelectedChannelsSelector_Select_WithFilter tests SelectedChannelsSelector filters by allowed channel IDs.
 func TestSelectedChannelsSelector_Select_WithFilter(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channels := createTestChannels(t, ctx, client)
 
@@ -256,6 +262,7 @@ func TestSelectedChannelsSelector_Select_WithFilter(t *testing.T) {
 // TestSelectedChannelsSelector_Select_EmptyFilter tests SelectedChannelsSelector with empty filter returns all.
 func TestSelectedChannelsSelector_Select_EmptyFilter(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channels := createTestChannels(t, ctx, client)
 
@@ -285,4 +292,28 @@ func TestSelectedChannelsSelector_Select_EmptyFilter(t *testing.T) {
 	require.Contains(t, channelIDs, channels[0].ID)
 	require.Contains(t, channelIDs, channels[1].ID)
 	require.Contains(t, channelIDs, channels[2].ID)
+}
+
+func TestDefaultSelector_UsesOnlyRegisteredAssociations(t *testing.T) {
+	ctx, client := setupTest(t)
+	channels := createTestChannels(t, ctx, client)
+	registered := createAssociatedTestModel(t, ctx, client, "gpt-4")
+	_, err := client.Model.UpdateOneID(registered.ID).SetSettings(&objects.ModelSettings{
+		Associations: []*objects.ModelAssociation{{
+			Type:         "channel_model",
+			ChannelModel: &objects.ChannelModelAssociation{ChannelID: channels[1].ID, ModelID: "gpt-4"},
+		}},
+	}).Save(ctx)
+	require.NoError(t, err)
+	selector := NewDefaultSelector(newTestChannelServiceForChannels(client), newTestModelService(client), newTestSystemService(client))
+	candidates, err := selector.Select(ctx, &llm.Request{Model: "gpt-4"})
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	require.Equal(t, channels[1].ID, candidates[0].Channel.ID)
+
+	_, err = client.Model.UpdateOneID(registered.ID).SetSettings(&objects.ModelSettings{}).Save(ctx)
+	require.NoError(t, err)
+	candidates, err = selector.Select(ctx, &llm.Request{Model: "gpt-4"})
+	require.NoError(t, err)
+	require.Empty(t, candidates, "removing associations must not revive direct channel routing")
 }

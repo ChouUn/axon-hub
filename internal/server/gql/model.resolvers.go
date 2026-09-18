@@ -127,11 +127,8 @@ func (r *queryResolver) FetchModels(ctx context.Context, input biz.FetchModelsIn
 }
 
 // QueryModels is the resolver for the queryModels field.
-// When QueryAllChannelModels is true, returns all models from channels.
-// When false, returns only configured models (models with explicit Model entity configuration).
+// Explicit channel discovery is reserved for administrative configuration.
 func (r *queryResolver) QueryModels(ctx context.Context, input QueryModelsInput) ([]*biz.ModelIdentityWithStatus, error) {
-	// Check the QueryAllChannelModels setting
-	settings := r.systemService.ModelSettingsOrDefault(ctx)
 	listModels := func(list func(context.Context) ([]*biz.ModelIdentityWithStatus, error)) ([]*biz.ModelIdentityWithStatus, error) {
 		if authz.HasScope(ctx, scopes.ScopeReadChannels) {
 			return list(ctx)
@@ -145,7 +142,10 @@ func (r *queryResolver) QueryModels(ctx context.Context, input QueryModelsInput)
 		return authz.RunWithSystemBypass(ctx, "project-model-metadata", list)
 	}
 
-	if settings.QueryAllChannelModels || lo.FromPtrOr(input.IncludeAllChannelModels, false) {
+	if lo.FromPtrOr(input.IncludeAllChannelModels, false) {
+		if err := authz.RequireScope(ctx, scopes.ScopeReadChannels); err != nil {
+			return nil, err
+		}
 		// Convert GraphQL input to biz layer input
 		bizInput := biz.ListModelsInput{
 			StatusIn:                input.StatusIn,

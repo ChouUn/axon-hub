@@ -17,6 +17,7 @@ import (
 // TestLoadBalancedSelector_Select_MultipleChannels_LoadBalancing tests load balancing with multiple channels.
 func TestLoadBalancedSelector_Select_MultipleChannels_LoadBalancing(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channels := createTestChannels(t, ctx, client)
 
@@ -64,6 +65,7 @@ func TestLoadBalancedSelector_Select_MultipleChannels_LoadBalancing(t *testing.T
 // TestDefaultChannelSelector_Select_WithTraceContext tests trace sticky routing.
 func TestDefaultChannelSelector_Select_WithTraceContext(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	// Create project
 	project, err := client.Project.Create().
@@ -132,6 +134,7 @@ func TestDefaultChannelSelector_Select_WithTraceContext(t *testing.T) {
 // TestDefaultChannelSelector_Select_WithChannelFailures tests error-aware load balancing.
 func TestDefaultChannelSelector_Select_WithChannelFailures(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channels := createTestChannels(t, ctx, client)
 
@@ -144,12 +147,12 @@ func TestDefaultChannelSelector_Select_WithChannelFailures(t *testing.T) {
 	// Record failures for the high weight channel to test error awareness
 	for range 3 {
 		perf := &biz.PerformanceRecord{
-			ChannelID:        channels[0].ID,
-			StartTime:        time.Now().Add(-time.Minute),
-			EndTime:          time.Now(),
-			Success:          false,
-			RequestCompleted: true,
-			ResponseStatusCode:  500,
+			ChannelID:          channels[0].ID,
+			StartTime:          time.Now().Add(-time.Minute),
+			EndTime:            time.Now(),
+			Success:            false,
+			RequestCompleted:   true,
+			ResponseStatusCode: 500,
 		}
 		channelService.RecordPerformance(ctx, perf)
 	}
@@ -193,6 +196,7 @@ func TestDefaultChannelSelector_Select_WithChannelFailures(t *testing.T) {
 // TestDefaultChannelSelector_Select_WeightedRoundRobin_EqualWeights tests round-robin behavior with equal weights.
 func TestDefaultChannelSelector_Select_WeightedRoundRobin_EqualWeights(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	// Create channels with equal weights to isolate round-robin behavior
 	ch1, err := client.Channel.Create().
@@ -320,6 +324,7 @@ func TestDefaultChannelSelector_Select_WeightedRoundRobin_EqualWeights(t *testin
 // TestDefaultChannelSelector_Select_WeightedRoundRobin tests weighted round-robin behavior.
 func TestDefaultChannelSelector_Select_WeightedRoundRobin(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channels := createTestChannels(t, ctx, client)
 
@@ -390,6 +395,7 @@ func TestDefaultChannelSelector_Select_WeightedRoundRobin(t *testing.T) {
 // TestDefaultChannelSelector_Select_WithDisabledChannels tests that disabled channels are excluded.
 func TestDefaultChannelSelector_Select_WithDisabledChannels(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channels := createTestChannels(t, ctx, client)
 
@@ -422,6 +428,7 @@ func TestDefaultChannelSelector_Select_WithDisabledChannels(t *testing.T) {
 // TestLoadBalancedSelector_Select tests LoadBalancedSelector applies load balancing.
 func TestLoadBalancedSelector_Select(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channels := createTestChannels(t, ctx, client)
 
@@ -464,6 +471,7 @@ func TestLoadBalancedSelector_Select(t *testing.T) {
 // TestLoadBalancedSelector_Select_SingleChannel tests LoadBalancedSelector with single channel skips sorting.
 func TestLoadBalancedSelector_Select_SingleChannel(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	// Create single channel
 	ch, err := client.Channel.Create().

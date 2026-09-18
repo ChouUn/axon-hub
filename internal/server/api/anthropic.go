@@ -81,7 +81,7 @@ type AnthropicModel struct {
 }
 
 // ListModels returns all available models.
-// It uses QueryAllChannelModels setting from system config to determine model source.
+// Only enabled registered models and aliases resolving to them are exposed.
 func (handlers *AnthropicHandlers) ListModels(c *gin.Context) {
 	ctx := c.Request.Context()
 

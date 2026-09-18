@@ -13,6 +13,7 @@ import (
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/pkg/xerrors"
+	"github.com/looplj/axonhub/internal/scopes"
 	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/internal/server/orchestrator"
 	"github.com/looplj/axonhub/llm"
@@ -32,17 +33,17 @@ type PlaygroundResponseError struct {
 type PlaygroundHandlersParams struct {
 	fx.In
 
-	ChannelService  *biz.ChannelService
-	ModelService    *biz.ModelService
-	DefaultSelector *orchestrator.DefaultSelector
-	RequestService  *biz.RequestService
-	SystemService   *biz.SystemService
-	UsageLogService *biz.UsageLogService
-	PromptService   *biz.PromptService
+	ChannelService              *biz.ChannelService
+	ModelService                *biz.ModelService
+	DefaultSelector             *orchestrator.DefaultSelector
+	RequestService              *biz.RequestService
+	SystemService               *biz.SystemService
+	UsageLogService             *biz.UsageLogService
+	PromptService               *biz.PromptService
 	PromptProtectionRuleService *biz.PromptProtectionRuleService
-	QuotaService    *biz.QuotaService
-	HttpClient      *httpclient.HttpClient
-	LiveStreamRegistry *biz.LiveStreamRegistry
+	QuotaService                *biz.QuotaService
+	HttpClient                  *httpclient.HttpClient
+	LiveStreamRegistry          *biz.LiveStreamRegistry
 	ChannelLimiterManager       *orchestrator.ChannelLimiterManager
 	ProviderQuotaStatusProvider orchestrator.ProviderQuotaStatusProvider
 }
@@ -268,6 +269,12 @@ func (handlers *PlaygroundHandlers) ChatCompletion(c *gin.Context) {
 	processor := handlers.ChatCompletionOrchestrator
 
 	if channelIDStr != "" {
+		// Channel probes require system permission, never project-owner privileges.
+		if !scopes.UserHasScope(ctx, scopes.ScopeWriteChannels) {
+			JSONError(c, http.StatusForbidden, errors.New("system write_channels scope is required"))
+			return
+		}
+
 		channelID, err := objects.ParseGUID(channelIDStr)
 		if err != nil {
 			log.Error(ctx, "Error parsing channel ID", log.Cause(err))

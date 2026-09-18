@@ -11,6 +11,7 @@ import (
 // TestDecoratorChain_FullStack tests the complete decorator chain: Default -> SelectedChannels -> LoadBalanced.
 func TestDecoratorChain_FullStack(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channels := createTestChannels(t, ctx, client)
 
@@ -53,6 +54,7 @@ func TestDecoratorChain_FullStack(t *testing.T) {
 // TestSelectedChannelsSelector_WithAllowedChannels tests filtering with allowed channel IDs.
 func TestSelectedChannelsSelector_WithAllowedChannels(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channels := createTestChannels(t, ctx, client)
 
@@ -90,6 +92,7 @@ func TestSelectedChannelsSelector_WithAllowedChannels(t *testing.T) {
 // TestSelectedChannelsSelector_WithEmptyFilter tests that empty filter returns all channels.
 func TestSelectedChannelsSelector_WithEmptyFilter(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gpt-4")
 
 	channels := createTestChannels(t, ctx, client)
 

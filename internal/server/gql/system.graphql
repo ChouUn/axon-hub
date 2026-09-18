@@ -219,21 +219,15 @@ input UpdateSecuritySettingsInput {
 }
 
 type SystemModelSettings {
-  fallbackToChannelsOnModelNotFound: Boolean!
-  queryAllChannelModels: Boolean!
   defaultModelAPIIncludeAll: Boolean!
   autoReasoningEffort: Boolean!
-  modelBlacklistRegex: String!
   hideUnroutableModelsInList: Boolean!
   developerSettings: [DeveloperModelSettings!]!
 }
 
 input UpdateSystemModelSettingsInput {
-  fallbackToChannelsOnModelNotFound: Boolean
-  queryAllChannelModels: Boolean
   defaultModelAPIIncludeAll: Boolean
   autoReasoningEffort: Boolean
-  modelBlacklistRegex: String
   hideUnroutableModelsInList: Boolean
   developerSettings: [DeveloperModelSettingsInput!]
 }

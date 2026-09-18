@@ -48,6 +48,7 @@ export function DataTableToolbar<TData>({
       statusIn: ['enabled', 'disabled'],
       includeMapping: true,
       includePrefix: true,
+      includeAllChannelModels: true,
     });
   }, [fetchModels]);
 

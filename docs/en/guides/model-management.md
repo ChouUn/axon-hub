@@ -146,24 +146,26 @@ Example configuration in Admin UI:
 
 ## System Settings
 
-In **System Settings > Model Settings**, there are three common options:
+Formal requests require an enabled registered model after API-key mapping. Only its effective
+developer/model associations select channels; missing, disabled, archived or unassociated models
+cannot fall back to channels. Public model APIs expose only enabled registered targets and valid
+aliases. Channel connectivity tests remain an authorized administrative operation.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Query All Channel Models | Enabled | When enabled, `/v1/models` API returns all models from enabled channels + configured models |
-| Fallback to Channels on Model Not Found | Enabled | When enabled, if requested model has no associations, system automatically finds channels supporting it |
 | Hide Unroutable Models in Lists | Disabled | When enabled, public model-list APIs hide configured models that the current API key cannot structurally route to a capable channel. Requests for those models still return 422. The admin models table is unchanged. |
 
-**Recommendations:**
-- For beginners: Keep Query All Channel Models and Fallback to Channels enabled; leave Hide Unroutable Models off unless list/call mismatches matter
-- For strict control: Disable Query All Channel Models and Fallback to Channels so only explicitly configured models are used; enable Hide Unroutable Models so `/v1/models` matches that routing
+Enable Hide Unroutable Models in Lists to additionally suppress registered models without a
+structurally usable association for the current API key. Request-time conditions can still reject a
+listed model. The former channel fallback, channel-union listing and channel blacklist settings
+have been removed; old stored values cannot restore bypass behavior.
 
 ## FAQ
 
 ### Q: Why does the request say "Model not found"?
 
 Check in order:
-1. Is the model created?
+1. Is the resolved target model created and enabled (not archived), including API-key mapping targets?
 2. Are model associations configured with correct channels?
 3. Are channels enabled?
 4. Do channels support the models specified in associations?

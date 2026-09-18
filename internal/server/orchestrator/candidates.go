@@ -84,10 +84,10 @@ const (
 	associationCacheTTL = 5 * time.Minute
 )
 
-// DefaultSelector directly selects enabled channels supporting the requested model.
+// DefaultSelector routes enabled registered models through their effective associations.
 type DefaultSelector struct {
 	ChannelService *biz.ChannelService
-	ModelService   *biz.ModelService // Optional: for AxonHub Model resolution
+	ModelService   *biz.ModelService
 	SystemService  *biz.SystemService
 
 	// Association resolution cache
@@ -108,54 +108,10 @@ func (s *DefaultSelector) Select(ctx context.Context, req *llm.Request) ([]*Chan
 	candidates, err := s.selectModelCandidates(ctx, req)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			// Check if fallback to legacy channel selection is allowed
-			settings := s.SystemService.ModelSettingsOrDefault(ctx)
-			if settings.FallbackToChannelsOnModelNotFound {
-				return s.selectChannelCadidates(ctx, req)
-			}
-
 			return nil, fmt.Errorf("%w: %q", biz.ErrInvalidModel, req.Model)
 		}
 
 		return nil, fmt.Errorf("%w: %q", err, req.Model)
-	}
-
-	return candidates, nil
-}
-
-// selectChannelCadidates performs the original channel selection logic.
-func (s *DefaultSelector) selectChannelCadidates(ctx context.Context, req *llm.Request) ([]*ChannelModelsCandidate, error) {
-	channels := s.ChannelService.GetEnabledChannels()
-
-	candidates := make([]*ChannelModelsCandidate, 0, len(channels))
-	for _, ch := range channels {
-		entries := ch.GetModelEntries()
-
-		entry, ok := entries[req.Model]
-		if !ok {
-			continue
-		}
-
-		endpoints := applyForcedAPIFormats(ctx, ch, []biz.ChannelModelEntry{entry}, req.Model, ch.ResolveEndpoints())
-		apiFormat := SelectAPIFormat(endpoints, req)
-		if req.RequestType == llm.RequestTypeAlphaSearch && apiFormat == "" {
-			continue
-		}
-
-		candidates = append(candidates, &ChannelModelsCandidate{
-			Channel:   ch,
-			Priority:  0,
-			Models:    []biz.ChannelModelEntry{entry},
-			APIFormat: apiFormat,
-		})
-	}
-
-	if log.DebugEnabled(ctx) {
-		log.Debug(ctx, "selected channel candidates for model",
-			log.String("model", req.Model),
-			log.Int("count", len(candidates)),
-			log.Any("candidates", candidates),
-		)
 	}
 
 	return candidates, nil

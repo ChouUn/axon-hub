@@ -13,6 +13,7 @@ import (
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/enttest"
+	"github.com/looplj/axonhub/internal/ent/model"
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/pkg/xcache"
 	"github.com/looplj/axonhub/internal/server/biz"
@@ -95,6 +96,26 @@ func setupTest(t *testing.T) (context.Context, *ent.Client) {
 	ctx = ent.NewContext(ctx, client)
 
 	return ctx, client
+}
+
+func createAssociatedTestModel(t *testing.T, ctx context.Context, client *ent.Client, modelID string) *ent.Model {
+	t.Helper()
+
+	registered, err := client.Model.Create().
+		SetDeveloper("test").
+		SetModelID(modelID).
+		SetType(model.TypeChat).
+		SetName(modelID).
+		SetIcon("test").
+		SetGroup("test").
+		SetModelCard(&objects.ModelCard{}).
+		SetStatus(model.StatusEnabled).
+		SetSettings(&objects.ModelSettings{Associations: []*objects.ModelAssociation{
+			{Type: "model", ModelID: &objects.ModelIDAssociation{ModelID: modelID}},
+		}}).
+		Save(ctx)
+	require.NoError(t, err)
+	return registered
 }
 
 // createTestChannels creates multiple test channels for testing.

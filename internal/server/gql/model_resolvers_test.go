@@ -11,6 +11,7 @@ import (
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/enttest"
+	"github.com/looplj/axonhub/internal/ent/model"
 	"github.com/looplj/axonhub/internal/ent/role"
 	"github.com/looplj/axonhub/internal/ent/user"
 	"github.com/looplj/axonhub/internal/objects"
@@ -41,10 +42,11 @@ func TestQueryModels_ProjectAPIKeyManagerCanReadModels(t *testing.T) {
 		SetType(channel.TypeOpenai).
 		SetName("query-models-channel").
 		SetCredentials(objects.ChannelCredentials{APIKey: "key"}).
-		SetSupportedModels([]string{"project-model"}).
+		SetSupportedModels([]string{"project-model", "channel-only-model"}).
 		SetDefaultTestModel("project-model").
 		SetStatus(channel.StatusEnabled).
 		SaveX(setupCtx)
+	client.Model.Create().SetModelID("project-model").SetName("Project model").SetDeveloper("test").SetIcon("test").SetGroup("test").SetModelCard(&objects.ModelCard{}).SetSettings(&objects.ModelSettings{}).SetStatus(model.StatusEnabled).SaveX(setupCtx)
 
 	userWithEdges := client.User.Query().Where(user.IDEQ(userEntity.ID)).WithRoles().WithProjectUsers().OnlyX(setupCtx)
 	ctx := ent.NewContext(context.Background(), client)
@@ -72,6 +74,12 @@ func TestQueryModels_ProjectAPIKeyManagerCanReadModels(t *testing.T) {
 	models, err := resolver.QueryModels(ctx, QueryModelsInput{})
 	require.NoError(t, err)
 	require.Contains(t, models, &biz.ModelIdentityWithStatus{ID: "project-model", Status: channel.StatusEnabled})
+	require.NotContains(t, models, &biz.ModelIdentityWithStatus{ID: "channel-only-model", Status: channel.StatusEnabled})
+	_, err = resolver.QueryModels(ctx, QueryModelsInput{IncludeAllChannelModels: new(true)})
+	require.Error(t, err)
+	adminModels, err := resolver.QueryModels(ent.NewContext(setupCtx, client), QueryModelsInput{IncludeAllChannelModels: new(true)})
+	require.NoError(t, err)
+	require.Contains(t, adminModels, &biz.ModelIdentityWithStatus{ID: "channel-only-model", Status: channel.StatusEnabled})
 	channels, err := resolver.AllChannelSummarys(ctx, nil)
 	require.NoError(t, err)
 	require.Len(t, channels, 1)

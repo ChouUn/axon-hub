@@ -57,72 +57,30 @@ fork 改动，由用户决定。
 | 模型价格时间戳修复回补 | 上游 `beta9` 迁移与 `fork.1` 并存，测试 helper 改名 |
 | 模型目录 schema 修复回补 | 与上游一致，无差异 |
 
-## 已确认需求
-
-### 模型权威定价、渠道倍率与模型准入
-
-#### 模型价格作为权威标准
-
-模型价格维护、渠道「添加定价」引用及「一键匹配并填充」已实现。
-
-- 在「模型」模块集中维护可编辑的标准价格表，包含输入、输出、缓存读取、缓存写入
-  及其变体等计费项，以及完整阶梯价格；不再仅作为参考信息。
-- 渠道「模型价格 → 添加定价」可快速引用模型模块中已有模型的完整定价，作为渠道
-  定价的基础，允许手工修改、覆盖；保存后重新打开，保留渠道修改后的价格。
-- 「一键匹配并填充」以模型模块维护的数值和阶梯为准，不再直接以外部供应商目录
-  为渠道定价来源；填充时不乘渠道倍率，填充后的基础价格仍可编辑。
-- 外部目录不构成第二套权威价格；不能出现模型模块维护的是一套价格、渠道自动填充
-  却使用另一套价格的情况。
-
-#### 渠道倍率与实际价格
-
-已实现。
-
-- 渠道定价倍率独立持久化，重新打开弹窗默认展示该渠道上次保存的倍率；不是仅保存在
-  浏览器内的临时状态，也不通过改写基础价格来代替倍率存储。
-- 基础价格可编辑；在价格后显示「基础价格 × 渠道倍率」得到的实际价格，实际价格
-  只读。命中阶梯时使用该档单价再乘渠道倍率，后端费用计算与界面展示保持一致。
-- 保存、重新打开、再次自动填充均不得重复乘倍率。
-- 已有渠道价格保持原数值，倍率按 1 承接，不反推没有存储的旧倍率，不重复折算已有
-  价格；历史费用和历史价格版本不变。
-- 保持现有全局货币显示方式：用户可以设置为人民币并填写 0.15 倍率，国内模型价格
-  自行维护。不新增自动换汇、多币种定价体系、地区价格体系或币种级倍率配置。
-- 优化「模型定价」窗口：提高可用高度和内容密度，合理安排滚动和操作区，减少编辑
-  多模型、多计费项及阶梯时的重复操作。
-
-#### 全量阶梯
-
-模型编辑、渠道完整价格引用、渠道倍率与计费衔接已实现。
-
-- 沿用并完善现有「全量阶梯」，不另建条件规则系统，不增加「分档依据」选择器。
-- 已确认的计费语义：单次请求输入总 tokens（含缓存）**>272K** 时，输入、输出、
-  缓存读取、缓存写入及其变体等**全部计费项单价统一 ×2**；**≤272K** 时保持原价。
-  界面应明确展示实际 token 阈值，不因 K 的显示缩写产生边界歧义。
-- 由输入总量统一确定该请求的价格档位，各计费项全部用量按命中档位计价；不是仅对
-  超出阈值部分加价，也不是输出、缓存等计费项再按各自用量分别决定是否翻倍。
-- 超过阈值时，即使输出、缓存读取或缓存写入自身用量未超过阈值，也全部使用翻倍
-  单价；再乘渠道倍率，不遗漏缓存写入变体。
-- 全量阶梯集中维护多计费项价格，支持一次为全部计费项填充某档价格（例如基础价 ×2），
-  填充后仍可逐项编辑。模型配置一次，渠道引用时带入完整阶梯，无需逐渠道、逐模型、
-  逐参数重复录入同一规则。
-- 阶梯批量填充是编辑便利功能，不增加第二个与渠道倍率并列的运行时倍率配置。
-- 「累进阶梯」仍表示分段计算费用，不得与「全量阶梯」混淆。
-- 已有阶梯配置不得静默改成不同的计费语义，转换不得覆盖历史价格版本或改变历史费用。
-
-#### 模型作为请求入口
-
-待实施。
-
-- 正式模型请求必须先解析并校验模型模块中存在且启用的模型，再按该模型的关联与
-  分发规则选择渠道。
-- 模型不存在、禁用或归档时不得回退为按渠道支持模型直接调用；模型无可用关联渠道
-  时明确返回不可用，不得绕过模型规则寻找渠道。
-- API Key 模型映射、对外模型列表和各正式请求入口须与上述准入规则一致，不能保留
-  另一条绕过模型注册的正式请求路径。
-- 切换前明确列出渠道中尚未注册的模型及受影响的模型映射，不能通过保留直连回退
-  绕过注册要求。后台渠道连通性测试不得成为正式请求绕过模型校验的通道。
-
 ## Feature Topics
+
+### 模型入口校验与渠道分发
+
+- 行为：正式请求在 API Key 模型映射后，必须解析到已注册且启用的模型，再按开发者与
+  模型的有效关联选择渠道；模型不存在、禁用、归档或无可用关联时拒绝，不回退直连渠道。
+- 映射与列表：API Key 映射采用首个匹配、不递归映射；公开模型列表只下发启用的注册
+  目标及有效别名，不再合并渠道独有模型。OpenAI 模型详情使用映射目标元数据，保留对外别名。
+- 设置：删除渠道回退、渠道模型列表合并及对应黑名单设置；旧 JSON 键被忽略，不能恢复旁路。
+- 管理边界：Playground 指定渠道要求系统级 `write_channels`，项目所有者权限不能代替；显式查询渠道模型要求
+  `read_channels`。已创建视频任务的查询、删除仍使用任务记录中的渠道，不重新选择推理模型。
+- 同步上游注意：保留注册准入及映射目标校验，不能恢复按渠道支持模型直接选路；升级前
+  核对未注册的渠道模型及映射目标，先补齐所需模型与关联，不自动注册或放宽准入。
+- 提交：尚未提交。
+- 代码：`internal/server/orchestrator/candidates.go`、`internal/server/orchestrator/model_mapper.go`、
+  `internal/objects/apikey.go`、`internal/server/biz/model.go`、`internal/server/api/`、
+  `internal/server/gql/model.resolvers.go`、`internal/server/gql/system.graphql`、
+  `frontend/src/features/models/components/models-settings-dialog.tsx`。
+- 迁移：无 schema 或 data migration；无缓存序列化结构变更。
+- 测试与 fixture：`internal/server/orchestrator/model_admission_test.go`、候选渠道测试、
+  `internal/server/biz/model_test.go`、`internal/server/biz/model_list_routability_test.go`、
+  `internal/server/api/openai_retrieve_test.go`、`internal/server/api/chat_test.go`、
+  `internal/server/gql/model_resolvers_test.go`、`internal/objects/apikey_test.go`，
+  覆盖模型状态、关联限制、映射、Responses 续接和管理权限边界；无新增 fixture。
 
 ### 渠道标准价格引用与持久倍率
 
@@ -136,10 +94,16 @@ fork 改动，由用户决定。
 - 交互：定价窗口使用视口高度，编辑区独立滚动，顶部引用与倍率、底部操作区固定；
   各行价格输入框等宽，每档提供基础价倍数及整档填充，包含缓存变体，填充后可单项修改；
   新版导出同时保存倍率与基础价格，旧数组格式导入按倍率 1 承接。
-- 代码：`channels-model-price-dialog.tsx`、共享价格编辑器、`channel_price.go`、
-  `cost_calc.go`、`objects/channel.go`、`objects/price.go` 及价格 GraphQL 接口。
+- 提交：`2eca7c59`（渠道标准价格引用、持久倍率与价格编辑交互）。
+- 代码：`frontend/src/features/channels/components/channels-model-price-dialog.tsx`、
+  `frontend/src/components/model-price-editor.tsx`、`internal/server/biz/channel_price.go`、
+  `internal/server/biz/cost_calc.go`、`internal/objects/channel.go`、`internal/objects/price.go`、
+  `internal/server/gql/price.graphql`。
 - 迁移：无新增表字段或迁移；渠道设置、当前价格及历史版本使用兼容的 JSON 可选
   字段，旧数据缺省倍率为 1。备份保留倍率快照，不从当前渠道设置重算历史价格。
+- 测试与 fixture：`internal/server/biz/channel_price_test.go`、`internal/server/biz/cost_calc_test.go`、
+  `internal/server/biz/channel_auto_model_price_test.go`、`internal/server/biz/channel_model_sync_test.go`、
+  `frontend/src/features/models/pricing.test.mjs`；无新增 fixture。
 
 ### 模型权威定价与全量阶梯
 
@@ -157,8 +121,17 @@ fork 改动，由用户决定。
 - 兼容：旧模型卡价格在 JSON 读取时转换为完整价格，旧成本字段仅作只读摘要；明确
   清除后不会从旧摘要恢复。已有渠道价格、历史价格版本和旧逐项阶梯计算不变。
 - 渠道：既有自动补缺逻辑复制完整模型价格（含阶梯和缓存变体），不覆盖已有渠道价格；
-  渠道引用、编辑及倍率衔接见「渠道标准价格引用与持久倍率」；模型准入另行实施。
+  渠道引用、编辑及倍率衔接见「渠道标准价格引用与持久倍率」。
+- 提交：`93e5878e`（权威模型定价与全量阶梯）；`2eca7c59`（渠道完整价格引用、倍率衔接与阶梯填充交互）。
+- 代码：`frontend/src/features/models/components/models-price-editor.tsx`、
+  `frontend/src/features/models/data/pricing.ts`、`frontend/src/components/model-price-editor.tsx`、
+  `internal/objects/model.go`、`internal/objects/price.go`、`internal/server/biz/model.go`、
+  `internal/server/biz/cost_calc.go`。
 - 迁移：无新增表字段或迁移；兼容既有数据库及缓存中的模型卡 JSON。已重新生成接口代码。
+- 测试与 fixture：`internal/objects/model_test.go`、`internal/objects/price_test.go`、
+  `internal/server/biz/model_validation_test.go`、`frontend/src/features/models/pricing.test.mjs`，
+  覆盖旧价格兼容、全量阶梯校验、价格保存与清除、整档填充及零价与未填写价格的区分；
+  无新增 fixture。
 
 ### API 密钥费用分析
 

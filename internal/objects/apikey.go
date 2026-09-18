@@ -4,6 +4,8 @@ import (
 	"slices"
 
 	"github.com/shopspring/decimal"
+
+	"github.com/looplj/axonhub/internal/pkg/xregexp"
 )
 
 type APIKeyProfiles struct {
@@ -27,6 +29,19 @@ type APIKeyProfile struct {
 	ChannelTags          []string             `json:"channelTags,omitempty"`
 	ChannelTagsMatchMode ChannelTagsMatchMode `json:"channelTagsMatchMode,omitempty"`
 	ModelIDs             []string             `json:"modelIDs,omitempty"`
+}
+
+// MapModel applies the first matching profile mapping without chaining targets.
+func (p *APIKeyProfile) MapModel(modelID string) string {
+	if p == nil {
+		return modelID
+	}
+	for _, mapping := range p.ModelMappings {
+		if xregexp.MatchString(mapping.From, modelID) {
+			return mapping.To
+		}
+	}
+	return modelID
 }
 
 // ChannelTagsMatchMode controls how profile channel tags are matched.

@@ -24,7 +24,6 @@ import (
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/pkg/xcache"
-	"github.com/looplj/axonhub/internal/pkg/xregexp"
 	"github.com/looplj/axonhub/internal/pkg/xtime"
 	"github.com/looplj/axonhub/llm/httpclient"
 )
@@ -475,19 +474,6 @@ type WebhookSubscription struct {
 
 // SystemModelSettings represents model-related configuration settings.
 type SystemModelSettings struct {
-	// FallbackToChannelsOnModelNotFound controls whether to fall back to legacy channel
-	// selection when the requested model is not found in AxonHub Model associations.
-	// When true, if a model has no associations or doesn't exist, the system will
-	// attempt to find enabled channels that support the requested model directly.
-	// When false, such requests will return an error instead of falling back.
-	FallbackToChannelsOnModelNotFound bool `json:"fallback_to_channels_on_model_not_found"`
-
-	// QueryAllChannelModels controls whether models API returns all models from channels
-	// or only configured models (models with explicit Model entity configuration).
-	// When true, the models API will return all models supported by enabled channels.
-	// When false, only models that have explicit Model entity configuration will be returned.
-	QueryAllChannelModels bool `json:"query_all_channel_models"`
-
 	// DefaultModelAPIIncludeAll controls whether GET /v1/models returns extended model
 	// metadata by default when the include query parameter is omitted.
 	// When true, /v1/models behaves like /v1/models?include=all.
@@ -499,12 +485,6 @@ type SystemModelSettings struct {
 	// When true, the suffix is stripped from model and applied to request.reasoning_effort,
 	// overriding any reasoning_effort already set in the request.
 	AutoReasoningEffort bool `json:"auto_reasoning_effort"`
-
-	// ModelBlacklistRegex is a regex pattern. When QueryAllChannelModels is true,
-	// channel-derived model IDs matching this pattern are excluded from the models
-	// API output. Configured Model entities are not affected. An empty string
-	// disables the filter. Only effective when QueryAllChannelModels is true.
-	ModelBlacklistRegex string `json:"model_blacklist_regex"`
 
 	// HideUnroutableModelsInList hides configured Model entities from public
 	// model-list APIs when the current API key has no structurally routable
@@ -1290,10 +1270,6 @@ func (s *SystemService) ModelSettingsOrDefault(ctx context.Context) *SystemModel
 
 // SetModelSettings sets the model settings configuration.
 func (s *SystemService) SetModelSettings(ctx context.Context, settings SystemModelSettings) error {
-	if err := xregexp.ValidateRegex(settings.ModelBlacklistRegex); err != nil {
-		return fmt.Errorf("invalid model blacklist regex: %w", err)
-	}
-
 	normalizeSystemModelSettings(&settings)
 	if err := validateSystemModelSettings(&settings); err != nil {
 		return err

@@ -138,9 +138,19 @@ func TestListEnabledModels_HideUnroutableModelsInList(t *testing.T) {
 			ModelID:   "unroutable-embedding",
 		},
 	})
+	aliasCtx := contexts.WithAPIKey(ctx, &ent.APIKey{Profiles: &objects.APIKeyProfiles{
+		ActiveProfile: "mapped",
+		Profiles: []objects.APIKeyProfile{{
+			Name:     "mapped",
+			ModelIDs: []string{"chat-alias", "embedding-alias"},
+			ModelMappings: []objects.ModelMapping{
+				{From: "chat-alias", To: "routable-chat"},
+				{From: "embedding-alias", To: "unroutable-embedding"},
+			},
+		}},
+	}})
 
 	err = systemSvc.SetModelSettings(ctx, SystemModelSettings{
-		QueryAllChannelModels:      false,
 		HideUnroutableModelsInList: false,
 	})
 	require.NoError(t, err)
@@ -148,9 +158,9 @@ func TestListEnabledModels_HideUnroutableModelsInList(t *testing.T) {
 	listed := listedModelIDs(t, ctx, modelSvc)
 	require.True(t, listed["routable-chat"], "chat model should remain visible when the switch is off")
 	require.True(t, listed["unroutable-embedding"], "embedding model with an association should remain visible when the switch is off")
+	require.Equal(t, map[string]bool{"chat-alias": true, "embedding-alias": true}, listedModelIDs(t, aliasCtx, modelSvc))
 
 	err = systemSvc.SetModelSettings(ctx, SystemModelSettings{
-		QueryAllChannelModels:      false,
 		HideUnroutableModelsInList: true,
 	})
 	require.NoError(t, err)
@@ -158,16 +168,7 @@ func TestListEnabledModels_HideUnroutableModelsInList(t *testing.T) {
 	listed = listedModelIDs(t, ctx, modelSvc)
 	require.True(t, listed["routable-chat"], "chat model with a capable channel should stay visible")
 	require.False(t, listed["unroutable-embedding"], "embedding model on a responses-only channel should be hidden")
-
-	err = systemSvc.SetModelSettings(ctx, SystemModelSettings{
-		QueryAllChannelModels:      true,
-		HideUnroutableModelsInList: true,
-	})
-	require.NoError(t, err)
-
-	listed = listedModelIDs(t, ctx, modelSvc)
-	require.True(t, listed["routable-chat"], "chat model should stay visible when query-all is enabled")
-	require.False(t, listed["unroutable-embedding"], "hidden configured model must not reappear as a channel-derived facade")
+	require.Equal(t, map[string]bool{"chat-alias": true}, listedModelIDs(t, aliasCtx, modelSvc))
 }
 
 func TestListEnabledModels_HideUnroutableRespectsExcludedProjectTags(t *testing.T) {
@@ -196,7 +197,6 @@ func TestListEnabledModels_HideUnroutableRespectsExcludedProjectTags(t *testing.
 	})
 
 	err = systemSvc.SetModelSettings(ctx, SystemModelSettings{
-		QueryAllChannelModels:      false,
 		HideUnroutableModelsInList: true,
 	})
 	require.NoError(t, err)
@@ -228,7 +228,7 @@ func TestListEnabledModels_HideUnroutableRespectsExcludedProjectTags(t *testing.
 	require.True(t, listed["tagged-only-model"], "the same model remains visible without the project tag filter")
 }
 
-func TestListEnabledModels_HideUnroutableKeepsChannelDerivedModels(t *testing.T) {
+func TestListEnabledModels_HideUnroutableDoesNotExposeChannelOnlyModels(t *testing.T) {
 	ctx, client, modelSvc, channelSvc, systemSvc := setupListEnabledModelsTest(t)
 
 	_, err := client.Channel.Create().
@@ -245,13 +245,12 @@ func TestListEnabledModels_HideUnroutableKeepsChannelDerivedModels(t *testing.T)
 	reloadEnabledChannels(t, ctx, client, channelSvc)
 
 	err = systemSvc.SetModelSettings(ctx, SystemModelSettings{
-		QueryAllChannelModels:      true,
 		HideUnroutableModelsInList: true,
 	})
 	require.NoError(t, err)
 
 	listed := listedModelIDs(t, ctx, modelSvc)
-	require.True(t, listed["channel-only-model"], "channel-derived models remain listed when query-all is enabled")
+	require.False(t, listed["channel-only-model"], "channel-only models are never public models")
 }
 
 func TestListEnabledModels_HideUnroutableDoesNotUseWhenConditions(t *testing.T) {
@@ -288,7 +287,6 @@ func TestListEnabledModels_HideUnroutableDoesNotUseWhenConditions(t *testing.T) 
 	})
 
 	err = systemSvc.SetModelSettings(ctx, SystemModelSettings{
-		QueryAllChannelModels:      false,
 		HideUnroutableModelsInList: true,
 	})
 	require.NoError(t, err)

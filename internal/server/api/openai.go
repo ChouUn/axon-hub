@@ -15,7 +15,6 @@ import (
 
 	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/ent"
-	"github.com/looplj/axonhub/internal/ent/model"
 	entprivacy "github.com/looplj/axonhub/internal/ent/privacy"
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/server/biz"
@@ -803,28 +802,14 @@ func (handlers *OpenAIHandlers) RetrieveModel(c *gin.Context) {
 		return
 	}
 
-	configuredModel, err := handlers.EntClient.Model.Query().
-		Where(
-			model.ModelID(modelID),
-			model.StatusEQ(model.StatusEnabled),
-		).
-		Only(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusOK, convertModelFacadeToOpenAIModel(visibleModel))
-			return
-		}
-
-		handlers.writeOpenAIInternalError(c, requestID, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, convertModelToOpenAIExtended(configuredModel, include))
+	result := convertModelToOpenAIExtended(visibleModel.ConfiguredModel, include)
+	result.ID = visibleModel.ID
+	c.JSON(http.StatusOK, result)
 }
 
 // ListModels returns all available models.
 // This endpoint is compatible with OpenAI's /v1/models API.
-// It uses QueryAllChannelModels setting from system config to determine model source.
+// Only enabled registered models and aliases resolving to them are exposed.
 func (handlers *OpenAIHandlers) ListModels(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -858,32 +843,10 @@ func (handlers *OpenAIHandlers) ListModels(c *gin.Context) {
 			return convertModelFacadeToOpenAIModel(m)
 		})
 	} else {
-		visibleIDs := lo.Map(visibleModels, func(m biz.ModelFacade, _ int) string {
-			return m.ID
-		})
-
-		dbModels, err := handlers.EntClient.Model.Query().
-			Where(
-				model.StatusEQ(model.StatusEnabled),
-				model.ModelIDIn(visibleIDs...),
-			).
-			All(ctx)
-		if err != nil {
-			handlers.writeOpenAIInternalError(c, requestID, err)
-			return
-		}
-
-		dbModelMap := make(map[string]*ent.Model, len(dbModels))
-		for _, m := range dbModels {
-			dbModelMap[m.ModelID] = m
-		}
-
 		openaiModels = lo.Map(visibleModels, func(m biz.ModelFacade, _ int) OpenAIModel {
-			if dbModel, ok := dbModelMap[m.ID]; ok {
-				return convertModelToOpenAIExtended(dbModel, include)
-			}
-
-			return convertModelFacadeToOpenAIModel(m)
+			result := convertModelToOpenAIExtended(m.ConfiguredModel, include)
+			result.ID = m.ID
+			return result
 		})
 	}
 

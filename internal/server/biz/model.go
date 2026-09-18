@@ -662,12 +662,9 @@ func (svc *ModelService) ListModels(ctx context.Context, statusIn []model.Status
 	return result, nil
 }
 
-// ListEnabledModels returns all unique models across all enabled channels,
-// considering model mappings, prefixes, and auto-trimmed models.
-// It uses GetModelEntries to reduce code duplication.
-// When QueryAllChannelModels in system settings is false, it returns configured models instead.
-// If an API key is present in context and has an active profile with modelIDs configured,
-// only those models will be returned.
+// ListEnabledModels returns enabled registered models and API key aliases whose
+// resolved targets are enabled registered models. Profile model IDs restrict the
+// public request IDs before mappings, matching request admission.
 // When HideUnroutableModelsInList is true, configured models with no capable
 // endpoint on the key-scoped channels are omitted from this public list.
 func (svc *ModelService) ListEnabledModels(ctx context.Context) ([]ModelFacade, error) {
@@ -710,97 +707,32 @@ func (svc *ModelService) ListEnabledModels(ctx context.Context) ([]ModelFacade, 
 		}
 	}
 
+	return svc.queryConfiguredModelFacades(ctx, profile, channels)
+}
+
+// queryConfiguredModelFacades queries enabled Model entities and returns them as
+// ModelFacades filtered by public model IDs and effective channel associations.
+func (svc *ModelService) queryConfiguredModelFacades(ctx context.Context, profile *objects.APIKeyProfile, channels []*Channel) ([]ModelFacade, error) {
 	var allowedModelIDs []string
-	if profile != nil && len(profile.ModelIDs) > 0 {
+	if profile != nil {
 		allowedModelIDs = profile.ModelIDs
 	}
 
-	// Query configured Model entities (used in both modes)
-	configuredModels, suppressedIDs, err := svc.queryConfiguredModelFacades(ctx, allowedModelIDs, channels)
-	if err != nil {
-		return nil, err
-	}
-
-	settings := svc.systemService.ModelSettingsOrDefault(ctx)
-	if !settings.QueryAllChannelModels {
-		return configuredModels, nil
-	}
-
-	// QueryAllChannelModels=true: merge configured models (higher priority) with channel models
-	var (
-		models    = configuredModels
-		modelSet  = make(map[string]bool, len(configuredModels)+len(suppressedIDs))
-		blacklist = settings.ModelBlacklistRegex
-	)
-
-	for _, m := range configuredModels {
-		modelSet[m.ID] = true
-	}
-	// Hidden configured IDs must not reappear as channel-derived facades.
-	// Routing still binds those IDs to the configured associations.
-	for id := range suppressedIDs {
-		modelSet[id] = true
-	}
-
-	for _, ch := range channels {
-		entries := ch.GetModelEntries()
-
-		for requestModel := range entries {
-			if modelSet[requestModel] {
-				continue
-			}
-
-			// Channel-derived models matching the blacklist regex are excluded.
-			// Configured Model entities above are not affected. Cache the decision
-			// in modelSet so the same model ID coming from another channel skips
-			// the regex match.
-			if blacklist != "" && xregexp.MatchString(blacklist, requestModel) {
-				modelSet[requestModel] = true
-				continue
-			}
-
-			modelSet[requestModel] = true
-
-			models = append(models, ModelFacade{
-				ID:          requestModel,
-				DisplayName: requestModel,
-				CreatedAt:   ch.CreatedAt,
-				Created:     ch.CreatedAt.Unix(),
-				OwnedBy:     ch.Channel.Type.String(),
-			})
-		}
-	}
-
-	// Apply model filtering from key profile
-	if len(allowedModelIDs) > 0 {
-		models = lo.Filter(models, func(m ModelFacade, _ int) bool {
-			return lo.Contains(allowedModelIDs, m.ID)
-		})
-	}
-
-	return models, nil
-}
-
-// queryConfiguredModelFacades queries enabled Model entities and returns them as ModelFacades
-// filtered by allowed model IDs and channel associations.
-// suppressedIDs are configured model IDs omitted as structurally unroutable; callers that
-// merge channel-derived models must treat them as already seen so they are not resurrected.
-func (svc *ModelService) queryConfiguredModelFacades(ctx context.Context, allowedModelIDs []string, channels []*Channel) ([]ModelFacade, map[string]struct{}, error) {
 	query := svc.entFromContext(ctx).
 		Model.
 		Query().
 		Where(model.StatusEQ(model.StatusEnabled))
-	if len(allowedModelIDs) > 0 {
+	// Mapped aliases are filtered by their public IDs, not by their target IDs.
+	if len(allowedModelIDs) > 0 && len(profile.ModelMappings) == 0 {
 		query = query.Where(model.ModelIDIn(allowedModelIDs...))
 	}
 
 	enabledModels, err := query.All(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list configured models: %w", err)
+		return nil, fmt.Errorf("failed to list configured models: %w", err)
 	}
 
-	var models []ModelFacade
-	suppressedIDs := make(map[string]struct{})
+	models := make([]ModelFacade, 0, len(enabledModels))
 	systemSettings := svc.modelSettingsOrDefault(ctx)
 
 	for _, m := range enabledModels {
@@ -811,20 +743,57 @@ func (svc *ModelService) queryConfiguredModelFacades(ctx context.Context, allowe
 		}
 
 		if systemSettings.HideUnroutableModelsInList && !hasCapableEndpointForModel(m, connections) {
-			suppressedIDs[m.ModelID] = struct{}{}
 			continue
 		}
 
 		models = append(models, ModelFacade{
-			ID:          m.ModelID,
-			DisplayName: m.ModelID,
-			CreatedAt:   m.CreatedAt,
-			Created:     m.CreatedAt.Unix(),
-			OwnedBy:     "configured",
+			ID:              m.ModelID,
+			DisplayName:     m.ModelID,
+			CreatedAt:       m.CreatedAt,
+			Created:         m.CreatedAt.Unix(),
+			OwnedBy:         "configured",
+			ConfiguredModel: m,
 		})
 	}
+	if profile == nil || len(profile.ModelMappings) == 0 {
+		return models, nil
+	}
 
-	return models, suppressedIDs, nil
+	registered := make(map[string]ModelFacade, len(models))
+	for _, m := range models {
+		registered[m.ID] = m
+	}
+
+	requestIDs := allowedModelIDs
+	if len(requestIDs) == 0 {
+		requestIDs = make([]string, 0, len(enabledModels)+len(profile.ModelMappings))
+		for _, m := range enabledModels {
+			requestIDs = append(requestIDs, m.ModelID)
+		}
+		for _, mapping := range profile.ModelMappings {
+			// Regex patterns describe request IDs, not enumerable aliases. Dots
+			// remain valid in concrete model IDs such as gpt-4.1.
+			if mapping.From != "" && !strings.ContainsAny(mapping.From, "*?+[]{}()^$|\\") {
+				requestIDs = append(requestIDs, mapping.From)
+			}
+		}
+	}
+
+	result := make([]ModelFacade, 0, len(requestIDs))
+	seen := make(map[string]bool, len(requestIDs))
+	for _, requestID := range requestIDs {
+		if seen[requestID] {
+			continue
+		}
+		seen[requestID] = true
+		if m, ok := registered[profile.MapModel(requestID)]; ok {
+			m.ID = requestID
+			m.DisplayName = requestID
+			result = append(result, m)
+		}
+	}
+
+	return result, nil
 }
 
 // CountAssociatedChannels counts the number of unique channels associated with the given model associations.
@@ -978,4 +947,6 @@ type ModelFacade struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Owned by
 	OwnedBy string `json:"owned_by"`
+	// ConfiguredModel is the admitted target, including for API key aliases.
+	ConfiguredModel *ent.Model `json:"-"`
 }

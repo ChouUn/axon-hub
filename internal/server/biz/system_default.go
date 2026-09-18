@@ -87,13 +87,10 @@ var defaultRetryPolicy = RetryPolicy{
 }
 
 var defaultModelSettings = SystemModelSettings{
-	FallbackToChannelsOnModelNotFound: true,
-	QueryAllChannelModels:             true,
-	DefaultModelAPIIncludeAll:         false,
-	AutoReasoningEffort:               false,
-	ModelBlacklistRegex:               "",
-	HideUnroutableModelsInList:        false,
-	DeveloperSettings:                 []*DeveloperModelSettings{},
+	DefaultModelAPIIncludeAll:  false,
+	AutoReasoningEffort:        false,
+	HideUnroutableModelsInList: false,
+	DeveloperSettings:          []*DeveloperModelSettings{},
 }
 
 var defaultChannelSetting = SystemChannelSettings{

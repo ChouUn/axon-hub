@@ -16,6 +16,7 @@ import (
 func createGeminiTestChannels(t *testing.T, ctx context.Context, client *ent.Client) []*ent.Channel {
 	t.Helper()
 
+	createAssociatedTestModel(t, ctx, client, "gemini-2.0-flash")
 	channels := make([]*ent.Channel, 0)
 
 	// Channel 0: gemini (native format, supports Google native tools)
@@ -140,6 +141,7 @@ func TestGoogleNativeToolsSelector_Select_WithoutGoogleNativeTools(t *testing.T)
 // TestGoogleNativeToolsSelector_Select_NoCompatibleChannels tests fallback when no compatible channels exist.
 func TestGoogleNativeToolsSelector_Select_NoCompatibleChannels(t *testing.T) {
 	ctx, client := setupTest(t)
+	createAssociatedTestModel(t, ctx, client, "gemini-2.0-flash")
 
 	// Create only gemini_openai channel (does not support Google native tools)
 	ch, err := client.Channel.Create().

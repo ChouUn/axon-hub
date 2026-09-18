@@ -84,6 +84,22 @@ func TestOpenAIHandlers_RetrieveModel_SupportsSlashModelIDs(t *testing.T) {
 	require.NoError(t, err)
 
 	channelSvc.SetEnabledChannelsForTest([]*biz.Channel{{Channel: ch}})
+	_, err = client.Model.Create().
+		SetDeveloper("deepseek").
+		SetModelID("deepseek/deepseek-chat").
+		SetName("DeepSeek Chat").
+		SetType(model.TypeChat).
+		SetGroup("deepseek").
+		SetIcon("deepseek").
+		SetModelCard(&objects.ModelCard{}).
+		SetSettings(&objects.ModelSettings{Associations: []*objects.ModelAssociation{{
+			Type:         "channel_model",
+			ChannelModel: &objects.ChannelModelAssociation{ChannelID: ch.ID, ModelID: "deepseek-chat"},
+		}}}).
+		SetStatus(model.StatusEnabled).
+		SetCreatedAt(createdAt).
+		Save(ctx)
+	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models/deepseek/deepseek-chat", nil)
 	w := httptest.NewRecorder()
@@ -96,10 +112,10 @@ func TestOpenAIHandlers_RetrieveModel_SupportsSlashModelIDs(t *testing.T) {
 	require.Equal(t, "deepseek/deepseek-chat", got.ID)
 	require.Equal(t, "model", got.Object)
 	require.Equal(t, createdAt.Unix(), got.Created)
-	require.Equal(t, "openai", got.OwnedBy)
+	require.Equal(t, "configured", got.OwnedBy)
 }
 
-func TestOpenAIHandlers_RetrieveModel_FallsBackToBasicWhenConfiguredMetadataMissing(t *testing.T) {
+func TestOpenAIHandlers_RetrieveModel_RejectsChannelOnlyModel(t *testing.T) {
 	client, channelSvc, _, router, ctx := setupOpenAIRetrieveTest(t)
 
 	createdAt := time.Unix(1712345688, 0)
@@ -117,21 +133,16 @@ func TestOpenAIHandlers_RetrieveModel_FallsBackToBasicWhenConfiguredMetadataMiss
 
 	channelSvc.SetEnabledChannelsForTest([]*biz.Channel{{Channel: ch}})
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/models/gpt-4o-mini?include=all", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	for _, query := range []string{"", "?include=all"} {
+		req := httptest.NewRequest(http.MethodGet, "/v1/models/gpt-4o-mini"+query, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code)
-
-	var got OpenAIModel
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
-	require.Equal(t, "gpt-4o-mini", got.ID)
-	require.Equal(t, "model", got.Object)
-	require.Equal(t, createdAt.Unix(), got.Created)
-	require.Equal(t, "openai", got.OwnedBy)
-	require.Empty(t, got.Name)
-	require.Nil(t, got.Capabilities)
-	require.Nil(t, got.Pricing)
+		require.Equal(t, http.StatusNotFound, w.Code)
+		var got openaitypes.OpenAIError
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
+		require.Equal(t, "model_not_found", got.Detail.Code)
+	}
 }
 
 func TestOpenAIHandlers_RetrieveModel_ReturnsExtendedConfiguredModel(t *testing.T) {
@@ -359,9 +370,7 @@ func TestOpenAIHandlers_ListModels_UsesExtendedFieldsWhenConfiguredAsDefault(t *
 	client, channelSvc, systemSvc, router, ctx := setupOpenAIRetrieveTest(t)
 
 	err := systemSvc.SetModelSettings(ctx, biz.SystemModelSettings{
-		FallbackToChannelsOnModelNotFound: true,
-		QueryAllChannelModels:             true,
-		DefaultModelAPIIncludeAll:         true,
+		DefaultModelAPIIncludeAll: true,
 	})
 	require.NoError(t, err)
 
@@ -433,9 +442,7 @@ func TestOpenAIHandlers_ListModels_ExtendedModeRespectsAPIKeyProfile(t *testing.
 	client, channelSvc, systemSvc, _, ctx := setupOpenAIRetrieveTest(t)
 
 	err := systemSvc.SetModelSettings(ctx, biz.SystemModelSettings{
-		FallbackToChannelsOnModelNotFound: true,
-		QueryAllChannelModels:             true,
-		DefaultModelAPIIncludeAll:         true,
+		DefaultModelAPIIncludeAll: true,
 	})
 	require.NoError(t, err)
 
@@ -563,13 +570,11 @@ func TestOpenAIHandlers_ListModels_ExtendedModeRespectsAPIKeyProfile(t *testing.
 	require.NotNil(t, got.Data[0].Pricing)
 }
 
-func TestOpenAIHandlers_ListModels_ExtendedModeFallsBackToBasicForMissingDBModel(t *testing.T) {
+func TestOpenAIHandlers_ListModels_ExtendedModeExcludesChannelOnlyModels(t *testing.T) {
 	client, channelSvc, systemSvc, _, ctx := setupOpenAIRetrieveTest(t)
 
 	err := systemSvc.SetModelSettings(ctx, biz.SystemModelSettings{
-		FallbackToChannelsOnModelNotFound: true,
-		QueryAllChannelModels:             true,
-		DefaultModelAPIIncludeAll:         true,
+		DefaultModelAPIIncludeAll: true,
 	})
 	require.NoError(t, err)
 
@@ -610,7 +615,7 @@ func TestOpenAIHandlers_ListModels_ExtendedModeFallsBackToBasicForMissingDBModel
 
 	apiKey := &ent.APIKey{
 		ID:   100,
-		Name: "fallback-test-key",
+		Name: "registered-only-key",
 		Profiles: &objects.APIKeyProfiles{
 			ActiveProfile: "limited",
 			Profiles: []objects.APIKeyProfile{{
@@ -647,7 +652,7 @@ func TestOpenAIHandlers_ListModels_ExtendedModeFallsBackToBasicForMissingDBModel
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
 
-	require.Len(t, got.Data, 2)
+	require.Len(t, got.Data, 1)
 
 	resultMap := make(map[string]OpenAIModel)
 	for _, m := range got.Data {
@@ -658,18 +663,14 @@ func TestOpenAIHandlers_ListModels_ExtendedModeFallsBackToBasicForMissingDBModel
 	require.True(t, ok, "gpt-4.1 should be present")
 	require.NotNil(t, gpt41.Capabilities, "gpt-4.1 has a DB entry so should have extended fields")
 
-	gpt41mini, ok := resultMap["gpt-4.1-mini"]
-	require.True(t, ok, "gpt-4.1-mini should be present")
-	require.Nil(t, gpt41mini.Capabilities, "gpt-4.1-mini has no DB entry so should fall back to basic fields")
+	require.NotContains(t, resultMap, "gpt-4.1-mini")
 }
 
 func TestOpenAIHandlers_ListModels_ExtendedModeWithZeroAllowedModelsReturnsEmpty(t *testing.T) {
 	client, channelSvc, systemSvc, _, ctx := setupOpenAIRetrieveTest(t)
 
 	err := systemSvc.SetModelSettings(ctx, biz.SystemModelSettings{
-		FallbackToChannelsOnModelNotFound: true,
-		QueryAllChannelModels:             true,
-		DefaultModelAPIIncludeAll:         true,
+		DefaultModelAPIIncludeAll: true,
 	})
 	require.NoError(t, err)
 
@@ -688,6 +689,21 @@ func TestOpenAIHandlers_ListModels_ExtendedModeWithZeroAllowedModelsReturnsEmpty
 	require.NoError(t, err)
 
 	channelSvc.SetEnabledChannelsForTest([]*biz.Channel{{Channel: openaiCh}})
+	_, err = client.Model.Create().
+		SetDeveloper("openai").
+		SetModelID("gpt-4.1").
+		SetName("GPT-4.1").
+		SetType(model.TypeChat).
+		SetGroup("gpt").
+		SetIcon("openai").
+		SetModelCard(&objects.ModelCard{}).
+		SetSettings(&objects.ModelSettings{Associations: []*objects.ModelAssociation{{
+			Type:         "channel_model",
+			ChannelModel: &objects.ChannelModelAssociation{ChannelID: openaiCh.ID, ModelID: "gpt-4.1"},
+		}}}).
+		SetStatus(model.StatusEnabled).
+		Save(ctx)
+	require.NoError(t, err)
 
 	apiKey := &ent.APIKey{
 		ID:   101,
@@ -728,4 +744,142 @@ func TestOpenAIHandlers_ListModels_ExtendedModeWithZeroAllowedModelsReturnsEmpty
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
 	require.Empty(t, got.Data, "API key with no matching models should return empty list")
+}
+
+func TestPublicModelAPIs_MappedTargetsRequireEnabledRegistration(t *testing.T) {
+	client, channelSvc, systemSvc, _, ctx := setupOpenAIRetrieveTest(t)
+	ch, err := client.Channel.Create().
+		SetType(channel.TypeOpenai).
+		SetName("Model API Channel").
+		SetBaseURL("https://api.example.com/v1").
+		SetCredentials(objects.ChannelCredentials{APIKey: "key"}).
+		SetSupportedModels([]string{"target", "shadow", "disabled", "archived", "channel-only"}).
+		SetDefaultTestModel("target").
+		SetStatus(channel.StatusEnabled).
+		Save(ctx)
+	require.NoError(t, err)
+	channelSvc.SetEnabledChannelsForTest([]*biz.Channel{{Channel: ch}})
+	createdAt := time.Unix(1712345708, 0)
+	for _, fixture := range []struct {
+		id     string
+		status model.Status
+	}{
+		{id: "target", status: model.StatusEnabled},
+		{id: "shadow", status: model.StatusEnabled},
+		{id: "disabled", status: model.StatusDisabled},
+		{id: "archived", status: model.StatusArchived},
+	} {
+		_, err = client.Model.Create().
+			SetDeveloper("openai").
+			SetModelID(fixture.id).
+			SetName("Metadata for " + fixture.id).
+			SetType(model.TypeChat).
+			SetGroup("gpt").
+			SetIcon("openai").
+			SetCreatedAt(createdAt).
+			SetModelCard(&objects.ModelCard{Limit: objects.ModelCardLimit{Context: 12345}}).
+			SetSettings(&objects.ModelSettings{Associations: []*objects.ModelAssociation{{
+				Type:         "channel_model",
+				ChannelModel: &objects.ChannelModelAssociation{ChannelID: ch.ID, ModelID: fixture.id},
+			}}}).
+			SetStatus(fixture.status).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	apiKey := &ent.APIKey{Profiles: &objects.APIKeyProfiles{
+		ActiveProfile: "mapped",
+		Profiles: []objects.APIKeyProfile{{
+			Name:     "mapped",
+			ModelIDs: []string{"public-alias", "shadow", "disabled-alias", "archived-alias", "channel-alias", "missing-alias"},
+			ModelMappings: []objects.ModelMapping{
+				{From: "public-alias", To: "target"},
+				{From: "shadow", To: "target"},
+				{From: "disabled-alias", To: "disabled"},
+				{From: "archived-alias", To: "archived"},
+				{From: "channel-alias", To: "channel-only"},
+				{From: "missing-alias", To: "missing"},
+			},
+		}},
+	}}
+	modelSvc := biz.NewModelService(biz.ModelServiceParams{ChannelService: channelSvc, SystemService: systemSvc, Ent: client})
+	openaiHandlers := &OpenAIHandlers{ModelService: modelSvc, SystemService: systemSvc, EntClient: client}
+	anthropicHandlers := &AnthropicHandlers{ModelService: modelSvc}
+	geminiHandlers := &GeminiHandlers{ModelService: modelSvc}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		requestCtx := authz.WithTestBypass(ent.NewContext(c.Request.Context(), client))
+		c.Request = c.Request.WithContext(contexts.WithAPIKey(requestCtx, apiKey))
+		c.Next()
+	})
+	router.GET("/openai/models", openaiHandlers.ListModels)
+	router.GET("/openai/models/*model", openaiHandlers.RetrieveModel)
+	router.GET("/anthropic/models", anthropicHandlers.ListModels)
+	router.GET("/gemini/models", geminiHandlers.ListModels)
+
+	for _, tc := range []struct {
+		path      string
+		listField string
+		idField   string
+		want      []string
+	}{
+		{path: "/openai/models", listField: "data", idField: "id", want: []string{"public-alias", "shadow"}},
+		{path: "/openai/models?include=all", listField: "data", idField: "id", want: []string{"public-alias", "shadow"}},
+		{path: "/anthropic/models", listField: "data", idField: "id", want: []string{"public-alias", "shadow"}},
+		{path: "/gemini/models", listField: "models", idField: "name", want: []string{"models/public-alias", "models/shadow"}},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			require.Equal(t, http.StatusOK, w.Code)
+			var body map[string]json.RawMessage
+			require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+			var models []map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(body[tc.listField], &models))
+			ids := make([]string, 0, len(models))
+			for _, m := range models {
+				var id string
+				require.NoError(t, json.Unmarshal(m[tc.idField], &id))
+				ids = append(ids, id)
+				if tc.path == "/openai/models?include=all" {
+					var name string
+					require.NoError(t, json.Unmarshal(m["name"], &name))
+					require.Equal(t, "Metadata for target", name)
+				}
+			}
+			require.ElementsMatch(t, tc.want, ids)
+		})
+	}
+
+	for _, id := range []string{"public-alias", "shadow"} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/openai/models/"+id+"?include=all", nil))
+		require.Equal(t, http.StatusOK, w.Code)
+		var got OpenAIModel
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
+		require.Equal(t, id, got.ID)
+		require.Equal(t, "Metadata for target", got.Name)
+		require.Equal(t, 12345, got.ContextLength)
+		require.Equal(t, createdAt.Unix(), got.Created)
+	}
+	for _, id := range []string{"target", "disabled-alias", "archived-alias", "channel-alias", "missing-alias"} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/openai/models/"+id+"?include=all", nil))
+		require.Equal(t, http.StatusNotFound, w.Code)
+	}
+
+	// A previously valid alias disappears as soon as its registered target is disabled.
+	_, err = client.Model.Update().Where(model.ModelID("target")).SetStatus(model.StatusDisabled).Save(ctx)
+	require.NoError(t, err)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/openai/models/public-alias?include=all", nil))
+	require.Equal(t, http.StatusNotFound, w.Code)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/openai/models?include=all", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	var got struct {
+		Data []OpenAIModel `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
+	require.Empty(t, got.Data)
 }

@@ -554,16 +554,10 @@ export function usePreviewGcCleanup() {
   });
 }
 
-export async function previewGcCleanup(
-  input: TriggerGcCleanupInput,
-  signal?: AbortSignal
-): Promise<GcCleanupPreviewItem[]> {
-  const data = await graphqlRequest<{ previewGcCleanup: GcCleanupPreviewItem[] }>(
-    PREVIEW_GC_CLEANUP_QUERY,
-    { input },
-    undefined,
-    { signal }
-  );
+export async function previewGcCleanup(input: TriggerGcCleanupInput, signal?: AbortSignal): Promise<GcCleanupPreviewItem[]> {
+  const data = await graphqlRequest<{ previewGcCleanup: GcCleanupPreviewItem[] }>(PREVIEW_GC_CLEANUP_QUERY, { input }, undefined, {
+    signal,
+  });
   return data.previewGcCleanup;
 }
 
@@ -775,10 +769,9 @@ export function useExportCacheDiagnostics() {
 
   return useMutation({
     mutationFn: async () => {
-      const data = await graphqlRequest<{ getCacheDiagnostics: GetCacheDiagnosticsPayload }>(
-        GET_CACHE_DIAGNOSTICS_QUERY,
-        { input: { targets: ['CHANNEL_CACHE'] } }
-      );
+      const data = await graphqlRequest<{ getCacheDiagnostics: GetCacheDiagnosticsPayload }>(GET_CACHE_DIAGNOSTICS_QUERY, {
+        input: { targets: ['CHANNEL_CACHE'] },
+      });
       return data.getCacheDiagnostics;
     },
     onSuccess: (data) => {
@@ -827,11 +820,8 @@ export function useClearCache() {
 const MODEL_SETTINGS_QUERY = `
   query ModelSettings {
     systemModelSettings {
-      fallbackToChannelsOnModelNotFound
-      queryAllChannelModels
       defaultModelAPIIncludeAll
       autoReasoningEffort
-      modelBlacklistRegex
       hideUnroutableModelsInList
       developerSettings {
         developer
@@ -977,21 +967,15 @@ const UPDATE_SECURITY_SETTINGS_MUTATION = `
 `;
 
 export interface ModelSettings {
-  fallbackToChannelsOnModelNotFound: boolean;
-  queryAllChannelModels: boolean;
   defaultModelAPIIncludeAll: boolean;
   autoReasoningEffort: boolean;
-  modelBlacklistRegex: string;
   hideUnroutableModelsInList: boolean;
   developerSettings: DeveloperModelSettings[];
 }
 
 export interface UpdateModelSettingsInput {
-  fallbackToChannelsOnModelNotFound?: boolean;
-  queryAllChannelModels?: boolean;
   defaultModelAPIIncludeAll?: boolean;
   autoReasoningEffort?: boolean;
-  modelBlacklistRegex?: string;
   hideUnroutableModelsInList?: boolean;
   developerSettings?: DeveloperModelSettings[];
 }
@@ -1573,7 +1557,6 @@ export function useDeleteProxyPreset() {
   });
 }
 
-
 // User-Agent Pass-Through Settings
 const USER_AGENT_PASS_THROUGH_SETTINGS_QUERY = `
   query UserAgentPassThroughSettings {
@@ -1604,7 +1587,9 @@ export function useUserAgentPassThroughSettings() {
     queryKey: ['userAgentPassThroughSettings'],
     queryFn: async () => {
       try {
-        const data = await graphqlRequest<{ userAgentPassThroughSettings: UserAgentPassThroughSettings }>(USER_AGENT_PASS_THROUGH_SETTINGS_QUERY);
+        const data = await graphqlRequest<{ userAgentPassThroughSettings: UserAgentPassThroughSettings }>(
+          USER_AGENT_PASS_THROUGH_SETTINGS_QUERY
+        );
         return data.userAgentPassThroughSettings;
       } catch (error) {
         handleError(error, i18n.t('common.errors.internalServerError'));
@@ -1619,7 +1604,9 @@ export function useUpdateUserAgentPassThroughSettings() {
 
   return useMutation({
     mutationFn: async (input: UpdateUserAgentPassThroughSettingsInput) => {
-      const data = await graphqlRequest<{ updateUserAgentPassThroughSettings: boolean }>(UPDATE_USER_AGENT_PASS_THROUGH_SETTINGS_MUTATION, { input });
+      const data = await graphqlRequest<{ updateUserAgentPassThroughSettings: boolean }>(UPDATE_USER_AGENT_PASS_THROUGH_SETTINGS_MUTATION, {
+        input,
+      });
       return data.updateUserAgentPassThroughSettings;
     },
     onSuccess: () => {
@@ -1734,7 +1721,9 @@ export function useUpdateUsageCostInjectionSettings() {
 
   return useMutation({
     mutationFn: async (input: UpdateUsageCostInjectionSettingsInput) => {
-      const data = await graphqlRequest<{ updateUsageCostInjectionSettings: boolean }>(UPDATE_USAGE_COST_INJECTION_SETTINGS_MUTATION, { input });
+      const data = await graphqlRequest<{ updateUsageCostInjectionSettings: boolean }>(UPDATE_USAGE_COST_INJECTION_SETTINGS_MUTATION, {
+        input,
+      });
       return data.updateUsageCostInjectionSettings;
     },
     onSuccess: () => {
