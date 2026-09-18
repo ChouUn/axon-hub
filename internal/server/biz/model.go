@@ -356,6 +356,9 @@ func validateModelCard(card *objects.ModelCard) error {
 		return nil
 	}
 	if card.Price != nil {
+		if card.Price.Multiplier != nil {
+			return fmt.Errorf("standard model prices cannot include a channel multiplier")
+		}
 		if err := card.Price.Validate(); err != nil {
 			return fmt.Errorf("invalid model price: %w", err)
 		}

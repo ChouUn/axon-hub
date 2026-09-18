@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/oauth"
@@ -150,6 +152,10 @@ func (m ModelProtocol) IsEnabled() bool {
 }
 
 type ChannelSettings struct {
+	// ModelPriceMultiplier applies to channel price snapshots; absent values mean one.
+	// Only the versioned channel pricing mutation may change it.
+	ModelPriceMultiplier *decimal.Decimal `json:"modelPriceMultiplier,omitempty"`
+
 	// ExtraModelPrefix sets the channel accept the model with the extra prefix.
 	// e.g. a channel
 	// supported_modles is ["deepseek-chat", "deepseek-reasoner"]

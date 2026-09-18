@@ -621,6 +621,7 @@ type ComplexityRoot struct {
 		HideOriginalModels       func(childComplexity int) int
 		LowercaseModelID         func(childComplexity int) int
 		ModelMappings            func(childComplexity int) int
+		ModelPriceMultiplier     func(childComplexity int) int
 		ModelProtocols           func(childComplexity int) int
 		PassThroughBody          func(childComplexity int) int
 		PassThroughUserAgent     func(childComplexity int) int
@@ -978,6 +979,7 @@ type ComplexityRoot struct {
 
 	ModelPrice struct {
 		Items       func(childComplexity int) int
+		Multiplier  func(childComplexity int) int
 		Schedule    func(childComplexity int) int
 		VolumeTiers func(childComplexity int) int
 	}
@@ -1086,7 +1088,7 @@ type ComplexityRoot struct {
 		RetainTrace                           func(childComplexity int, id objects.GUID) int
 		RotateAPIKey                          func(childComplexity int, id objects.GUID) int
 		SaveChannelEndpoints                  func(childComplexity int, input biz.SaveChannelEndpointsInput) int
-		SaveChannelModelPrices                func(childComplexity int, channelID objects.GUID, input []*biz.SaveChannelModelPriceInput) int
+		SaveChannelModelPrices                func(childComplexity int, channelID objects.GUID, input []*biz.SaveChannelModelPriceInput, multiplier *decimal.Decimal) int
 		SaveProxyPreset                       func(childComplexity int, input biz.ProxyPreset) int
 		SyncChannelModels                     func(childComplexity int, channelID objects.GUID, pattern *string) int
 		TestChannel                           func(childComplexity int, input TestChannelInput) int
@@ -2401,7 +2403,7 @@ type MutationResolver interface {
 	BulkEnablePromptProtectionRules(ctx context.Context, ids []*objects.GUID) (bool, error)
 	BulkDisablePromptProtectionRules(ctx context.Context, ids []*objects.GUID) (bool, error)
 	PreviewPromptProtectionRule(ctx context.Context, input PromptProtectionRulePreviewInput) (*PromptProtectionRulePreviewResult, error)
-	SaveChannelModelPrices(ctx context.Context, channelID objects.GUID, input []*biz.SaveChannelModelPriceInput) ([]*ent.ChannelModelPrice, error)
+	SaveChannelModelPrices(ctx context.Context, channelID objects.GUID, input []*biz.SaveChannelModelPriceInput, multiplier *decimal.Decimal) ([]*ent.ChannelModelPrice, error)
 }
 type OIDCIdentityResolver interface {
 	ID(ctx context.Context, obj *ent.OIDCIdentity) (*objects.GUID, error)
@@ -4645,6 +4647,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ChannelSettings.ModelMappings(childComplexity), true
+	case "ChannelSettings.modelPriceMultiplier":
+		if e.complexity.ChannelSettings.ModelPriceMultiplier == nil {
+			break
+		}
+
+		return e.complexity.ChannelSettings.ModelPriceMultiplier(childComplexity), true
 	case "ChannelSettings.modelProtocols":
 		if e.complexity.ChannelSettings.ModelProtocols == nil {
 			break
@@ -5913,6 +5921,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ModelPrice.Items(childComplexity), true
+	case "ModelPrice.multiplier":
+		if e.complexity.ModelPrice.Multiplier == nil {
+			break
+		}
+
+		return e.complexity.ModelPrice.Multiplier(childComplexity), true
 	case "ModelPrice.schedule":
 		if e.complexity.ModelPrice.Schedule == nil {
 			break
@@ -6814,7 +6828,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.SaveChannelModelPrices(childComplexity, args["channelId"].(objects.GUID), args["input"].([]*biz.SaveChannelModelPriceInput)), true
+		return e.complexity.Mutation.SaveChannelModelPrices(childComplexity, args["channelId"].(objects.GUID), args["input"].([]*biz.SaveChannelModelPriceInput), args["multiplier"].(*decimal.Decimal)), true
 	case "Mutation.saveProxyPreset":
 		if e.complexity.Mutation.SaveProxyPreset == nil {
 			break
@@ -13348,6 +13362,11 @@ func (ec *executionContext) field_Mutation_saveChannelModelPrices_args(ctx conte
 		return nil, err
 	}
 	args["input"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "multiplier", ec.unmarshalODecimal2ᚖgithubᚗcomᚋshopspringᚋdecimalᚐDecimal)
+	if err != nil {
+		return nil, err
+	}
+	args["multiplier"] = arg2
 	return args, nil
 }
 
@@ -21983,6 +22002,8 @@ func (ec *executionContext) fieldContext_Channel_settings(_ context.Context, fie
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "modelPriceMultiplier":
+				return ec.fieldContext_ChannelSettings_modelPriceMultiplier(ctx, field)
 			case "extraModelPrefix":
 				return ec.fieldContext_ChannelSettings_extraModelPrefix(ctx, field)
 			case "modelMappings":
@@ -23612,6 +23633,8 @@ func (ec *executionContext) fieldContext_ChannelModelPrice_price(_ context.Conte
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "multiplier":
+				return ec.fieldContext_ModelPrice_multiplier(ctx, field)
 			case "items":
 				return ec.fieldContext_ModelPrice_items(ctx, field)
 			case "volumeTiers":
@@ -24181,6 +24204,8 @@ func (ec *executionContext) fieldContext_ChannelModelPriceVersion_price(_ contex
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "multiplier":
+				return ec.fieldContext_ModelPrice_multiplier(ctx, field)
 			case "items":
 				return ec.fieldContext_ModelPrice_items(ctx, field)
 			case "volumeTiers":
@@ -26182,6 +26207,35 @@ func (ec *executionContext) fieldContext_ChannelRegexAssociation_pattern(_ conte
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelSettings_modelPriceMultiplier(ctx context.Context, field graphql.CollectedField, obj *objects.ChannelSettings) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelSettings_modelPriceMultiplier,
+		func(ctx context.Context) (any, error) {
+			return obj.ModelPriceMultiplier, nil
+		},
+		nil,
+		ec.marshalODecimal2ᚖgithubᚗcomᚋshopspringᚋdecimalᚐDecimal,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelSettings_modelPriceMultiplier(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelSettings",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Decimal does not have child fields")
 		},
 	}
 	return fc, nil
@@ -31716,6 +31770,8 @@ func (ec *executionContext) fieldContext_ModelCard_price(_ context.Context, fiel
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "multiplier":
+				return ec.fieldContext_ModelPrice_multiplier(ctx, field)
 			case "items":
 				return ec.fieldContext_ModelPrice_items(ctx, field)
 			case "volumeTiers":
@@ -32842,6 +32898,35 @@ func (ec *executionContext) fieldContext_ModelPerformanceStat_requestCount(_ con
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelPrice_multiplier(ctx context.Context, field graphql.CollectedField, obj *objects.ModelPrice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelPrice_multiplier,
+		func(ctx context.Context) (any, error) {
+			return obj.Multiplier, nil
+		},
+		nil,
+		ec.marshalODecimal2ᚖgithubᚗcomᚋshopspringᚋdecimalᚐDecimal,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelPrice_multiplier(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelPrice",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Decimal does not have child fields")
 		},
 	}
 	return fc, nil
@@ -39924,7 +40009,7 @@ func (ec *executionContext) _Mutation_saveChannelModelPrices(ctx context.Context
 		ec.fieldContext_Mutation_saveChannelModelPrices,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.resolvers.Mutation().SaveChannelModelPrices(ctx, fc.Args["channelId"].(objects.GUID), fc.Args["input"].([]*biz.SaveChannelModelPriceInput))
+			return ec.resolvers.Mutation().SaveChannelModelPrices(ctx, fc.Args["channelId"].(objects.GUID), fc.Args["input"].([]*biz.SaveChannelModelPriceInput), fc.Args["multiplier"].(*decimal.Decimal))
 		},
 		nil,
 		ec.marshalNChannelModelPrice2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋentᚐChannelModelPriceᚄ,
@@ -97068,6 +97153,8 @@ func (ec *executionContext) _ChannelSettings(ctx context.Context, sel ast.Select
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("ChannelSettings")
+		case "modelPriceMultiplier":
+			out.Values[i] = ec._ChannelSettings_modelPriceMultiplier(ctx, field, obj)
 		case "extraModelPrefix":
 			out.Values[i] = ec._ChannelSettings_extraModelPrefix(ctx, field, obj)
 		case "modelMappings":
@@ -99944,6 +100031,8 @@ func (ec *executionContext) _ModelPrice(ctx context.Context, sel ast.SelectionSe
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("ModelPrice")
+		case "multiplier":
+			out.Values[i] = ec._ModelPrice_multiplier(ctx, field, obj)
 		case "items":
 			out.Values[i] = ec._ModelPrice_items(ctx, field, obj)
 			if out.Values[i] == graphql.Null {

@@ -1052,6 +1052,32 @@ func TestComputeUsageCost_VolumeTiers(t *testing.T) {
 
 		t.Fatal("missing aggregate cache write cost")
 	})
+
+	t.Run("multiplier applies once to every selected rate and honors zero", func(t *testing.T) {
+		price.Multiplier = mustDecimalPtr("0.15")
+		usage := &llm.Usage{
+			PromptTokens: 1001, CompletionTokens: 10,
+			PromptTokensDetails: &llm.PromptTokensDetails{
+				CachedTokens: 700, WriteCachedTokens: 200,
+				WriteCached5MinTokens: 150, WriteCached1HourTokens: 50,
+			},
+		}
+		items, total := ComputeUsageCost(usage, price, time.Time{})
+		require.Equal(t, "0.0003726", total.String())
+		want := []string{"0.0000606", "0.000012", "0.000105", "0.000135", "0.00006"}
+		require.Len(t, items, len(want))
+		for idx := range items {
+			require.Equal(t, want[idx], items[idx].Subtotal.String())
+		}
+		_, repeated := ComputeUsageCost(usage, price, time.Time{})
+		require.True(t, total.Equal(repeated))
+		price.Multiplier = mustDecimalPtr("0")
+		items, total = ComputeUsageCost(usage, price, time.Time{})
+		require.True(t, total.IsZero())
+		for _, item := range items {
+			require.True(t, item.Subtotal.IsZero())
+		}
+	})
 }
 
 func TestComputeUsageCost_VolumeTiersSchedulePrecedence(t *testing.T) {
@@ -1064,7 +1090,8 @@ func TestComputeUsageCost_VolumeTiersSchedulePrecedence(t *testing.T) {
 		}}
 	}
 	price := objects.ModelPrice{
-		Items: itemsAtRate("2"),
+		Multiplier: mustDecimalPtr("0.15"),
+		Items:      itemsAtRate("2"),
 		VolumeTiers: []objects.ModelPriceVolumeTier{
 			{Above: 1000, Items: itemsAtRate("4")},
 		},
@@ -1083,9 +1110,9 @@ func TestComputeUsageCost_VolumeTiersSchedulePrecedence(t *testing.T) {
 	usage := &llm.Usage{PromptTokens: 2000}
 
 	_, nightCost := ComputeUsageCost(usage, price, time.Date(2026, 7, 21, 3, 0, 0, 0, time.UTC))
-	require.Equal(t, "0.002", nightCost.String())
+	require.Equal(t, "0.0003", nightCost.String())
 	_, dayCost := ComputeUsageCost(usage, price, time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC))
-	require.Equal(t, "0.008", dayCost.String())
+	require.Equal(t, "0.0012", dayCost.String())
 }
 
 func TestComputeUsageCost_LegacyItemTiers(t *testing.T) {
@@ -1093,8 +1120,8 @@ func TestComputeUsageCost_LegacyItemTiers(t *testing.T) {
 		mode objects.PricingMode
 		want string
 	}{
-		{objects.PricingModeVolume, "0.0305"},
-		{objects.PricingModeTiered, "0.0205"},
+		{objects.PricingModeVolume, "0.004575"},
+		{objects.PricingModeTiered, "0.003075"},
 	} {
 		t.Run(string(tt.mode), func(t *testing.T) {
 			threshold := int64(1000)
@@ -1120,13 +1147,38 @@ func TestComputeUsageCost_LegacyItemTiers(t *testing.T) {
 					},
 				},
 			}}
+			price.Multiplier = mustDecimalPtr("0.15")
 			require.NoError(t, price.Validate())
 			usage := &llm.Usage{
 				PromptTokens: 2000, CompletionTokens: 1500,
 				PromptTokensDetails: &llm.PromptTokensDetails{CachedTokens: 1500},
 			}
-			_, total := ComputeUsageCost(usage, price, time.Time{})
+			items, total := ComputeUsageCost(usage, price, time.Time{})
 			require.Equal(t, tt.want, total.String())
+			for _, item := range items {
+				breakdownTotal := decimal.Zero
+				for _, tier := range item.TierBreakdown {
+					breakdownTotal = breakdownTotal.Add(tier.Subtotal)
+				}
+				require.True(t, item.Subtotal.Equal(breakdownTotal))
+			}
 		})
 	}
+}
+
+func TestComputeUsageCost_FlatFeeMultiplier(t *testing.T) {
+	price := objects.ModelPrice{
+		Multiplier: mustDecimalPtr("0.15"),
+		Items: []objects.ModelPriceItem{{
+			ItemCode: objects.PriceItemCodeUsage,
+			Pricing:  objects.Pricing{Mode: objects.PricingModeFlatFee, FlatFee: mustDecimalPtr("1.23")},
+		}},
+	}
+	items, total := ComputeUsageCost(&llm.Usage{}, price, time.Time{})
+	require.Equal(t, "0.1845", total.String())
+	require.Equal(t, "0.1845", items[0].Subtotal.String())
+	price.Multiplier = mustDecimalPtr("0")
+	items, total = ComputeUsageCost(&llm.Usage{}, price, time.Time{})
+	require.True(t, total.IsZero())
+	require.True(t, items[0].Subtotal.IsZero())
 }

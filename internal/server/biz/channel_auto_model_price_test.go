@@ -281,11 +281,11 @@ func TestChannelService_EnsureChannelModelPrices_RecreatesSoftDeletedPrice(t *te
 	created, err := svc.SaveChannelModelPrices(ctx, ch.ID, []SaveChannelModelPriceInput{{
 		ModelID: "recreated-model",
 		Price:   customPrice,
-	}})
+	}}, nil)
 	require.NoError(t, err)
 	require.Len(t, created, 1)
 
-	_, err = svc.SaveChannelModelPrices(ctx, ch.ID, nil)
+	_, err = svc.SaveChannelModelPrices(ctx, ch.ID, nil, nil)
 	require.NoError(t, err)
 	require.False(t, channelModelPriceExists(t, ctx, client, ch.ID, "recreated-model"))
 
@@ -388,7 +388,7 @@ func TestChannelService_DuplicateChannel_PreservesSourcePriceAndFillsGaps(t *tes
 	}}
 	sourcePrices, err := svc.SaveChannelModelPrices(ctx, source.ID, []SaveChannelModelPriceInput{
 		{ModelID: "custom-model", Price: customPrice},
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.Len(t, sourcePrices, 1)
 

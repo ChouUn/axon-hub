@@ -1,12 +1,6 @@
 import { z } from 'zod';
 import Decimal from 'decimal.js-light';
-import {
-  modelPriceSchema,
-  modelPriceVolumeTierSchema,
-  type ModelPrice,
-  type ModelPriceItem,
-  type Pricing,
-} from '@/features/channels/data/schema';
+import { modelPriceInputSchema, type ModelPrice, type ModelPriceItem, type Pricing } from '@/features/channels/data/schema';
 import type { ProviderModel } from './providers.schema';
 
 const costFields = [
@@ -42,16 +36,19 @@ function validAmount(value: string | number | null | undefined): boolean {
 }
 
 export function createPriceValidationSchema(t: (key: string) => string) {
-  return modelPriceSchema
+  return modelPriceInputSchema
     .extend({
       volumeTiers: z
         .array(
-          modelPriceVolumeTierSchema.extend({
-            above: z
-              .number({ error: t('price.validation.increasing') })
-              .int(t('price.validation.increasing'))
-              .nonnegative(t('price.validation.increasing')),
-          })
+          modelPriceInputSchema.shape.volumeTiers
+            .unwrap()
+            .unwrap()
+            .element.extend({
+              above: z
+                .number({ error: t('price.validation.increasing') })
+                .int(t('price.validation.increasing'))
+                .nonnegative(t('price.validation.increasing')),
+            })
         )
         .optional()
         .nullable(),
@@ -123,6 +120,25 @@ export function createPriceValidationSchema(t: (key: string) => string) {
       });
     })
     .transform((price) => (price.items.length === 0 && !price.volumeTiers?.length && !price.schedule ? null : price));
+}
+
+export function isValidPriceMultiplier(value: string): boolean {
+  return /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.trim()) && Number.isFinite(Number(value));
+}
+
+export function effectivePrice(value: unknown, multiplier: string): string | null {
+  if ((typeof value !== 'string' && typeof value !== 'number') || !isValidPriceMultiplier(multiplier)) return null;
+  const raw = String(value).trim();
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw)) return null;
+  try {
+    const ExactDecimal = Decimal.clone();
+    const amount = new ExactDecimal(raw);
+    const factor = new ExactDecimal(multiplier.trim());
+    ExactDecimal.set({ precision: Math.max(1, amount.precision(false) + factor.precision(false)) });
+    return amount.mul(factor).toFixed();
+  } catch {
+    return null;
+  }
 }
 
 export function multiplyPriceItems(items: ModelPriceItem[], multiplier: string | number): ModelPriceItem[] {

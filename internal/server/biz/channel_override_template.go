@@ -217,6 +217,7 @@ func (svc *ChannelOverrideTemplateService) ApplyTemplate(
 			settings.OverrideParameters = ""
 
 			updatedChannel, err := db.Channel.UpdateOneID(ch.ID).
+				Where(channel.UpdatedAtEQ(ch.UpdatedAt)).
 				SetSettings(&settings).
 				Save(ctx)
 			if err != nil {
@@ -274,6 +275,7 @@ func (svc *ChannelOverrideTemplateService) ClearTemplates(
 			settings.OverrideParameters = ""
 
 			updatedChannel, err := db.Channel.UpdateOneID(ch.ID).
+				Where(channel.UpdatedAtEQ(ch.UpdatedAt)).
 				SetSettings(&settings).
 				Save(ctx)
 			if err != nil {

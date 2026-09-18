@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { effectivePrice } from '@/features/models/data/pricing';
 
 const priceItemCodes = ['prompt_tokens', 'completion_tokens', 'prompt_cached_tokens', 'prompt_write_cached_tokens'] as const;
 const promptWriteCacheVariantCodes = ['five_min', 'one_hour'] as const;
@@ -71,13 +72,27 @@ type PriceItem = PriceEditorFormValues['prices'][number]['price']['items'][numbe
 type PriceItemVariant = NonNullable<NonNullable<PriceItem['promptWriteCacheVariants']>[number]>;
 type Tier = NonNullable<NonNullable<NonNullable<PriceItem['pricing']['usageTiered']>['tiers']>[number]>;
 
+function EffectivePrice({ value, multiplier, currencyPrefix }: { value: unknown; multiplier?: string; currencyPrefix: string }) {
+  const { t } = useTranslation();
+  if (multiplier === undefined) return null;
+  const amount = effectivePrice(value, multiplier);
+  return (
+    <span
+      className='text-muted-foreground w-full truncate text-right text-xs whitespace-nowrap tabular-nums'
+      title={amount === null ? undefined : `${currencyPrefix}${amount}`}
+    >
+      {t('price.effective', { price: amount === null ? '—' : `${currencyPrefix}${amount}` })}
+    </span>
+  );
+}
+
 type ModelPriceEditorProps = {
   control: Control<PriceEditorFormValues>;
   priceIndex: number;
   itemsPath?: string;
   perUnitOnly?: boolean;
-  lockStructure?: boolean;
   currencyCode?: string;
+  multiplier?: string;
   hideHeader?: boolean;
   onAddItem?: (priceIndex: number) => void;
   onRemoveItem?: (priceIndex: number, itemIndex: number) => void;
@@ -90,8 +105,8 @@ export const ModelPriceEditor = memo(function ChannelModelPriceEditor({
   priceIndex,
   itemsPath = `prices.${priceIndex}.price.items`,
   perUnitOnly,
-  lockStructure,
   currencyCode,
+  multiplier,
   hideHeader,
   onAddItem: addItem,
   onRemoveItem: removeItem,
@@ -141,7 +156,7 @@ export const ModelPriceEditor = memo(function ChannelModelPriceEditor({
       ));
 
   return (
-    <div className='min-w-0 space-y-4'>
+    <div className={`min-w-0 ${multiplier === undefined ? 'space-y-4' : 'space-y-2'}`}>
       {!hideHeader && (
         <div className='flex h-8 items-center'>
           <Label className='text-sm font-medium'>{t('price.items')}</Label>
@@ -154,10 +169,10 @@ export const ModelPriceEditor = memo(function ChannelModelPriceEditor({
           priceIndex={priceIndex}
           itemsPath={itemsPath}
           perUnitOnly={perUnitOnly}
-          lockStructure={lockStructure}
           itemIndex={itemIndex}
           itemCount={fields.length}
           currencyCode={currencyCode}
+          multiplier={multiplier}
           onRemoveItem={onRemoveItem}
           onAddVariant={onAddVariant}
           onRemoveVariant={onRemoveVariant}
@@ -170,9 +185,9 @@ export const ModelPriceEditor = memo(function ChannelModelPriceEditor({
             variant='outline'
             className='w-full'
             size='sm'
-            disabled={lockStructure || allItemsAdded}
+            disabled={allItemsAdded}
             onClick={() => onAddItem(priceIndex)}
-            title={t(lockStructure ? 'price.volume.structureLocked' : allItemsAdded ? 'price.allItemsAdded' : 'price.addItem')}
+            title={t(allItemsAdded ? 'price.allItemsAdded' : 'price.addItem')}
           >
             <IconPlus size={14} />
             {t(allItemsAdded ? 'price.allItemsAdded' : 'price.addItem')}
@@ -188,10 +203,10 @@ const PriceItemRow = memo(function PriceItemRow({
   priceIndex,
   itemsPath,
   perUnitOnly,
-  lockStructure,
   itemIndex,
   itemCount,
   currencyCode,
+  multiplier,
   onRemoveItem,
   onAddVariant,
   onRemoveVariant,
@@ -200,9 +215,9 @@ const PriceItemRow = memo(function PriceItemRow({
   priceIndex: number;
   itemsPath: string;
   perUnitOnly?: boolean;
-  lockStructure?: boolean;
   itemIndex: number;
   currencyCode?: string;
+  multiplier?: string;
   itemCount: number;
   onRemoveItem: (priceIndex: number, itemIndex: number) => void;
   onAddVariant: (priceIndex: number, itemIndex: number) => void;
@@ -261,7 +276,7 @@ const PriceItemRow = memo(function PriceItemRow({
   }, [currencyCode, t]);
 
   return (
-    <div className='min-w-0 space-y-4'>
+    <div className={`min-w-0 ${multiplier === undefined ? 'space-y-4' : 'space-y-2'}`}>
       <div className='grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-start'>
         <div className='min-w-0 pt-0 sm:pt-0'>
           <FormField
@@ -269,7 +284,7 @@ const PriceItemRow = memo(function PriceItemRow({
             name={asFieldPath(`${itemsPath}.${itemIndex}.itemCode`)}
             render={({ field }) => (
               <FormItem>
-                <Select disabled={lockStructure} onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
+                <Select onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
                   <FormControl>
                     <SelectTrigger size='sm' className='h-8 w-full min-w-0'>
                       <SelectValue placeholder={t('price.itemCode')} className='truncate' />
@@ -317,7 +332,9 @@ const PriceItemRow = memo(function PriceItemRow({
               control={control}
               name={asFieldPath(`${itemsPath}.${itemIndex}.pricing.usagePerUnit`)}
               render={({ field }) => (
-                <FormItem className='relative'>
+                <FormItem
+                  className={`relative min-w-0 ${multiplier === undefined ? '' : 'grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-2 gap-y-0'}`}
+                >
                   <FormControl>
                     <div className='relative'>
                       {currencyPrefix && (
@@ -331,6 +348,7 @@ const PriceItemRow = memo(function PriceItemRow({
                       />
                     </div>
                   </FormControl>
+                  <EffectivePrice value={field.value} multiplier={multiplier} currencyPrefix={currencyPrefix} />
                   <FormMessage className='absolute -bottom-4 left-0 text-[10px]' />
                 </FormItem>
               )}
@@ -342,7 +360,9 @@ const PriceItemRow = memo(function PriceItemRow({
               control={control}
               name={asFieldPath(`${itemsPath}.${itemIndex}.pricing.flatFee`)}
               render={({ field }) => (
-                <FormItem className='relative'>
+                <FormItem
+                  className={`relative min-w-0 ${multiplier === undefined ? '' : 'grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-2 gap-y-0'}`}
+                >
                   <FormControl>
                     <div className='relative'>
                       {currencyPrefix && (
@@ -356,6 +376,7 @@ const PriceItemRow = memo(function PriceItemRow({
                       />
                     </div>
                   </FormControl>
+                  <EffectivePrice value={field.value} multiplier={multiplier} currencyPrefix={currencyPrefix} />
                   <FormMessage className='absolute -bottom-4 left-0 text-[10px]' />
                 </FormItem>
               )}
@@ -369,7 +390,7 @@ const PriceItemRow = memo(function PriceItemRow({
             variant='ghost'
             size='icon-sm'
             className='text-destructive'
-            disabled={lockStructure || itemCount <= 1}
+            disabled={itemCount <= 1}
             onClick={() => onRemoveItem(priceIndex, itemIndex)}
           >
             <IconTrash size={14} />
@@ -422,7 +443,9 @@ const PriceItemRow = memo(function PriceItemRow({
                   control={control}
                   name={asFieldPath(`${itemsPath}.${itemIndex}.pricing.usageTiered.tiers.${tierIndex}.pricePerUnit`)}
                   render={({ field }) => (
-                    <FormItem className='flex-1'>
+                    <FormItem
+                      className={`min-w-0 flex-1 ${multiplier === undefined ? '' : 'grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-2 gap-y-0'}`}
+                    >
                       <FormControl>
                         <div className='relative'>
                           {currencyPrefix && (
@@ -438,7 +461,8 @@ const PriceItemRow = memo(function PriceItemRow({
                           />
                         </div>
                       </FormControl>
-                      <FormMessage className='text-[10px]' />
+                      <EffectivePrice value={field.value} multiplier={multiplier} currencyPrefix={currencyPrefix} />
+                      <FormMessage className='col-span-full text-[10px]' />
                     </FormItem>
                   )}
                   rules={{ required: requiredMessage }}
@@ -460,7 +484,7 @@ const PriceItemRow = memo(function PriceItemRow({
               type='button'
               variant='outline'
               size='icon-sm'
-              disabled={lockStructure || variantFields.length >= promptWriteCacheVariantCodes.length}
+              disabled={variantFields.length >= promptWriteCacheVariantCodes.length}
               onClick={() => onAddVariant(priceIndex, itemIndex)}
               title={t('price.addVariant')}
             >
@@ -474,10 +498,10 @@ const PriceItemRow = memo(function PriceItemRow({
               priceIndex={priceIndex}
               itemsPath={itemsPath}
               perUnitOnly={perUnitOnly}
-              lockStructure={lockStructure}
               itemIndex={itemIndex}
               variantIndex={variantIndex}
               currencyCode={currencyCode}
+              multiplier={multiplier}
               onRemoveVariant={onRemoveVariant}
             />
           ))}
@@ -494,20 +518,20 @@ const PriceVariantRow = memo(function PriceVariantRow({
   priceIndex,
   itemsPath,
   perUnitOnly,
-  lockStructure,
   itemIndex,
   variantIndex,
   currencyCode,
+  multiplier,
   onRemoveVariant,
 }: {
   control: Control<PriceEditorFormValues>;
   priceIndex: number;
   itemsPath: string;
   perUnitOnly?: boolean;
-  lockStructure?: boolean;
   itemIndex: number;
   variantIndex: number;
   currencyCode?: string;
+  multiplier?: string;
   onRemoveVariant: (priceIndex: number, itemIndex: number, variantIndex: number) => void;
 }) {
   const { t } = useTranslation();
@@ -582,7 +606,7 @@ const PriceVariantRow = memo(function PriceVariantRow({
           name={asFieldPath(`${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.variantCode`)}
           render={({ field }) => (
             <FormItem className='min-w-0 flex-1'>
-              <Select disabled={lockStructure} onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
+              <Select onValueChange={field.onChange} value={field.value as unknown as string | undefined}>
                 <FormControl>
                   <SelectTrigger size='sm' className='h-7 text-xs'>
                     <SelectValue placeholder={t('price.variantCode')} />
@@ -626,7 +650,9 @@ const PriceVariantRow = memo(function PriceVariantRow({
             control={control}
             name={asFieldPath(`${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usagePerUnit`)}
             render={({ field }) => (
-              <FormItem className='min-w-0 flex-1'>
+              <FormItem
+                className={`min-w-0 flex-1 ${multiplier === undefined ? '' : 'grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-2 gap-y-0'}`}
+              >
                 <FormControl>
                   <div className='relative'>
                     {currencyPrefix && (
@@ -640,7 +666,8 @@ const PriceVariantRow = memo(function PriceVariantRow({
                     />
                   </div>
                 </FormControl>
-                <FormMessage className='text-[10px]' />
+                <EffectivePrice value={field.value} multiplier={multiplier} currencyPrefix={currencyPrefix} />
+                <FormMessage className='col-span-full text-[10px]' />
               </FormItem>
             )}
             rules={{ required: requiredMessage }}
@@ -651,7 +678,9 @@ const PriceVariantRow = memo(function PriceVariantRow({
             control={control}
             name={asFieldPath(`${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.flatFee`)}
             render={({ field }) => (
-              <FormItem className='min-w-0 flex-1'>
+              <FormItem
+                className={`min-w-0 flex-1 ${multiplier === undefined ? '' : 'grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-2 gap-y-0'}`}
+              >
                 <FormControl>
                   <div className='relative'>
                     {currencyPrefix && (
@@ -665,19 +694,14 @@ const PriceVariantRow = memo(function PriceVariantRow({
                     />
                   </div>
                 </FormControl>
-                <FormMessage className='text-[10px]' />
+                <EffectivePrice value={field.value} multiplier={multiplier} currencyPrefix={currencyPrefix} />
+                <FormMessage className='col-span-full text-[10px]' />
               </FormItem>
             )}
             rules={{ required: requiredMessage }}
           />
         )}
-        <Button
-          type='button'
-          variant='ghost'
-          size='icon-sm'
-          disabled={lockStructure}
-          onClick={() => onRemoveVariant(priceIndex, itemIndex, variantIndex)}
-        >
+        <Button type='button' variant='ghost' size='icon-sm' onClick={() => onRemoveVariant(priceIndex, itemIndex, variantIndex)}>
           <IconTrash size={14} className='text-destructive' />
         </Button>
       </div>
@@ -738,7 +762,9 @@ const PriceVariantRow = memo(function PriceVariantRow({
                   `${itemsPath}.${itemIndex}.promptWriteCacheVariants.${variantIndex}.pricing.usageTiered.tiers.${tierIndex}.pricePerUnit`
                 )}
                 render={({ field }) => (
-                  <FormItem className='flex-1'>
+                  <FormItem
+                    className={`min-w-0 flex-1 ${multiplier === undefined ? '' : 'grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-2 gap-y-0'}`}
+                  >
                     <FormControl>
                       <div className='relative'>
                         {currencyPrefix && (
@@ -754,7 +780,8 @@ const PriceVariantRow = memo(function PriceVariantRow({
                         />
                       </div>
                     </FormControl>
-                    <FormMessage className='text-[10px]' />
+                    <EffectivePrice value={field.value} multiplier={multiplier} currencyPrefix={currencyPrefix} />
+                    <FormMessage className='col-span-full text-[10px]' />
                   </FormItem>
                 )}
                 rules={{ required: requiredMessage }}

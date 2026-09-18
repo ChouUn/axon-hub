@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { pageInfoSchema } from '@/gql/pagination';
-import { modelPriceSchema } from '@/features/channels/data/schema';
+import { modelPriceInputSchema, modelPriceSchema } from '@/features/channels/data/schema';
 
 export const modelTypeSchema = z.enum(['chat', 'embedding', 'rerank', 'image_generation', 'video_generation']);
 export type ModelType = z.infer<typeof modelTypeSchema>;
@@ -49,7 +49,9 @@ export const modelCardSchema = z.object({
 });
 export type ModelCard = z.infer<typeof modelCardSchema>;
 
-export const modelCardInputSchema = modelCardSchema.omit({ cost: true });
+export const modelCardInputSchema = modelCardSchema.omit({ cost: true }).extend({
+  price: modelPriceInputSchema.optional().nullable(),
+});
 
 export const channelModelAssociationSchema = z.object({
   channelId: z.number(),

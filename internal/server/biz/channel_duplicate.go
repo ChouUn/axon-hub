@@ -8,6 +8,7 @@ import (
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/channelmodelprice"
+	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/pkg/xerrors"
 )
 
@@ -30,6 +31,15 @@ func (svc *ChannelService) DuplicateChannel(ctx context.Context, sourceID int, i
 		if isZenmuxChannelType(source.Type) && isZenmuxChannelType(input.Type) && input.Credentials.ManagementAPIKey == "" {
 			input.Credentials.ManagementAPIKey = source.Credentials.ManagementAPIKey
 		}
+		settings := objects.ChannelSettings{}
+		if input.Settings != nil {
+			settings = *input.Settings
+		}
+		settings.ModelPriceMultiplier = nil
+		if source.Settings != nil {
+			settings.ModelPriceMultiplier = source.Settings.ModelPriceMultiplier
+		}
+		input.Settings = &settings
 
 		existing, err := db.Channel.Query().
 			Where(channel.Name(input.Name)).

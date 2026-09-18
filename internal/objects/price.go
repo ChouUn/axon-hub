@@ -183,6 +183,10 @@ func (p *ModelPrice) Validate() error {
 		return fmt.Errorf("modelPrice is nil")
 	}
 
+	if p.Multiplier != nil && p.Multiplier.IsNegative() {
+		return fmt.Errorf("multiplier must be non-negative")
+	}
+
 	if len(p.VolumeTiers) > 0 {
 		if err := p.validateVolumeTiers(); err != nil {
 			return err
@@ -443,6 +447,10 @@ func (i *ModelPriceItem) Equals(other *ModelPriceItem) bool {
 
 // ModelPrice is the price for the thing.
 type ModelPrice struct {
+	// Multiplier is the channel multiplier captured with this price version.
+	// Standard model prices and legacy snapshots omit it and use one.
+	Multiplier *decimal.Decimal `json:"multiplier,omitempty"`
+
 	// Items is the list of price items for the price.
 	Items []ModelPriceItem `json:"items"`
 
@@ -477,7 +485,20 @@ func (t *ModelPriceVolumeTier) Equals(other *ModelPriceVolumeTier) bool {
 	return true
 }
 
+// EffectiveMultiplier preserves legacy snapshots while allowing explicit zero.
+func (p *ModelPrice) EffectiveMultiplier() decimal.Decimal {
+	if p.Multiplier == nil {
+		return decimal.NewFromInt(1)
+	}
+
+	return *p.Multiplier
+}
+
 func (p *ModelPrice) Equals(other ModelPrice) bool {
+	if !p.EffectiveMultiplier().Equal(other.EffectiveMultiplier()) {
+		return false
+	}
+
 	if len(p.Items) != len(other.Items) {
 		return false
 	}

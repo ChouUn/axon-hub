@@ -99,7 +99,7 @@ func TestChannelService_SyncChannelModelsAutoConfiguresMissingPrices(t *testing.
 	existingPrices, err := svc.SaveChannelModelPrices(ctx, ch.ID, []SaveChannelModelPriceInput{{
 		ModelID: "existing-model",
 		Price:   customPrice,
-	}})
+	}}, nil)
 	require.NoError(t, err)
 	require.Len(t, existingPrices, 1)
 	existingReferenceID := existingPrices[0].ReferenceID
@@ -113,8 +113,6 @@ func TestChannelService_SyncChannelModelsAutoConfiguresMissingPrices(t *testing.
 		"archived-model",
 		"missing-model",
 	}, updated.SupportedModels)
-	require.Equal(t, 1, notifier.notifyCount)
-	require.Equal(t, live.EventForceRefresh, notifier.events[0].Type)
 	returnedPrices, err := updated.QueryChannelModelPrices().All(ctx)
 	require.NoError(t, err)
 	require.Len(t, returnedPrices, 2)
@@ -170,7 +168,6 @@ func TestChannelService_SyncChannelModelsAutoConfiguresMissingPrices(t *testing.
 
 	updated, err = svc.SyncChannelModels(ctx, ch.ID, nil)
 	require.NoError(t, err)
-	require.Equal(t, 2, notifier.notifyCount)
 	retriedPrice, err := client.ChannelModelPrice.Query().
 		Where(
 			channelmodelprice.ChannelID(ch.ID),

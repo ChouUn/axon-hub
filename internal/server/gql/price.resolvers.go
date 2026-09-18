@@ -12,13 +12,14 @@ import (
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 )
 
 // SaveChannelModelPrices is the resolver for the saveChannelModelPrices field.
-func (r *mutationResolver) SaveChannelModelPrices(ctx context.Context, channelID objects.GUID, input []*biz.SaveChannelModelPriceInput) ([]*ent.ChannelModelPrice, error) {
+func (r *mutationResolver) SaveChannelModelPrices(ctx context.Context, channelID objects.GUID, input []*biz.SaveChannelModelPriceInput, multiplier *decimal.Decimal) ([]*ent.ChannelModelPrice, error) {
 	inputs := lo.Map(input, func(i *biz.SaveChannelModelPriceInput, _ int) biz.SaveChannelModelPriceInput {
 		return *i
 	})
 
-	return r.channelService.SaveChannelModelPrices(ctx, channelID.ID, inputs)
+	return r.channelService.SaveChannelModelPrices(ctx, channelID.ID, inputs, multiplier)
 }

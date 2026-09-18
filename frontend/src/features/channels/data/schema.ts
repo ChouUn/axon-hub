@@ -315,6 +315,7 @@ export type ChannelProviderQuotaSettings = z.infer<typeof channelProviderQuotaSe
 
 // Channel Settings
 export const channelSettingsSchema = z.object({
+  modelPriceMultiplier: z.union([z.string(), z.number()]).optional().nullable(),
   extraModelPrefix: z.string().optional(),
   modelMappings: z.array(modelMappingSchema).optional().nullable(),
   autoTrimedModelPrefixes: z.array(z.string()).optional().nullable(),
@@ -336,6 +337,7 @@ export const channelSettingsSchema = z.object({
 });
 
 export type ChannelSettings = z.infer<typeof channelSettingsSchema>;
+export const channelSettingsInputSchema = channelSettingsSchema.omit({ modelPriceMultiplier: true });
 
 // Channel Model Entry
 export const channelModelEntrySchema = z.object({
@@ -538,11 +540,53 @@ export const modelPriceVolumeTierSchema = z.object({
 export type ModelPriceVolumeTier = z.infer<typeof modelPriceVolumeTierSchema>;
 
 export const modelPriceSchema = z.object({
+  multiplier: z.union([z.string(), z.number()]).optional().nullable(),
   items: z.array(modelPriceItemSchema),
   volumeTiers: z.array(modelPriceVolumeTierSchema).optional().nullable(),
   schedule: priceScheduleSchema.optional().nullable(),
 });
 export type ModelPrice = z.infer<typeof modelPriceSchema>;
+const pricingInputSchema = pricingSchema.transform(
+  (pricing): Pricing => ({
+    mode: pricing.mode,
+    flatFee: pricing.mode === 'flat_fee' ? (typeof pricing.flatFee === 'string' ? pricing.flatFee.trim() || null : pricing.flatFee) : null,
+    usagePerUnit:
+      pricing.mode === 'usage_per_unit'
+        ? typeof pricing.usagePerUnit === 'string'
+          ? pricing.usagePerUnit.trim() || null
+          : pricing.usagePerUnit
+        : null,
+    usageTiered:
+      pricing.mode === 'usage_tiered' || pricing.mode === 'usage_volume'
+        ? pricing.usageTiered && {
+            tiers: pricing.usageTiered.tiers.map((tier) => ({
+              ...tier,
+              pricePerUnit: typeof tier.pricePerUnit === 'string' ? tier.pricePerUnit.trim() : tier.pricePerUnit,
+            })),
+          }
+        : null,
+  })
+);
+const modelPriceItemInputSchema = modelPriceItemSchema.extend({
+  pricing: pricingInputSchema,
+  promptWriteCacheVariants: z
+    .array(promptWriteCacheVariantSchema.extend({ pricing: pricingInputSchema }))
+    .optional()
+    .nullable(),
+});
+export const modelPriceInputSchema = modelPriceSchema.omit({ multiplier: true }).extend({
+  items: z.array(modelPriceItemInputSchema),
+  volumeTiers: z
+    .array(modelPriceVolumeTierSchema.extend({ items: z.array(modelPriceItemInputSchema) }))
+    .optional()
+    .nullable(),
+  schedule: priceScheduleSchema
+    .extend({
+      overrides: z.array(priceOverrideSchema.extend({ items: z.array(modelPriceItemInputSchema) })),
+    })
+    .optional()
+    .nullable(),
+});
 
 export const channelModelPriceSchema = z.object({
   id: z.string(),
@@ -553,7 +597,7 @@ export type ChannelModelPrice = z.infer<typeof channelModelPriceSchema>;
 
 export const saveChannelModelPriceInputSchema = z.object({
   modelId: z.string(),
-  price: modelPriceSchema,
+  price: modelPriceInputSchema,
 });
 export type SaveChannelModelPriceInput = z.infer<typeof saveChannelModelPriceInputSchema>;
 // Helper function to validate OAuth credentials
@@ -617,7 +661,7 @@ export const createChannelInputSchema = z
     defaultTestModel: z.string().min(1, 'Please select a default test model'),
     remark: z.string().optional(),
     orderingWeight: z.number().int().optional(),
-    settings: channelSettingsSchema.optional(),
+    settings: channelSettingsInputSchema.optional(),
     endpoints: z.array(channelEndpointSchema).optional(),
     credentials: z.object({
       // apiKey is used for OAuth credentials (JSON string with access_token, refresh_token)
@@ -708,7 +752,7 @@ export const updateChannelInputSchema = z
     manualModels: z.array(z.string()).optional().nullable(),
     tags: z.array(z.string()).optional(),
     defaultTestModel: z.string().min(1, 'Please select a default test model').optional(),
-    settings: channelSettingsSchema.optional(),
+    settings: channelSettingsInputSchema.optional(),
     errorMessage: z.string().optional().nullable(),
     remark: z.string().optional().nullable(),
     endpoints: z.array(channelEndpointSchema).optional(),

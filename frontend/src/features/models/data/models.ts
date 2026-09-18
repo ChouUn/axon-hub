@@ -1,9 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { z } from 'zod';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { graphqlRequest } from '@/gql/graphql';
 import { MODEL_PRICE_FIELDS } from '@/gql/prices';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useErrorHandler } from '@/hooks/use-error-handler';
+import { modelPriceSchema } from '@/features/channels/data/schema';
 import { Model, ModelConnection, CreateModelInput, UpdateModelInput, modelConnectionSchema, modelSchema } from './schema';
 import { modelCardInputSchema } from './schema';
 
@@ -479,6 +481,58 @@ export function useQueryModels(args: QueryModelsArgs, options?: { enabled?: bool
       return modelConnectionSchema.parse(data.models);
     },
   });
+}
+
+const MODEL_STANDARD_PRICES_QUERY = `
+  query GetModelStandardPrices($first: Int!, $after: Cursor, $where: ModelWhereInput) {
+    models(first: $first, after: $after, where: $where, orderBy: { field: NAME, direction: ASC }) {
+      edges { node { id modelID name modelCard { price { ${MODEL_PRICE_FIELDS} } } } }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
+const standardPricePageSchema = z.object({
+  edges: z.array(
+    z.object({
+      node: z.object({
+        id: z.string(),
+        modelID: z.string(),
+        name: z.string(),
+        modelCard: z.object({ price: modelPriceSchema.nullable().optional() }),
+      }),
+    })
+  ),
+  pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable().optional() }),
+});
+export type ModelStandardPrice = z.infer<typeof standardPricePageSchema>['edges'][number]['node'];
+
+async function queryModelStandardPricePage(where: Record<string, unknown>, after?: string) {
+  const data = await graphqlRequest<{ models: unknown }>(MODEL_STANDARD_PRICES_QUERY, { first: 50, after, where });
+  return standardPricePageSchema.parse(data.models);
+}
+
+export function useModelStandardPrices(search: string, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: ['models', 'standard-prices', search],
+    enabled,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      queryModelStandardPricePage(search ? { or: [{ modelIDContainsFold: search }, { nameContainsFold: search }] } : {}, pageParam),
+    getNextPageParam: (page) => (page.pageInfo.hasNextPage ? (page.pageInfo.endCursor ?? undefined) : undefined),
+  });
+}
+
+export async function fetchModelStandardPrices(modelIDs: string[]): Promise<ModelStandardPrice[]> {
+  if (!modelIDs.length) return [];
+  const models: ModelStandardPrice[] = [];
+  let after: string | undefined;
+  do {
+    const page = await queryModelStandardPricePage({ modelIDIn: modelIDs }, after);
+    models.push(...page.edges.map(({ node }) => node));
+    after = page.pageInfo.hasNextPage ? (page.pageInfo.endCursor ?? undefined) : undefined;
+  } while (after);
+  return models;
 }
 
 interface QueryAllModelsArgs {

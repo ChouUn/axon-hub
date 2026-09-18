@@ -31,6 +31,8 @@ import {
   ChannelModelPrice,
   SaveChannelModelPriceInput,
   channelModelPriceSchema,
+  saveChannelModelPriceInputSchema,
+  channelSettingsInputSchema,
   TestChannelAPIKeysPayload,
   testChannelAPIKeysPayloadSchema,
   TestAPIKeyResult,
@@ -627,10 +629,12 @@ const GET_CHANNEL_MODEL_PRICES_QUERY = `
     node(id: $id) {
     ... on Channel {
       id
+      settings { modelPriceMultiplier }
       channelModelPrices {
         id
         modelID
         price {
+          multiplier
           ${MODEL_PRICE_FIELDS}
         }
       }
@@ -640,11 +644,12 @@ const GET_CHANNEL_MODEL_PRICES_QUERY = `
 `;
 
 const SAVE_CHANNEL_MODEL_PRICES_MUTATION = `
-  mutation SaveChannelModelPrices($channelId: ID!, $input: [SaveChannelModelPriceInput!]!) {
-    saveChannelModelPrices(channelId: $channelId, input: $input) {
+  mutation SaveChannelModelPrices($channelId: ID!, $input: [SaveChannelModelPriceInput!]!, $multiplier: Decimal) {
+    saveChannelModelPrices(channelId: $channelId, input: $input, multiplier: $multiplier) {
       id
       modelID
       price {
+        multiplier
         ${MODEL_PRICE_FIELDS}
       }
     }
@@ -1027,7 +1032,7 @@ ${nodeSelection}
 // Retain a full-field document for callers that do not have column state yet.
 const QUERY_CHANNELS_QUERY = buildQueryChannelsQuery(undefined, { full: true });
 
-export function useChannelModelPrices(channelId: string) {
+export function useChannelModelPrices(channelId: string, enabled = true) {
   const { handleError } = useErrorHandler();
   const { t } = useTranslation();
 
@@ -1035,17 +1040,19 @@ export function useChannelModelPrices(channelId: string) {
     queryKey: ['channelModelPrices', channelId],
     queryFn: async () => {
       try {
-        const data = await graphqlRequest<{ node: { channelModelPrices: ChannelModelPrice[] } }>(GET_CHANNEL_MODEL_PRICES_QUERY, {
-          id: channelId,
-        });
-        const node = data.node as { channelModelPrices: ChannelModelPrice[] };
-        return (node?.channelModelPrices || []).map((p) => channelModelPriceSchema.parse(p));
+        const data = await graphqlRequest<{
+          node: { settings?: { modelPriceMultiplier?: string | number | null } | null; channelModelPrices: ChannelModelPrice[] };
+        }>(GET_CHANNEL_MODEL_PRICES_QUERY, { id: channelId });
+        return {
+          prices: (data.node?.channelModelPrices || []).map((p) => channelModelPriceSchema.parse(p)),
+          multiplier: String(data.node?.settings?.modelPriceMultiplier ?? '1'),
+        };
       } catch (error) {
         handleError(error, t('common.errors.internalServerError'));
         throw error;
       }
     },
-    enabled: !!channelId,
+    enabled: enabled && !!channelId,
   });
 }
 
@@ -1055,11 +1062,20 @@ export function useSaveChannelModelPrices() {
   const { handleError } = useErrorHandler();
 
   return useMutation({
-    mutationFn: async ({ channelId, input }: { channelId: string; input: SaveChannelModelPriceInput[] }) => {
+    mutationFn: async ({
+      channelId,
+      input,
+      multiplier,
+    }: {
+      channelId: string;
+      input: SaveChannelModelPriceInput[];
+      multiplier?: string;
+    }) => {
       try {
         const data = await graphqlRequest<{ saveChannelModelPrices: ChannelModelPrice[] }>(SAVE_CHANNEL_MODEL_PRICES_MUTATION, {
           channelId,
-          input,
+          input: input.map((price) => saveChannelModelPriceInputSchema.parse(price)),
+          multiplier,
         });
         return data.saveChannelModelPrices.map((p) => channelModelPriceSchema.parse(p));
       } catch (error) {
@@ -1069,6 +1085,7 @@ export function useSaveChannelModelPrices() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['channelModelPrices', variables.channelId] });
+      queryClient.invalidateQueries({ queryKey: ['channels'] });
       toast.success(t('channels.messages.savePricesSuccess'));
     },
   });
@@ -1203,7 +1220,9 @@ export function useCreateChannel() {
 
   return useMutation({
     mutationFn: async (input: CreateChannelInput) => {
-      const data = await graphqlRequest<{ createChannel: Channel }>(CREATE_CHANNEL_MUTATION, { input });
+      const data = await graphqlRequest<{ createChannel: Channel }>(CREATE_CHANNEL_MUTATION, {
+        input: { ...input, settings: input.settings && channelSettingsInputSchema.parse(input.settings) },
+      });
       return channelSchema.parse(data.createChannel);
     },
     onSuccess: () => {
@@ -1223,7 +1242,10 @@ export function useDuplicateChannel() {
 
   return useMutation({
     mutationFn: async ({ sourceID, input }: { sourceID: string; input: CreateChannelInput }) => {
-      const data = await graphqlRequest<{ duplicateChannel: Channel }>(DUPLICATE_CHANNEL_MUTATION, { sourceID, input });
+      const data = await graphqlRequest<{ duplicateChannel: Channel }>(DUPLICATE_CHANNEL_MUTATION, {
+        sourceID,
+        input: { ...input, settings: input.settings && channelSettingsInputSchema.parse(input.settings) },
+      });
       return channelSchema.parse(data.duplicateChannel);
     },
     onSuccess: () => {
@@ -1259,7 +1281,9 @@ export function useBulkCreateChannels() {
   return useMutation({
     mutationFn: async (input: BulkCreateChannelsInput) => {
       try {
-        const data = await graphqlRequest<{ bulkCreateChannels: Channel[] }>(BULK_CREATE_CHANNELS_MUTATION, { input });
+        const data = await graphqlRequest<{ bulkCreateChannels: Channel[] }>(BULK_CREATE_CHANNELS_MUTATION, {
+          input: { ...input, settings: input.settings && channelSettingsInputSchema.parse(input.settings) },
+        });
         return data.bulkCreateChannels.map((ch) => channelSchema.parse(ch));
       } catch (error) {
         handleError(error, { context: 'Batch Create Channels' });
@@ -1274,7 +1298,10 @@ export function useBulkCreateChannels() {
 }
 
 async function updateChannelRequest(id: string, input: UpdateChannelInput): Promise<Channel> {
-  const data = await graphqlRequest<{ updateChannel: Channel }>(UPDATE_CHANNEL_MUTATION, { id, input });
+  const data = await graphqlRequest<{ updateChannel: Channel }>(UPDATE_CHANNEL_MUTATION, {
+    id,
+    input: { ...input, settings: input.settings && channelSettingsInputSchema.parse(input.settings) },
+  });
   return channelSchema.parse(data.updateChannel);
 }
 

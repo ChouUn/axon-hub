@@ -531,6 +531,9 @@ func (svc *ChannelService) ListModels(ctx context.Context, input ListModelsInput
 // createChannel creates a new channel without triggering a reload.
 // This is useful for batch operations where reload should happen once at the end.
 func (svc *ChannelService) createChannel(ctx context.Context, input ent.CreateChannelInput) (*ent.Channel, error) {
+	if input.Settings != nil && input.Settings.ModelPriceMultiplier != nil && input.Settings.ModelPriceMultiplier.IsNegative() {
+		return nil, fmt.Errorf("model price multiplier must be non-negative")
+	}
 	sanitizedSettings, err := normalizeCommandCodeQuotaCookieSettings(input.Settings, input.Type)
 	if err != nil {
 		return nil, err
@@ -1058,7 +1061,18 @@ func (svc *ChannelService) UpdateChannel(ctx context.Context, id int, input *ent
 		}
 
 		if input.Settings != nil {
-			mut.SetSettings(input.Settings)
+			existingSettings, err := authz.RunWithScopeDecision(ctx, scopes.ScopeWriteChannels, func(queryCtx context.Context) (*ent.Channel, error) {
+				return db.Channel.Get(queryCtx, id)
+			})
+			if err != nil {
+				return fmt.Errorf("failed to load channel pricing settings: %w", err)
+			}
+			settings := *input.Settings
+			settings.ModelPriceMultiplier = nil
+			if existingSettings.Settings != nil {
+				settings.ModelPriceMultiplier = existingSettings.Settings.ModelPriceMultiplier
+			}
+			mut.Where(channel.UpdatedAtEQ(existingSettings.UpdatedAt)).SetSettings(&settings)
 		} else if clearStaleQuotaSettings {
 			// Type change away from the Command Code variants with no settings
 			// block: read the stored settings inside the same transaction and

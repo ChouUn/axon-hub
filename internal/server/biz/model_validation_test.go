@@ -1226,4 +1226,25 @@ func TestModelService_RejectsInvalidPriceAcrossMutations(t *testing.T) {
 	persisted, err := client.Model.Get(ctx, created.ID)
 	require.NoError(t, err)
 	require.Nil(t, persisted.ModelCard.Price)
+
+	// A valid channel snapshot must still be rejected as a standard model price.
+	invalid.Price = &objects.ModelPrice{
+		Multiplier: loToDecimalPtr("0.15"),
+		Items: []objects.ModelPriceItem{{
+			ItemCode: objects.PriceItemCodeUsage,
+			Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("2")},
+		}},
+	}
+	_, err = svc.CreateModel(ctx, input)
+	require.Error(t, err)
+	_, err = svc.BulkCreateModels(ctx, []*ent.CreateModelInput{&valid, &input})
+	require.Error(t, err)
+	_, err = svc.UpdateModel(ctx, created.ID, &ent.UpdateModelInput{ModelCard: invalid})
+	require.Error(t, err)
+	persisted, err = client.Model.Get(ctx, created.ID)
+	require.NoError(t, err)
+	require.Nil(t, persisted.ModelCard.Price)
+	count, err = client.Model.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
 }

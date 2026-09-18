@@ -1,4 +1,4 @@
-import { useState, type ComponentProps } from 'react';
+import { useId, useState, type ComponentProps } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
@@ -11,40 +11,43 @@ import { ModelPriceEditor } from '@/components/model-price-editor';
 import { PriceScheduleEditor } from '@/components/price-schedule-editor';
 import type { ModelPrice, ModelPriceItem } from '@/features/channels/data/schema';
 import { useGeneralSettings } from '@/features/system/data/system';
-import { multiplyPriceItems } from '../data/pricing';
-import type { CreateModelInput } from '../data/schema';
+import { isValidPriceMultiplier, multiplyPriceItems } from '../data/pricing';
 
 export function ModelsPriceEditor({ portalContainer }: { portalContainer: HTMLDivElement | null }) {
   const { t } = useTranslation();
-  const { control } = useFormContext<CreateModelInput>();
-  const price = useWatch({ control, name: 'modelCard.price' });
   return (
     <section className='space-y-4 rounded-md border p-4'>
       <h4 className='text-sm font-medium'>{t('models.price.title')}</h4>
       <p className='text-muted-foreground text-xs'>{t('models.price.description')}</p>
-      <PriceContent price={{ ...price, items: price?.items ?? [] }} portalContainer={portalContainer} />
+      <CompleteModelPriceEditor pricePath='modelCard.price' portalContainer={portalContainer} />
     </section>
   );
 }
 
-function PriceContent({ price, portalContainer }: { price: ModelPrice; portalContainer: HTMLDivElement | null }) {
+export function CompleteModelPriceEditor({
+  pricePath,
+  portalContainer,
+  multiplier,
+}: {
+  pricePath: string;
+  portalContainer: HTMLDivElement | null;
+  multiplier?: string;
+}) {
   const { t } = useTranslation();
   const { data: settings } = useGeneralSettings();
-  const {
-    control,
-    getValues,
-    formState: { errors },
-  } = useFormContext<CreateModelInput>();
-  const { fields, append, remove, replace } = useFieldArray({ control, name: 'modelCard.price.volumeTiers' });
+  const { control, getValues, getFieldState, formState } = useFormContext();
+  const price = useWatch({ control, name: pricePath }) as ModelPrice | null | undefined;
+  const items = price?.items ?? [];
+  const { fields, append, remove, replace } = useFieldArray({ control, name: `${pricePath}.volumeTiers` });
   const unified = fields.length > 0;
+  const unifiedId = useId();
   const canUseUnified =
-    price.items.length > 0 &&
-    price.items.every(
+    items.length > 0 &&
+    items.every(
       (item) =>
         item.pricing.mode === 'usage_per_unit' &&
         (item.promptWriteCacheVariants ?? []).every((variant) => variant.pricing.mode === 'usage_per_unit')
     );
-  // The shared editor accepts a dynamic items path; its field shape is the same at this model path.
   const itemControl = control as unknown as ComponentProps<typeof ModelPriceEditor>['control'];
   const errorMessages: string[] = [];
   const collectErrors = (error: unknown) => {
@@ -54,34 +57,35 @@ function PriceContent({ price, portalContainer }: { price: ModelPrice; portalCon
       if (key !== 'ref' && key !== 'message' && key !== 'type') collectErrors(value);
     });
   };
-  collectErrors(errors.modelCard?.price);
+  collectErrors(getFieldState(pricePath, formState).error);
   return (
-    <div className='space-y-4'>
+    <div className='space-y-3'>
       <div className='flex items-center gap-2'>
         <Switch
-          id='model-price-unified'
+          id={unifiedId}
           checked={unified}
           disabled={!unified && !canUseUnified}
           onCheckedChange={(enabled) => {
-            if (enabled) append({ above: NaN, items: structuredClone(getValues('modelCard.price.items') ?? []) });
+            if (enabled) append({ above: NaN, items: structuredClone(getValues(`${pricePath}.items`) ?? []) });
             else replace([]);
           }}
         />
-        <Label htmlFor='model-price-unified'>{t('price.volume.title')}</Label>
+        <Label htmlFor={unifiedId}>{t('price.volume.title')}</Label>
       </div>
       <p className='text-muted-foreground text-xs'>{t(unified ? 'price.volume.description' : 'price.volume.enableHint')}</p>
       {!canUseUnified && !unified && <p className='text-muted-foreground text-xs'>{t('price.validation.perUnitOnly')}</p>}
-      <div className='space-y-3 rounded-md border p-3'>
+      <div className='space-y-2 rounded-md border p-3'>
         <h4 className='text-sm font-medium'>
-          {unified && Number.isFinite(price.volumeTiers?.[0]?.above)
-            ? t('price.volume.baseRange', { above: price.volumeTiers?.[0]?.above })
+          {unified && Number.isFinite(price?.volumeTiers?.[0]?.above)
+            ? t('price.volume.baseRange', { above: price?.volumeTiers?.[0]?.above })
             : t('price.volume.base')}
         </h4>
         <ModelPriceEditor
           control={itemControl}
           priceIndex={0}
-          itemsPath='modelCard.price.items'
+          itemsPath={`${pricePath}.items`}
           currencyCode={settings?.currencyCode}
+          multiplier={multiplier}
           perUnitOnly={unified}
           hideHeader
         />
@@ -89,11 +93,13 @@ function PriceContent({ price, portalContainer }: { price: ModelPrice; portalCon
       {fields.map((field, index) => (
         <VolumeTierRow
           key={field.id}
+          pricePath={pricePath}
           index={index}
-          above={price.volumeTiers?.[index]?.above ?? NaN}
-          nextAbove={price.volumeTiers?.[index + 1]?.above}
-          baseItems={price.items}
+          above={price?.volumeTiers?.[index]?.above ?? NaN}
+          nextAbove={price?.volumeTiers?.[index + 1]?.above}
+          baseItems={items}
           currencyCode={settings?.currencyCode}
+          multiplier={multiplier}
           onRemove={() => remove(index)}
         />
       ))}
@@ -102,12 +108,7 @@ function PriceContent({ price, portalContainer }: { price: ModelPrice; portalCon
           type='button'
           variant='outline'
           size='sm'
-          onClick={() =>
-            append({
-              above: NaN,
-              items: structuredClone(getValues('modelCard.price.items') ?? []),
-            })
-          }
+          onClick={() => append({ above: NaN, items: structuredClone(getValues(`${pricePath}.items`) ?? []) })}
         >
           <IconPlus size={14} />
           {t('price.volume.addTier')}
@@ -116,15 +117,21 @@ function PriceContent({ price, portalContainer }: { price: ModelPrice; portalCon
       <PriceScheduleEditor
         control={control as unknown as ComponentProps<typeof PriceScheduleEditor>['control']}
         priceIndex={0}
-        pricePath='modelCard.price'
+        pricePath={pricePath}
         currencyCode={settings?.currencyCode}
         defaultTimezone={settings?.timezone}
         portalContainer={portalContainer}
         renderItems={(itemsPath) => (
-          <ModelPriceEditor control={itemControl} priceIndex={0} itemsPath={itemsPath} currencyCode={settings?.currencyCode} />
+          <ModelPriceEditor
+            control={itemControl}
+            priceIndex={0}
+            itemsPath={itemsPath}
+            currencyCode={settings?.currencyCode}
+            multiplier={multiplier}
+          />
         )}
       />
-      {price.schedule != null && <p className='text-muted-foreground text-xs'>{t('price.volume.schedulePrecedence')}</p>}
+      {price?.schedule != null && <p className='text-muted-foreground text-xs'>{t('price.volume.schedulePrecedence')}</p>}
       {errorMessages.length > 0 && (
         <p role='alert' className='text-destructive text-sm'>
           {[...new Set(errorMessages)].join(' · ')}
@@ -135,24 +142,28 @@ function PriceContent({ price, portalContainer }: { price: ModelPrice; portalCon
 }
 
 function VolumeTierRow({
+  pricePath,
   index,
   above,
   nextAbove,
   baseItems,
   currencyCode,
+  multiplier,
   onRemove,
 }: {
+  pricePath: string;
   index: number;
   above: number;
   nextAbove?: number;
   baseItems: ModelPriceItem[];
   currencyCode?: string;
+  multiplier?: string;
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
-  const { control, setValue, getValues } = useFormContext<CreateModelInput>();
-  const [multiplier, setMultiplier] = useState('1');
-  const validMultiplier = multiplier.trim() !== '' && Number.isFinite(Number(multiplier)) && Number(multiplier) >= 0;
+  const { control, setValue, getValues } = useFormContext();
+  const [tierMultiplier, setTierMultiplier] = useState('1');
+  const tierMultiplierId = useId();
   const completeBase =
     baseItems.length > 0 &&
     baseItems.every((item) =>
@@ -179,7 +190,7 @@ function VolumeTierRow({
       <div className='flex flex-wrap items-end gap-3'>
         <FormField
           control={control}
-          name={`modelCard.price.volumeTiers.${index}.above`}
+          name={`${pricePath}.volumeTiers.${index}.above`}
           render={({ field }) => (
             <FormItem className='min-w-40 flex-1'>
               <FormLabel>{t('price.volume.above')}</FormLabel>
@@ -199,30 +210,24 @@ function VolumeTierRow({
           )}
         />
         <div className='space-y-2'>
-          <Label htmlFor={`tier-multiplier-${index}`}>{t('price.volume.multiplier')}</Label>
+          <Label htmlFor={tierMultiplierId}>{t('price.volume.multiplier')}</Label>
           <Input
-            id={`tier-multiplier-${index}`}
+            id={tierMultiplierId}
             className='w-28'
-            type='number'
-            min={0}
-            step='any'
-            value={multiplier}
-            onChange={(event) => setMultiplier(event.target.value)}
+            inputMode='decimal'
+            value={tierMultiplier}
+            onChange={(event) => setTierMultiplier(event.target.value)}
           />
         </div>
         <Button
           type='button'
           variant='outline'
-          disabled={!validMultiplier || !completeBase}
+          disabled={!completeBase || !isValidPriceMultiplier(tierMultiplier)}
           onClick={() =>
-            setValue(
-              `modelCard.price.volumeTiers.${index}.items`,
-              multiplyPriceItems(getValues('modelCard.price.items') ?? [], multiplier),
-              {
-                shouldDirty: true,
-                shouldValidate: true,
-              }
-            )
+            setValue(`${pricePath}.volumeTiers.${index}.items`, multiplyPriceItems(getValues(`${pricePath}.items`) ?? [], tierMultiplier), {
+              shouldDirty: true,
+              shouldValidate: true,
+            })
           }
         >
           {t('price.volume.fill')}
@@ -232,8 +237,9 @@ function VolumeTierRow({
       <ModelPriceEditor
         control={control as unknown as ComponentProps<typeof ModelPriceEditor>['control']}
         priceIndex={0}
-        itemsPath={`modelCard.price.volumeTiers.${index}.items`}
+        itemsPath={`${pricePath}.volumeTiers.${index}.items`}
         currencyCode={currencyCode}
+        multiplier={multiplier}
         perUnitOnly
         hideHeader
       />

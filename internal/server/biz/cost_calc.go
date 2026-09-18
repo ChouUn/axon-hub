@@ -160,7 +160,22 @@ func ComputeUsageCost(usage *llm.Usage, price objects.ModelPrice, now time.Time)
 		}
 	}
 
-	return computeUsageCostWithItems(usage, effectiveItems)
+	items, total := computeUsageCostWithItems(usage, effectiveItems)
+	if price.Multiplier == nil || price.Multiplier.Equal(decimal.NewFromInt(1)) {
+		return items, total
+	}
+
+	// Scale the selected snapshot once, including every legacy tier and cache variant.
+	// Never mutate the base rates or consult the channel's current settings here.
+	for idx := range items {
+		items[idx].Subtotal = items[idx].Subtotal.Mul(*price.Multiplier)
+		for tierIdx := range items[idx].TierBreakdown {
+			tier := &items[idx].TierBreakdown[tierIdx]
+			tier.Subtotal = tier.Subtotal.Mul(*price.Multiplier)
+		}
+	}
+
+	return items, total.Mul(*price.Multiplier)
 }
 
 func computeUsageCostWithItems(usage *llm.Usage, priceItems []objects.ModelPriceItem) ([]objects.CostItem, decimal.Decimal) {

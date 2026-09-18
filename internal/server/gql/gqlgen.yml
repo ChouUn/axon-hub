@@ -151,6 +151,9 @@ models:
   ChannelSettings:
     model:
       - github.com/looplj/axonhub/internal/objects.ChannelSettings
+    fields:
+      modelPriceMultiplier:
+        fieldName: ModelPriceMultiplier
   ChannelSettingsInput:
     model:
       - github.com/looplj/axonhub/internal/objects.ChannelSettings
@@ -421,6 +424,9 @@ models:
   ModelPrice:
     model:
       - github.com/looplj/axonhub/internal/objects.ModelPrice
+    fields:
+      multiplier:
+        fieldName: Multiplier
   ModelPriceInput:
     model:
       - github.com/looplj/axonhub/internal/objects.ModelPrice

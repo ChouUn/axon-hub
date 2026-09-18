@@ -2,6 +2,8 @@ package biz
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,7 +17,10 @@ import (
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/channelmodelprice"
 	"github.com/looplj/axonhub/internal/ent/channelmodelpriceversion"
+	"github.com/looplj/axonhub/internal/ent/hook"
+	"github.com/looplj/axonhub/internal/ent/model"
 	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/llm"
 )
 
 func TestChannelService_SaveChannelModelPrices(t *testing.T) {
@@ -74,7 +79,7 @@ func TestChannelService_SaveChannelModelPrices(t *testing.T) {
 			},
 		}
 
-		results, err := svc.SaveChannelModelPrices(ctx, ch.ID, inputs)
+		results, err := svc.SaveChannelModelPrices(ctx, ch.ID, inputs, nil)
 		require.NoError(t, err)
 		require.Len(t, results, 2)
 
@@ -115,7 +120,7 @@ func TestChannelService_SaveChannelModelPrices(t *testing.T) {
 		// Wait a bit to ensure time difference
 		time.Sleep(10 * time.Millisecond)
 
-		results, err := svc.SaveChannelModelPrices(ctx, ch.ID, inputs)
+		results, err := svc.SaveChannelModelPrices(ctx, ch.ID, inputs, nil)
 		require.NoError(t, err)
 		require.Len(t, results, 1)
 
@@ -160,7 +165,7 @@ func TestChannelService_SaveChannelModelPrices(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, exists)
 
-		results, err := svc.SaveChannelModelPrices(ctx, ch.ID, inputs)
+		results, err := svc.SaveChannelModelPrices(ctx, ch.ID, inputs, nil)
 		require.NoError(t, err)
 		require.Len(t, results, 1) // Only gpt-3.5-turbo remains (as skip/update)
 
@@ -199,7 +204,7 @@ func TestChannelService_SaveChannelModelPrices(t *testing.T) {
 			},
 		}
 
-		_, err := svc.SaveChannelModelPrices(ctx, ch.ID, inputs)
+		_, err := svc.SaveChannelModelPrices(ctx, ch.ID, inputs, nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "duplicate model price input")
 		require.Contains(t, err.Error(), "model_id=gpt-4")
@@ -231,6 +236,7 @@ func TestChannelService_DuplicateChannelCopiesModelPrices(t *testing.T) {
 	require.NoError(t, err)
 
 	price := objects.ModelPrice{
+		Multiplier: loToDecimalPtr("0.15"),
 		Items: []objects.ModelPriceItem{
 			{
 				ItemCode: objects.PriceItemCodeUsage,
@@ -244,7 +250,7 @@ func TestChannelService_DuplicateChannelCopiesModelPrices(t *testing.T) {
 
 	sourcePrices, err := svc.SaveChannelModelPrices(ctx, source.ID, []SaveChannelModelPriceInput{
 		{ModelID: "gpt-4", Price: price},
-	})
+	}, loToDecimalPtr("0.15"))
 	require.NoError(t, err)
 	require.Len(t, sourcePrices, 1)
 
@@ -257,6 +263,7 @@ func TestChannelService_DuplicateChannelCopiesModelPrices(t *testing.T) {
 		DefaultTestModel: "gpt-4",
 	})
 	require.NoError(t, err)
+	require.Equal(t, "0.15", duplicated.Settings.ModelPriceMultiplier.String())
 
 	copiedPrices, err := client.ChannelModelPrice.Query().
 		Where(channelmodelprice.ChannelID(duplicated.ID)).
@@ -392,4 +399,132 @@ func TestCalculatePriceChanges(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestChannelService_PriceMultiplierHistory(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := channelAutoPriceTestContext(client)
+	ch := createAutoPriceTestChannel(t, ctx, client, "Multiplier history", []string{"priced"})
+	var base objects.ModelPrice
+	require.NoError(t, json.Unmarshal([]byte(`{"items":[{"itemCode":"prompt_tokens","pricing":{"mode":"usage_per_unit","usagePerUnit":"2"}}]}`), &base))
+	input := []SaveChannelModelPriceInput{{ModelID: "priced", Price: base}}
+	initial, err := svc.SaveChannelModelPrices(ctx, ch.ID, input, nil)
+	require.NoError(t, err)
+	initialRef := initial[0].ReferenceID
+
+	unchanged, err := svc.SaveChannelModelPrices(ctx, ch.ID, input, loToDecimalPtr("1"))
+	require.NoError(t, err)
+	require.Equal(t, initialRef, unchanged[0].ReferenceID)
+	require.Equal(t, 1, countChannelModelPriceVersions(t, ctx, client, initial[0].ID))
+
+	discounted, err := svc.SaveChannelModelPrices(ctx, ch.ID, input, loToDecimalPtr("0.15"))
+	require.NoError(t, err)
+	require.NotEqual(t, initialRef, discounted[0].ReferenceID)
+	_, discountedCost := ComputeUsageCost(&llm.Usage{PromptTokens: 1_000_000}, discounted[0].Price, time.Time{})
+	require.Equal(t, "0.3", discountedCost.String())
+	oldVersion, err := client.ChannelModelPriceVersion.Query().Where(channelmodelpriceversion.ReferenceID(initialRef)).Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, channelmodelpriceversion.StatusArchived, oldVersion.Status)
+	require.Nil(t, oldVersion.Price.Multiplier)
+	_, oldCost := ComputeUsageCost(&llm.Usage{PromptTokens: 1_000_000}, oldVersion.Price, time.Time{})
+	require.Equal(t, "2", oldCost.String())
+
+	unchanged, err = svc.SaveChannelModelPrices(ctx, ch.ID, input, nil)
+	require.NoError(t, err)
+	require.Equal(t, discounted[0].ReferenceID, unchanged[0].ReferenceID)
+	free, err := svc.SaveChannelModelPrices(ctx, ch.ID, input, loToDecimalPtr("0"))
+	require.NoError(t, err)
+	require.NotEqual(t, discounted[0].ReferenceID, free[0].ReferenceID)
+	items, cost := ComputeUsageCost(&llm.Usage{PromptTokens: 1_000_000}, free[0].Price, time.Time{})
+	require.True(t, cost.IsZero())
+	require.True(t, items[0].Subtotal.IsZero())
+
+	_, err = svc.SaveChannelModelPrices(ctx, ch.ID, input, loToDecimalPtr("-0.1"))
+	require.Error(t, err)
+	stored := queryChannelModelPrice(t, ctx, client, ch.ID, "priced")
+	require.Equal(t, free[0].ReferenceID, stored.ReferenceID)
+	require.Equal(t, 3, countChannelModelPriceVersions(t, ctx, client, stored.ID))
+	storedChannel, err := client.Channel.Get(ctx, ch.ID)
+	require.NoError(t, err)
+	require.True(t, storedChannel.Settings.ModelPriceMultiplier.IsZero())
+}
+
+func TestChannelService_PriceMultiplierEmptyChannelAndInheritance(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := channelAutoPriceTestContext(client)
+	ch := createAutoPriceTestChannel(t, ctx, client, "Multiplier inheritance", []string{"priced"})
+	base := objects.ModelPrice{Items: []objects.ModelPriceItem{{
+		ItemCode: objects.PriceItemCodeUsage,
+		Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("2")},
+	}}}
+	catalog := createModelLibraryEntry(t, ctx, client, "priced", model.StatusEnabled, &base)
+	_, err := svc.SaveChannelModelPrices(ctx, ch.ID, nil, loToDecimalPtr("0.15"))
+	require.NoError(t, err)
+	_, err = svc.UpdateChannel(ctx, ch.ID, &ent.UpdateChannelInput{Settings: &objects.ChannelSettings{
+		ExtraModelPrefix: "test", ModelPriceMultiplier: loToDecimalPtr("99"),
+	}})
+	require.NoError(t, err)
+	storedChannel, err := client.Channel.Get(ctx, ch.ID)
+	require.NoError(t, err)
+	require.Equal(t, "0.15", storedChannel.Settings.ModelPriceMultiplier.String())
+	require.Equal(t, "test", storedChannel.Settings.ExtraModelPrefix)
+
+	_, err = svc.ensureChannelModelPrices(ctx, ch.ID, []string{"priced"})
+	require.NoError(t, err)
+	first := queryChannelModelPrice(t, ctx, client, ch.ID, "priced")
+	_, cost := ComputeUsageCost(&llm.Usage{PromptTokens: 1_000_000}, first.Price, time.Time{})
+	require.Equal(t, "0.3", cost.String())
+	_, err = svc.ensureChannelModelPrices(ctx, ch.ID, []string{"priced"})
+	require.NoError(t, err)
+	require.Equal(t, first.ReferenceID, queryChannelModelPrice(t, ctx, client, ch.ID, "priced").ReferenceID)
+	storedModel, err := client.Model.Get(ctx, catalog.ID)
+	require.NoError(t, err)
+	require.Nil(t, storedModel.ModelCard.Price.Multiplier)
+	require.Equal(t, "2", storedModel.ModelCard.Price.Items[0].Pricing.UsagePerUnit.String())
+
+	_, err = svc.SaveChannelModelPrices(ctx, ch.ID, nil, loToDecimalPtr("0"))
+	require.NoError(t, err)
+	_, err = svc.ensureChannelModelPrices(ctx, ch.ID, []string{"priced"})
+	require.NoError(t, err)
+	free := queryChannelModelPrice(t, ctx, client, ch.ID, "priced")
+	_, cost = ComputeUsageCost(&llm.Usage{PromptTokens: 1_000_000}, free.Price, time.Time{})
+	require.True(t, cost.IsZero())
+}
+
+func TestChannelService_PriceMultiplierSaveRollback(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := channelAutoPriceTestContext(client)
+	ch := createAutoPriceTestChannel(t, ctx, client, "Multiplier rollback", []string{"priced"})
+	base := objects.ModelPrice{Items: []objects.ModelPriceItem{{
+		ItemCode: objects.PriceItemCodeUsage,
+		Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("2")},
+	}}}
+	input := []SaveChannelModelPriceInput{{ModelID: "priced", Price: base}}
+	initial, err := svc.SaveChannelModelPrices(ctx, ch.ID, input, loToDecimalPtr("0.15"))
+	require.NoError(t, err)
+	failure := errors.New("version insert failed")
+	client.ChannelModelPriceVersion.Use(func(next ent.Mutator) ent.Mutator {
+		return hook.ChannelModelPriceVersionFunc(func(ctx context.Context, mutation *ent.ChannelModelPriceVersionMutation) (ent.Value, error) {
+			if mutation.Op() == ent.OpCreate {
+				return nil, failure
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+	_, err = svc.SaveChannelModelPrices(ctx, ch.ID, input, loToDecimalPtr("0.5"))
+	require.ErrorIs(t, err, failure)
+	storedChannel, err := client.Channel.Get(ctx, ch.ID)
+	require.NoError(t, err)
+	require.Equal(t, "0.15", storedChannel.Settings.ModelPriceMultiplier.String())
+	stored := queryChannelModelPrice(t, ctx, client, ch.ID, "priced")
+	require.Equal(t, initial[0].ReferenceID, stored.ReferenceID)
+	version, err := client.ChannelModelPriceVersion.Query().Where(channelmodelpriceversion.ChannelID(ch.ID)).Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, channelmodelpriceversion.StatusActive, version.Status)
+	require.Nil(t, version.EffectiveEndAt)
+	_, cost := ComputeUsageCost(&llm.Usage{PromptTokens: 1_000_000}, stored.Price, time.Time{})
+	require.Equal(t, "0.3", cost.String())
 }

@@ -146,7 +146,7 @@ func (svc *ChannelService) syncChannelModelsForChannel(ctx context.Context, ch *
 				UpdateOneID(ch.ID).
 				SetSupportedModels(mergedModels)
 			if modelProtocolsChanged {
-				update.SetSettings(ch.Settings)
+				update.Where(channel.UpdatedAtEQ(ch.UpdatedAt)).SetSettings(ch.Settings)
 			}
 			channel, err := update.Save(ctx)
 			if err != nil {

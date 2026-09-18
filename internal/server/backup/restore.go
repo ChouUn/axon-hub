@@ -601,6 +601,9 @@ func (svc *BackupService) restoreChannelModelPrices(
 
 func (svc *BackupService) restoreChannels(ctx context.Context, db *ent.Client, channels []*BackupChannel, opts RestoreOptions) error {
 	for _, chData := range channels {
+		if chData.Settings != nil && chData.Settings.ModelPriceMultiplier != nil && chData.Settings.ModelPriceMultiplier.IsNegative() {
+			return fmt.Errorf("channel model price multiplier must be non-negative: channel=%s", chData.Name)
+		}
 		existing, err := db.Channel.Query().
 			Where(channel.Name(chData.Name)).
 			First(ctx)
@@ -694,6 +697,9 @@ func (svc *BackupService) restoreModels(ctx context.Context, db *ent.Client, mod
 	for _, modelData := range models {
 		if modelData == nil {
 			continue
+		}
+		if modelData.ModelCard != nil && modelData.ModelCard.Price != nil && modelData.ModelCard.Price.Multiplier != nil {
+			return fmt.Errorf("standard model prices cannot include a channel multiplier: model_id=%s", modelData.ModelID)
 		}
 
 		remapModelSettingsChannelIDs(modelData.Settings, channelIDMap)
