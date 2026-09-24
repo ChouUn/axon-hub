@@ -82,6 +82,159 @@ fork 改动，由用户决定。
   `internal/server/gql/model_resolvers_test.go`、`internal/objects/apikey_test.go`，
   覆盖模型状态、关联限制、映射、Responses 续接和管理权限边界；无新增 fixture。
 
+### 健康门控路由策略
+
+- 状态：需求已确认，实现方案待评审，未实现。提交：尚未提交。
+- 动机：管理端无法直观看到哪个渠道×模型坏了。现有 `(渠道, 模型)` 熔断器只挂在
+  `circuit-breaker` 策略下，阈值写死，查询与重置方法无调用方
+  （`internal/server/biz/model_circuit_breaker.go:144-149,359-435`）；默认 `adaptive`
+  只按渠道扣分并在 5 分钟内衰减，坏渠道仍留在候选中，一个模型失败也会拖累同渠道其他
+  模型（`internal/server/orchestrator/lb_strategy_bp.go:49-90`）；粘性渠道不经健康评分
+  （`internal/server/orchestrator/candidates.go:709-721`），已坏的粘性渠道每个请求都会先
+  失败一次再转移（粘性候选本身不做同渠道重试，`internal/server/orchestrator/outbound.go:694-699`）。
+- 参考：CCH（`ding113/claude-code-hub` v0.9.5）的失败口径、全部不可用返回及管理端
+  徽章/筛选/重置；不采用其按供应商整体熔断的粒度。
+- 业务场景（用户确认）：
+  - 长期红：某渠道×模型持续失败，不应频繁成为候选。
+  - 间歇红：偶发失败、长期黄绿，本次请求需要绕开，下次仍可使用。
+  - 单个渠道×模型损坏时，同渠道其他模型不受影响。
+- 已确认决策：
+  - D1 新增第五种负载均衡策略 `health-gated`（健康门控），与上游 `adaptive`、`failover`、
+    `circuit-breaker`、`round-robin` 平行，可在系统重试策略、API Key profile 与模型设置
+    中选择。上游四种策略的行为不变，以降低同步上游的冲突面。
+  - D2 粒度：熔断主体为 `(渠道, 上游实际模型)`，即经渠道模型映射后发往上游的模型
+    （候选项 `ActualModel`），不是请求模型或别名。
+  - D3 全部候选熔断：选熔断最早到期的一个试一次；仍失败则返回 503，错误体为通用的
+    服务不可用文案，不暴露渠道名（沿用 CCH，`src/app/v1/_lib/proxy/forwarder.ts:3214-3216,8626`）。
+    503 仅适用于尚未向客户端提交响应的失败；流式响应头已发出后
+    （`internal/server/api/chat.go:190-197`）发生的中断沿用现有流内错误与终止语义，不重试、
+    不改写 HTTP 状态码，健康结果按 R4、R6 记录；客户端取消后不再写响应。
+  - D4 单机部署：健康状态只存进程内存，不做跨实例共享，重启后清零。
+  - D5 统计范围：只统计走 `health-gated` 策略的流量；其他策略的请求不产生、不改变
+    健康状态，保证管理端看到的熔断即实际生效的熔断。
+  - D6 健康候选排序：沿用 `adaptive` 的组成去掉 ErrorAware，即 WeightRoundRobin、
+    LatencyAware、RateLimitAware、QuotaAware（`internal/server/orchestrator/orchestrator.go:53-59`）。
+  - D7 现有 `circuit-breaker` 策略及其熔断器保留原样，不改动、不复用其实例。
+- 健康状态规则：
+  - R1 状态：健康、不稳、熔断、试探。熔断与试探是互斥且优先的门控状态；仅在非熔断、
+    非试探时，最近窗口 W 内有计数失败或首个 token 后断流才显示为不稳，否则为健康。健康
+    与不稳同等参与候选（不稳仅用于展示，不降权，沿用 CCH）。熔断的组合在本次选路中不参与
+    候选，也跳过粘性优先，但不删除、不改写粘性缓存。普通试探只放行无粘性渠道的新会话，
+    同一渠道×模型同时只放一个请求（试探名额）。「无粘性渠道」以 trace/thread 粘性缓存原值
+    为准（`internal/server/biz/request.go:1652-1671`），不以粘性渠道是否仍在候选中推断。
+  - R2 转换：连续计数失败达到 N 进入熔断；熔断到期进入试探；试探连续计数成功 M 次回到
+    非门控状态（按 R1 的窗口规则显示健康或不稳），计数失败则重新熔断且时长翻倍（有上限）。
+    健康或不稳下计数成功一次即清零连续失败。翻倍级数在恢复后保留，恢复后持续无计数失败
+    超过熔断时长上限才清零；其间再次熔断从已达级数继续翻倍。
+  - R3 计数单位：一次请求在某 `(渠道, ActualModel)` 上的尝试（含对该组合的同渠道重试）
+    结束时记一次结果；中途失败、最终成功记为成功（沿用 CCH）。同渠道重试可能切换到该
+    渠道的另一个 ActualModel（`internal/server/orchestrator/outbound.go:761-765`），各组合分别记录。
+  - R4 结果分类：计数成功、计数失败、仅不稳、不计入四类（口径见 R6）。流式请求以完整
+    终态为成功，收到 HTTP 200 或首个 token 不算成功。试探遇到「仅不稳」或「不计入」时释放
+    试探名额，只更新最近异常信息，试探进度不增不减，保持试探状态等待下一个请求，不重新
+    熔断也不延长熔断。
+  - R5 无健康候选时的最后一试（D3 的细化）：经模型、权限等既有准入过滤后，若没有健康或
+    不稳的候选，先按普通试探规则尝试取得试探名额；因本请求无试探资格（已有粘性渠道）、
+    全部仍处于熔断或试探名额已被占用而无法取得时，进入最后一试。最后一试优先选已到期的
+    试探组合，没有则选熔断最早到期的组合，按试探处理，计数失败按 R2 翻倍。最后一试与普通
+    试探共用试探名额，选中组合的名额已被占用则立即返回 D3 的通用 503，不记健康失败。该
+    出口不得返回模型不存在错误（现有空候选会映射为 `ErrInvalidModel`，
+    `internal/server/orchestrator/select_candidates.go:111-115`）。
+- 失败口径（R6，参考 CCH `src/app/v1/_lib/proxy/errors.ts:992-1064` 并按 AH 适配）：
+  - 计数失败：上游 5xx、网络错误、超时、首个 token 前的流中断、401/403（按普通失败计数，
+    与 CCH 一致；现有自动禁用规则照常独立运作）。
+  - 仅不稳：首个 token 后的流中断，不计入连续失败。
+  - 不计入：429、400/404/422、客户端取消、本地 RPM 与排队拒绝、熔断自身跳过。
+  - 429 边界：429 不计入本熔断器。仅当上游带可解析的 `Retry-After` 时沿用现有渠道冷却
+    （`internal/server/orchestrator/rate_limit_tracking.go:90-102`）；无有效 `Retry-After` 时只影响
+    本请求的故障转移，后续请求仍可正常选择该渠道，本 topic 不新增兜底冷却。
+  - 与 CCH 的差异：CCH 将 429 及未命中客户端输入白名单的 400 计为供应商失败；AH 中
+    429 按上一条处理，400/422 视为请求问题，均不计入。
+- 可观测与管理规则：
+  - R7 渠道列表：按渠道汇总徽章（N 个模型熔断 / N 个模型不稳），提供「只看异常」筛选。
+  - R8 渠道健康详情：每个上游模型一行，含状态、连续失败次数、最近错误与状态码、熔断
+    剩余时间、下次试探时间及重置操作。查看要求 `read_channels`，重置要求 `write_channels`。
+    重置完全清零该组合：连续失败、试探进度、翻倍级数、最近异常及各截止时间全部清除，回到
+    健康，并释放试探名额。重置开启该组合的新统计周期：重置前已发出的请求照常完成业务响应，
+    但其迟到结果不改变新周期的健康状态，也不得释放新周期持有的试探名额。
+  - R9 统一视图：429 冷却与凭证自动禁用在同一健康视图展示，机制保持各自独立。
+- 配置规则（R10）：系统级默认值放入重试策略，渠道级覆盖放入渠道 `settings` JSON（沿用
+  现有可选指针字段惯例，`internal/objects/channel.go:220-240`）；阈值为 0 时关闭该渠道熔断：
+  该渠道各组合既不门控也不计数，管理端显示「熔断已关闭」而非残留状态。阈值由正数改为 0
+  时结束原统计周期；由 0 改回正数时按空白健康状态开启新周期，关闭前及关闭期间发起的请求
+  结果不回写新周期（与 R8 重置同一语义）。不为配置新增表字段。
+- 生命周期（R11）：渠道停用、删除、归档或模型映射变更时不主动清理健康状态，只随时间演进
+  或由管理员重置。条目数以实际用过的渠道×上游模型组合为上限，不做定期回收。
+- 默认值：N=5；首次熔断 5 分钟，试探失败翻倍，上限 60 分钟；M=2；W=5 分钟。
+- 明确不做：不改变上游四种策略的行为；不引入跨实例共享或健康状态持久化；不向上游发
+  合成探测请求（试探只用真实业务请求：普通试探仅放行无粘性渠道的请求，R5 最后一试除外）；
+  不替代 429 冷却与自动禁用；不稳状态不降权。
+  会话归属、请求决策记录与 Webhook 见「健康门控会话归属迟滞与决策记录」。
+- 代码（预计）：新策略与健康状态使用新文件，不改上游熔断实现；接入点为
+  `internal/objects/routing.go`、`internal/server/biz/system.go`（策略枚举与校验）、
+  `internal/server/orchestrator/orchestrator.go`（注册负载均衡器）、
+  `internal/server/orchestrator/select_candidates.go`、`internal/server/orchestrator/candidates.go`、
+  `internal/server/orchestrator/outbound.go`、`internal/objects/channel.go`、`internal/server/gql/`；
+  前端策略下拉（`frontend/src/features/system/components/retry-settings.tsx`、
+  `frontend/src/features/apikeys/components/apikeys-*-dialog.tsx`、
+  `frontend/src/features/models/components/models-association-dialog.tsx`、
+  `frontend/src/features/models/data/schema.ts`）、`frontend/src/features/channels/`、
+  `frontend/src/locales/`。
+- 迁移：无 schema 或 data migration；重试策略与渠道 `settings` 新增可选 JSON 字段，
+  旧数据缺省走系统默认。
+- 测试与 fixture：待实现方案确定。
+- 同步上游注意：策略枚举与前端策略下拉为追加式冲突点；上游若新增策略、改动负载均衡
+  组装或自行实现熔断可视化，需逐条对照 D1–D7、R1–R11。
+
+### 健康门控会话归属迟滞与决策记录
+
+- 状态：需求已确认，实现方案待评审，未实现。提交：尚未提交。
+- 依赖：建立在「健康门控路由策略」之上，仅在 `health-gated` 策略下生效；其他策略保持
+  上游粘性语义。
+- 动机：会话粘性在每次尝试前改写（`internal/server/orchestrator/request_execution.go:105-113`、
+  `internal/server/biz/request.go:1269-1283`），故障转移后又被下一次波动切回，每次切换
+  都可能落到冷缓存、推高费用。管理端也看不到某次请求为何跳过或转移渠道，熔断发生时
+  无通知。
+- 参考：CCH 的会话绑定同样只在成功时写入，但故障转移成功即改绑、健康时迁回更高优先级
+  供应商（`src/lib/session-manager.ts:1659-1757`），无迁移迟滞，R1 的 thread 主键与 R3–R5
+  为 AH 自有需求；
+  决策记录参考 CCH 请求表的 `provider_chain` / `routing_trace` jsonb 列
+  （`src/drizzle/schema.ts:571-575`）；Webhook 参考 CCH 开闸告警。
+- 业务场景（用户确认）：会话不因单次波动在渠道间来回切换，也不长期停在失败渠道上。
+- 已确认决策：D1 不迁回，原渠道恢复后已迁走的会话留在新渠道，缓存成本优先。
+- 会话归属规则：
+  - R1 会话主键：有 thread 时，归属与连续转移计数只以 thread 缓存为权威，选路不读取、不被
+    任何 trace 旧值覆盖（现有选路 trace 优先，`internal/server/orchestrator/candidates.go:749-776`，
+    `health-gated` 下需改为 thread 优先）；没有 thread 时才用 trace。成功提交迁移时同步改写
+    当前 trace 的归属，仅用于一致性与展示，不是 thread 归属生效的前提。归属缓存失效（现为
+    30 分钟，`internal/server/biz/request.go:1699-1705`）即视为新会话，不回退使用旧 trace 归属；
+    D1 的不迁回只在归属有效期内保证。
+  - R2 归属只在请求成功时写入，失败尝试不改写。
+  - R3 单次故障转移：由备用渠道完成本次请求，归属不变，下个请求仍回归属渠道。
+  - R4 迁移条件：归属渠道×模型进入熔断，或同一会话连续 K 次请求都需故障转移才完成；
+    迁往完成该次请求的渠道。归属渠道直接成功时连续转移计数清零；请求整体失败或客户端
+    取消时计数不变。
+  - R5 迁移后不迁回（D1）。
+  - R6 归属渠道×模型已熔断时不参与粘性优先及同渠道重试，但仍可按阶段一 R5 成为最后一试；
+    未熔断时沿用现有粘性候选零次同渠道重试（`internal/server/orchestrator/outbound.go:694-699`），
+    失败即转移。
+- 决策记录与通知规则：
+  - R7 请求决策记录：请求表新增可空 JSON 字段，记录因熔断被跳过的渠道×模型、本次是否
+    为临时转移（归属未变）、是否为最后一试，请求详情页展示。
+  - R8 Webhook：新增渠道×模型熔断与恢复事件，复用现有通知器（按事件名匹配订阅，
+    `internal/server/biz/webhook_notifier.go:148-155`）；系统 Webhook 设置界面需增加事件选项。
+- 默认值：K=2；归属渠道同渠道重试 0 次（沿用现状）。
+- 代码（预计）：`internal/server/orchestrator/request_execution.go`、
+  `internal/server/orchestrator/candidates.go`、`internal/server/biz/request.go`、
+  `internal/server/biz/webhook_notifier.go`、`internal/ent/schema/request.go`、
+  `internal/server/gql/`、`frontend/src/features/requests/`、
+  `frontend/src/features/system/components/webhook-settings.tsx`、`frontend/src/locales/`。
+- 迁移：请求表新增可空 JSON 列，由 ent 自动迁移，无 data migration。R4 需按会话记录
+  连续转移次数，若扩展粘性缓存值结构须遵守缓存兼容规则（`.agent/rules/cache-compat.md`）。
+- 测试与 fixture：待实现方案确定。
+- 同步上游注意：在 `request_execution.go`、`candidates.go`、`biz/request.go` 中按策略分支
+  改变粘性写入时机，为冲突高发点；上游改动粘性缓存或请求表结构时需逐条对照 R1–R8。
+
 ### 渠道标准价格引用与持久倍率
 
 - 行为：渠道定价引用模型模块维护的完整价格，支持按渠道模型 ID 一键匹配，也可为
