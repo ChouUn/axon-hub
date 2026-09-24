@@ -210,7 +210,7 @@ fork 改动，由用户决定。
 
 ### 健康门控会话归属迟滞与决策记录
 
-- 状态：需求已确认，实现方案待评审，未实现。提交：尚未提交。
+- 状态：已实现。提交：`a4ffb86d`（`feat(routing): 健康门控会话归属迟滞与决策记录`）。
 - 依赖：建立在「健康门控路由策略」之上，仅在 `health-gated` 策略下生效；其他策略保持
   上游粘性语义。
 - 动机：会话粘性在每次尝试前改写（`internal/server/orchestrator/request_execution.go:105-113`、
@@ -223,37 +223,66 @@ fork 改动，由用户决定。
   决策记录参考 CCH 请求表的 `provider_chain` / `routing_trace` jsonb 列
   （`src/drizzle/schema.ts:571-575`）；Webhook 参考 CCH 开闸告警。
 - 业务场景（用户确认）：会话不因单次波动在渠道间来回切换，也不长期停在失败渠道上。
-- 已确认决策：D1 不迁回，原渠道恢复后已迁走的会话留在新渠道，缓存成本优先。
+- 已确认决策：
+  - D1 不迁回，原渠道恢复后已迁走的会话留在新渠道，缓存成本优先。
+  - D2 切换到 `health-gated` 时沿用旧粘性记录：新归属记录缺失时读取一次旧渠道记录作为归属，
+    连续转移计数从 0 开始；旧记录只含渠道且在尝试前写入，可能指向失败渠道，由 R3/R4 纠正。
+  - D3 K 为系统级参数，放在重试策略的健康门控参数中，不提供渠道覆盖。
+  - D4 决策记录包含：请求开始时的归属渠道×模型、因熔断被跳过的渠道×模型、是否临时转移、
+    是否最后一试、本次是否迁移（迁出、迁入与原因：归属熔断或连续 K 次转移）。
+  - D5 Webhook 只在首次熔断与恢复时发送；熔断期间试探失败、翻倍延长不发送。
 - 会话归属规则：
   - R1 会话主键：有 thread 时，归属与连续转移计数只以 thread 缓存为权威，选路不读取、不被
     任何 trace 旧值覆盖（现有选路 trace 优先，`internal/server/orchestrator/candidates.go:749-776`，
     `health-gated` 下需改为 thread 优先）；没有 thread 时才用 trace。成功提交迁移时同步改写
-    当前 trace 的归属，仅用于一致性与展示，不是 thread 归属生效的前提。归属缓存失效（现为
-    30 分钟，`internal/server/biz/request.go:1699-1705`）即视为新会话，不回退使用旧 trace 归属；
-    D1 的不迁回只在归属有效期内保证。
-  - R2 归属只在请求成功时写入，失败尝试不改写。
+    当前 trace 的归属，仅用于一致性与展示，不是 thread 归属生效的前提。归属缓存失效（30 分钟，
+    每次成功提交续期）即视为新会话，不回退使用旧 trace 归属；D1 的不迁回只在归属有效期内保证。
+    归属以渠道为单位，「归属渠道×模型」指归属渠道上本次请求选用的上游实际模型。仅在
+    `prefer_previous_channel` 粘性模式下生效；粘性关闭时不读写归属。
+  - R2 归属只在请求成功时写入，失败尝试不改写。提交时以会话当前归属为准重新计算（按会话主键进程内串行），
+    同一会话并发请求中晚完成者不得把已迁移的归属写回旧渠道；多实例共享缓存时不保证跨实例串行。
   - R3 单次故障转移：由备用渠道完成本次请求，归属不变，下个请求仍回归属渠道。
-  - R4 迁移条件：归属渠道×模型进入熔断，或同一会话连续 K 次请求都需故障转移才完成；
-    迁往完成该次请求的渠道。归属渠道直接成功时连续转移计数清零；请求整体失败或客户端
-    取消时计数不变。
+  - R4 迁移条件：本次请求结束时归属渠道×模型处于熔断或试探（未获本次准入，含本次请求自身触发的熔断），或同一会话连续 K 次
+    请求都需故障转移才完成；归属渠道不在本次候选中也按故障转移计数。迁往完成该次请求的渠道，
+    计数清零。归属渠道直接成功时连续转移计数清零；请求整体失败或客户端取消时计数不变。
   - R5 迁移后不迁回（D1）。
   - R6 归属渠道×模型已熔断时不参与粘性优先及同渠道重试，但仍可按阶段一 R5 成为最后一试；
     未熔断时沿用现有粘性候选零次同渠道重试（`internal/server/orchestrator/outbound.go:694-699`），
     失败即转移。
 - 决策记录与通知规则：
-  - R7 请求决策记录：请求表新增可空 JSON 字段，记录因熔断被跳过的渠道×模型、本次是否
-    为临时转移（归属未变）、是否为最后一试，请求详情页展示。
-  - R8 Webhook：新增渠道×模型熔断与恢复事件，复用现有通知器（按事件名匹配订阅，
-    `internal/server/biz/webhook_notifier.go:148-155`）；系统 Webhook 设置界面需增加事件选项。
-- 默认值：K=2；归属渠道同渠道重试 0 次（沿用现状）。
-- 代码（预计）：`internal/server/orchestrator/request_execution.go`、
-  `internal/server/orchestrator/candidates.go`、`internal/server/biz/request.go`、
-  `internal/server/biz/webhook_notifier.go`、`internal/ent/schema/request.go`、
-  `internal/server/gql/`、`frontend/src/features/requests/`、
-  `frontend/src/features/system/components/webhook-settings.tsx`、`frontend/src/locales/`。
-- 迁移：请求表新增可空 JSON 列，由 ent 自动迁移，无 data migration。R4 需按会话记录
-  连续转移次数，若扩展粘性缓存值结构须遵守缓存兼容规则（`.agent/rules/cache-compat.md`）。
-- 测试与 fixture：待实现方案确定。
+  - R7 请求决策记录：请求表新增可空 JSON 字段，内容见 D4，请求详情页展示；仅 `health-gated`
+    请求写入，请求结束（非流式完成或失败、流式关闭）时写一次；渠道名称按选路时快照保存（归属渠道
+    不在候选中时按当时的渠道记录补齐）。
+  - R8 Webhook：新增渠道×模型熔断（`channel.health_gate_opened`）与恢复
+    （`channel.health_gate_recovered`）事件，复用现有通知器（按事件名匹配订阅，
+    `internal/server/biz/webhook_notifier.go:144-170`），异步发送，不在健康状态锁内调用；
+    系统 Webhook 设置界面需增加事件选项。事件为进程内转移，多实例不去重。
+- 默认值：K=2（`owner_failover_threshold`，≤0 归一为 2）；归属渠道同渠道重试 0 次（沿用现状）。
+- 代码：新逻辑放在新文件：`internal/server/biz/session_owner.go`（归属缓存读写、决策持久化）、
+  `internal/server/biz/health_gate_notify.go`（熔断转移异步通知）、
+  `internal/server/orchestrator/health_gate_session.go`（归属判定与决策提交）、
+  `internal/objects/request_routing.go`（决策记录类型）、`internal/server/gql/request_routing.graphql`。
+  阶段一文件扩展：`internal/server/biz/health_gate.go`（转移回调，锁外调用）、
+  `internal/server/biz/system_health_gate.go`（K）、`internal/server/orchestrator/health_gate_selector.go`
+  （thread 优先归属、跳过项与最后一试快照）、`internal/server/orchestrator/health_gate_middleware.go`（成功时提交）。
+  上游文件只做追加：`internal/server/biz/request.go`（归属缓存字段）、`internal/server/biz/webhook_notifier.go`
+  （两个事件、`.Model.ActualModel` 与 `.Trigger.OpenUntil` 模板变量）、`internal/ent/schema/request.go`（字段）、
+  `internal/server/orchestrator/request_execution.go`（`health-gated` 下尝试前不写粘性缓存）、
+  `internal/server/orchestrator/orchestrator.go`（每个 Process 的决策槽位）、`internal/server/gql/system.graphql`、
+  `internal/server/gql/gqlgen.yml` 与 ent/gqlgen 生成物；前端 `frontend/src/features/requests/`（路由决策卡片）、
+  `frontend/src/features/system/components/{retry-settings,webhook-settings}.tsx`、`frontend/src/features/system/data/system.ts`、
+  `frontend/src/locales/`；用户文档 `docs/{zh,en}/guides/load-balance.md`。
+- 迁移：请求表新增可空 JSON 列 `routing_decision`，由 ent 自动迁移，无 data migration。
+  归属使用新缓存键 `axonhub:routing:session-owner:v1:{thread|trace}:%d`，值为
+  `{channel_id, consecutive_failovers}`；不改动旧 `previous-channel:v1` 键的值形状
+  （`.agent/rules/cache-compat.md`）。`health-gated` 下不在尝试前写旧键，成功提交归属时同步写
+  旧键与新键（同一 TTL），便于切回其他策略时保持粘性。
+- 测试与 fixture：`internal/server/biz/session_owner_test.go`（thread 权威、D2 旧键种子、新旧键同写与 TTL、
+  缓存读错误、决策读写）、`internal/server/biz/health_gate_test.go`（只在首次熔断与恢复产生转移、回调锁外可重入）、
+  `internal/server/biz/health_gate_notify_test.go`（事件订阅匹配、渲染字段、异步桥接）、
+  `internal/server/orchestrator/health_gate_session_test.go`（单次转移保留归属、连续 K 次迁移、归属熔断立即迁移、
+  归属成功清零、失败与取消不写、流式仅完成后提交、粘性关闭不读写）、
+  `internal/server/orchestrator/health_gate_selector_test.go`（跳过项、最后一试剔除、归属优先）。
 - 同步上游注意：在 `request_execution.go`、`candidates.go`、`biz/request.go` 中按策略分支
   改变粘性写入时机，为冲突高发点；上游改动粘性缓存或请求表结构时需逐条对照 R1–R8。
 
