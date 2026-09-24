@@ -3,8 +3,7 @@ package orchestrator
 import (
 	"context"
 
-	"github.com/looplj/axonhub/internal/contexts"
-	"github.com/looplj/axonhub/internal/log"
+	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/llm"
 )
@@ -12,6 +11,7 @@ import (
 type healthGateCandidateInfo struct {
 	probeEligible bool
 	lastResort    bool
+	decision      *healthGateRequestDecision
 }
 
 type gatedModel struct {
@@ -31,56 +31,87 @@ func (s *LoadBalancedSelector) selectHealthGated(
 	if len(candidates) == 0 {
 		return candidates, nil
 	}
-
-	probeEligible := s.healthGateProbeEligible(ctx, stickyMode)
+	decision, probeEligible := s.healthGateSessionDecision(ctx, stickyMode, policy)
 	var channelService *biz.ChannelService
 	if service, ok := lb.selectionTracker.(*biz.ChannelService); ok {
 		channelService = service
 	}
+	decision.probeEligible = probeEligible
+	decision.candidates = candidates
+	decision.channelSvc = channelService
+	decision.requestSvc, _ = s.previousChannelProvider.(*biz.RequestService)
+	decision.policy = s.policy
+	decision.fallback = policy.HealthGateOrDefault()
+	if decision.found {
+		decision.record.Owner = &objects.RoutingDecisionCombo{
+			ChannelID:   decision.owner.ChannelID,
+			ChannelName: healthGateOwnerName(ctx, decision.owner.ChannelID, candidates, channelService, decision.requestSvc),
+		}
+	}
 	filtered := make([]*ChannelModelsCandidate, 0, len(candidates))
 	var lastResort *gatedModel
+	ownerSeen, ownerAllowed := false, false
 	for _, candidate := range candidates {
 		if candidate == nil || candidate.Channel == nil {
 			continue
 		}
-		resolve := currentHealthGateConfig(ctx, s.policy, channelService, candidate.Channel, policy.HealthGateOrDefault())
+		ownerCandidate := decision.found && candidate.Channel.ID == decision.owner.ChannelID
+		if ownerCandidate {
+			ownerSeen = true
+			decision.record.Owner.ChannelName = candidate.Channel.Name
+		}
+		cfg := currentHealthGateConfig(ctx, s.policy, channelService, candidate.Channel, policy.HealthGateOrDefault())
 		indices := make([]int, 0, len(candidate.Models))
 		for index, entry := range candidate.Models {
-			view := lb.healthGate.Inspect(biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: entry.ActualModel}, resolve)
+			view := lb.healthGate.Inspect(biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: entry.ActualModel}, cfg)
+			combo := healthGateCombo(candidate, entry.ActualModel, view.State)
+			if ownerCandidate && decision.record.Owner.ActualModel == "" {
+				decision.record.Owner.ActualModel = combo.ActualModel
+				decision.record.Owner.State = combo.State
+			}
 			if view.State == biz.HealthGateStateHealthy || view.State == biz.HealthGateStateUnstable ||
 				(view.State == biz.HealthGateStateProbing && probeEligible && !view.ProbeBusy) {
 				indices = append(indices, index)
+				if ownerCandidate {
+					ownerAllowed = true
+				}
 				continue
 			}
+			decision.record.Skipped = append(decision.record.Skipped, combo)
 			if lastResort == nil || healthGateLastResortBefore(view, lastResort.view) {
 				lastResort = &gatedModel{candidate: candidate, index: index, view: view}
 			}
 		}
 		if len(indices) != 0 {
-			filtered = append(filtered, cloneHealthGateCandidate(ctx, req, candidate, indices, &healthGateCandidateInfo{probeEligible: probeEligible}))
+			filtered = append(filtered, cloneHealthGateCandidate(ctx, req, candidate, indices, &healthGateCandidateInfo{probeEligible: probeEligible, decision: decision}))
 		}
 	}
-
+	decision.ownerOpen = decision.found && ownerSeen && !ownerAllowed
 	if len(filtered) == 0 {
 		if lastResort == nil {
 			return filtered, nil
 		}
-		clone := cloneHealthGateCandidate(ctx, req, lastResort.candidate, []int{lastResort.index}, &healthGateCandidateInfo{lastResort: true})
+		selected := healthGateCombo(lastResort.candidate, lastResort.candidate.Models[lastResort.index].ActualModel, lastResort.view.State)
+		for i, skipped := range decision.record.Skipped {
+			if skipped.ChannelID == selected.ChannelID && skipped.ActualModel == selected.ActualModel {
+				decision.record.Skipped = append(decision.record.Skipped[:i], decision.record.Skipped[i+1:]...)
+				break
+			}
+		}
+		decision.record.LastResort = true
+		clone := cloneHealthGateCandidate(ctx, req, lastResort.candidate, []int{lastResort.index}, &healthGateCandidateInfo{lastResort: true, decision: decision})
 		clone.TraceSticky = false
 		return []*ChannelModelsCandidate{clone}, nil
 	}
-
 	requiredCount := 1
 	if policy.Enabled {
 		requiredCount += policy.MaxChannelRetries
 	}
-	if stickyMode == biz.TraceStickyPreferPreviousChannel {
-		if sticky, remaining := s.selectTraceStickyCandidate(ctx, filtered); sticky != nil {
+	if decision.sticky && decision.found && ownerAllowed {
+		if sticky, remaining := extractStickyCandidate(filtered, decision.owner.ChannelID); sticky != nil {
 			sticky.TraceSticky = true
 			fallbacks := s.sortCandidates(ctx, lb, remaining, req, max(requiredCount-1, 0), false)
-			if lb != nil {
-				lb.TrackSelection(sticky)
-			}
+			lb.TrackSelection(sticky)
 			return append([]*ChannelModelsCandidate{sticky}, fallbacks...), nil
 		}
 	}
@@ -95,43 +126,6 @@ func healthGateLastResortBefore(a, b biz.HealthGateView) bool {
 		return false
 	}
 	return a.OpenUntil.Before(b.OpenUntil)
-}
-
-// The original sticky cache value, not the presence of a valid sticky candidate,
-// determines whether this request may take a normal probe.
-func (s *LoadBalancedSelector) healthGateProbeEligible(ctx context.Context, mode biz.TraceStickyMode) bool {
-	if mode != biz.TraceStickyPreferPreviousChannel {
-		return true
-	}
-	if s.previousChannelProvider == nil {
-		return true
-	}
-	trace, hasTrace := contexts.GetTrace(ctx)
-	if hasTrace && trace != nil {
-		channelID, err := s.previousChannelProvider.GetPreviousChannelID(ctx, trace.ID)
-		if err != nil {
-			log.Warn(ctx, "failed to read trace stickiness for health probe", log.Cause(err))
-			return false
-		}
-		if channelID != 0 {
-			return false
-		}
-	}
-	threadID := 0
-	if thread, ok := contexts.GetThread(ctx); ok && thread != nil {
-		threadID = thread.ID
-	} else if hasTrace && trace != nil {
-		threadID = trace.ThreadID
-	}
-	if threadID == 0 {
-		return true
-	}
-	channelID, err := s.previousChannelProvider.GetPreviousChannelIDByThread(ctx, threadID)
-	if err != nil {
-		log.Warn(ctx, "failed to read thread stickiness for health probe", log.Cause(err))
-		return false
-	}
-	return channelID == 0
 }
 
 func cloneHealthGateCandidate(ctx context.Context, req *llm.Request, source *ChannelModelsCandidate, indices []int, info *healthGateCandidateInfo) *ChannelModelsCandidate {

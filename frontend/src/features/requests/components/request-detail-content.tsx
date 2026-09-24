@@ -53,6 +53,7 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
   const { data: settings } = useGeneralSettings();
   const { data: requestData, isLoading } = useRequest(requestId, { projectId, disableAutoRefresh: isPreviewStreaming });
   const request = previewRequest ?? requestData;
+  const routingDecision = requestData?.routingDecision ?? request?.routingDecision;
 
   // Auto-select the appropriate request-body view once data is available:
   // use the conversation view only when the body actually parses as a conversation.
@@ -401,6 +402,65 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
           </div>
         </CardContent>
       </Card>
+      {routingDecision && (
+        <Card className='border-0 shadow-sm'>
+          <CardHeader className='pb-2'>
+            <CardTitle className='text-base'>{t('requests.routingDecision.title')}</CardTitle>
+          </CardHeader>
+          <CardContent className='space-y-4 text-sm'>
+            <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
+              <div>
+                <div className='text-muted-foreground'>{t('requests.routingDecision.owner')}</div>
+                {routingDecision.owner ? (
+                  <div className='break-words'>
+                    {routingDecision.owner.channelName || t('requests.routingDecision.channelId', { id: routingDecision.owner.channelID })}
+                    {routingDecision.owner.actualModel && <> · <span className='font-mono'>{routingDecision.owner.actualModel}</span></>}
+                    {routingDecision.owner.state && <> · {t(`requests.routingDecision.states.${routingDecision.owner.state}`, { defaultValue: routingDecision.owner.state })}</>}
+                  </div>
+                ) : <div>{t('requests.routingDecision.noOwner')}</div>}
+              </div>
+              <div>
+                <div className='text-muted-foreground'>{t('requests.routingDecision.temporaryFailover')}</div>
+                <div>{t(routingDecision.temporaryFailover ? 'requests.routingDecision.yes' : 'requests.routingDecision.no')}</div>
+              </div>
+              <div>
+                <div className='text-muted-foreground'>{t('requests.routingDecision.lastResort')}</div>
+                <div>{t(routingDecision.lastResort ? 'requests.routingDecision.yes' : 'requests.routingDecision.no')}</div>
+              </div>
+              <div>
+                <div className='text-muted-foreground'>{t('requests.routingDecision.consecutiveFailovers')}</div>
+                <div>{routingDecision.consecutiveFailovers}</div>
+              </div>
+            </div>
+            <div>
+              <div className='text-muted-foreground'>{t('requests.routingDecision.skipped')}</div>
+              {routingDecision.skipped.length ? (
+                <ul className='mt-1 space-y-1'>
+                  {routingDecision.skipped.map((combo, index) => (
+                    <li key={`${combo.channelID}-${combo.actualModel}-${index}`} className='rounded-md border px-3 py-2 break-words'>
+                      {combo.channelName || t('requests.routingDecision.channelId', { id: combo.channelID })}
+                      {' · '}<span className='font-mono'>{combo.actualModel}</span>
+                      {combo.state && <> · {t(`requests.routingDecision.states.${combo.state}`, { defaultValue: combo.state })}</>}
+                    </li>
+                  ))}
+                </ul>
+              ) : <div>{t('requests.routingDecision.noneSkipped')}</div>}
+            </div>
+            <div>
+              <div className='text-muted-foreground'>{t('requests.routingDecision.migration')}</div>
+              {routingDecision.migration ? (
+                <div className='break-words'>
+                  {routingDecision.migration.fromChannelName || t('requests.routingDecision.channelId', { id: routingDecision.migration.fromChannelID })}
+                  {' → '}
+                  {routingDecision.migration.toChannelName || t('requests.routingDecision.channelId', { id: routingDecision.migration.toChannelID })}
+                  {' · '}{t(`requests.routingDecision.reasons.${routingDecision.migration.reason}`, { defaultValue: routingDecision.migration.reason })}
+                </div>
+              ) : <div>{t('requests.routingDecision.noMigration')}</div>}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
 
       {usageLogs &&
         usageLogs.edges.length > 0 &&

@@ -507,8 +507,8 @@ func TestHealthGatePolicyNormalizationAndOverrides(t *testing.T) {
 		in   HealthGatePolicy
 		want HealthGatePolicy
 	}{
-		{"missing values", HealthGatePolicy{}, HealthGatePolicy{FailureThreshold: 0, OpenDurationSeconds: 300, MaxOpenDurationSeconds: 300, ProbeSuccessThreshold: 2, UnstableWindowSeconds: 300}},
-		{"negative threshold and short max", HealthGatePolicy{FailureThreshold: -1, OpenDurationSeconds: 700, MaxOpenDurationSeconds: 10, ProbeSuccessThreshold: -1, UnstableWindowSeconds: -1}, HealthGatePolicy{FailureThreshold: 0, OpenDurationSeconds: 700, MaxOpenDurationSeconds: 700, ProbeSuccessThreshold: 2, UnstableWindowSeconds: 300}},
+		{"missing values", HealthGatePolicy{}, HealthGatePolicy{FailureThreshold: 0, OpenDurationSeconds: 300, MaxOpenDurationSeconds: 300, ProbeSuccessThreshold: 2, UnstableWindowSeconds: 300, OwnerFailoverThreshold: 2}},
+		{"negative threshold and short max", HealthGatePolicy{FailureThreshold: -1, OpenDurationSeconds: 700, MaxOpenDurationSeconds: 10, ProbeSuccessThreshold: -1, UnstableWindowSeconds: -1}, HealthGatePolicy{FailureThreshold: 0, OpenDurationSeconds: 700, MaxOpenDurationSeconds: 700, ProbeSuccessThreshold: 2, UnstableWindowSeconds: 300, OwnerFailoverThreshold: 2}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -541,5 +541,61 @@ func TestHealthGatePolicyNormalizationAndOverrides(t *testing.T) {
 				t.Fatalf("threshold = %d, want %d", cfg.FailureThreshold, tc.want)
 			}
 		})
+	}
+}
+
+func TestHealthGateTransitionNotifications(t *testing.T) {
+	gate, clock, cfg, key := testHealthGate(t)
+	var transitions []HealthGateTransition
+	gate.SetTransitionHandler(func(transition HealthGateTransition) {
+		// Both gate locks must already be released: Snapshot and Inspect reenter them.
+		gate.Snapshot(key.ChannelID, healthGateTestResolver(cfg))
+		gate.Inspect(key, healthGateTestResolver(cfg))
+		transitions = append(transitions, transition)
+	})
+	finishHealthGate(t, gate, key, cfg, HealthGateOutcomeFailure)
+	if len(transitions) != 0 {
+		t.Fatalf("below threshold produced transition: %+v", transitions)
+	}
+	finishHealthGate(t, gate, key, cfg, HealthGateOutcomeFailure)
+	if len(transitions) != 1 || transitions[0].Kind != "opened" || transitions[0].Key != key || transitions[0].ConsecutiveFailures != cfg.FailureThreshold || transitions[0].FailureThreshold != cfg.FailureThreshold || !transitions[0].OpenUntil.Equal(clock.at.Add(cfg.OpenDuration)) || transitions[0].LastStatusCode != 503 || transitions[0].LastError != "provider unavailable" {
+		t.Fatalf("opening transition is missing fields: %+v", transitions)
+	}
+	clock.advance(cfg.OpenDuration)
+	probe, ok := gate.Begin(key, healthGateTestResolver(cfg), true, false)
+	if !ok {
+		t.Fatal("probe rejected")
+	}
+	gate.Finish(probe, healthGateTestResolver(cfg), HealthGateOutcomeFailure, HealthGateErrorInfo{})
+	if len(transitions) != 1 {
+		t.Fatalf("probe failure emitted transition: %+v", transitions)
+	}
+	clock.advance(2 * cfg.OpenDuration)
+	for range cfg.ProbeSuccessThreshold - 1 {
+		probe, ok = gate.Begin(key, healthGateTestResolver(cfg), true, false)
+		if !ok {
+			t.Fatal("probe rejected")
+		}
+		gate.Finish(probe, healthGateTestResolver(cfg), HealthGateOutcomeSuccess, HealthGateErrorInfo{})
+		if len(transitions) != 1 {
+			t.Fatalf("partial probe success emitted transition: %+v", transitions)
+		}
+	}
+	probe, ok = gate.Begin(key, healthGateTestResolver(cfg), true, false)
+	if !ok {
+		t.Fatal("final recovery probe rejected")
+	}
+	gate.Finish(probe, healthGateTestResolver(cfg), HealthGateOutcomeSuccess, HealthGateErrorInfo{})
+	if len(transitions) != 2 || transitions[1].Kind != "recovered" || transitions[1].Key != key || transitions[1].ProbeSuccesses != cfg.ProbeSuccessThreshold || transitions[1].ProbeSuccessThreshold != cfg.ProbeSuccessThreshold || !transitions[1].OpenUntil.IsZero() {
+		t.Fatalf("recovery transition is missing fields: %+v", transitions)
+	}
+	gate.Reset(key.ChannelID, key.ActualModel)
+	disabled := cfg
+	disabled.FailureThreshold = 0
+	gate.Inspect(key, healthGateTestResolver(disabled))
+	gate.Inspect(key, healthGateTestResolver(cfg))
+	gate.Finish(probe, healthGateTestResolver(cfg), HealthGateOutcomeSuccess, HealthGateErrorInfo{})
+	if len(transitions) != 2 {
+		t.Fatalf("reset/config cycle/stale probe emitted transition: %+v", transitions)
 	}
 }

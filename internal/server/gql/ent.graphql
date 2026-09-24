@@ -4482,6 +4482,7 @@ type Request implements Node {
   responseBody: JSONRawMessage @goField(forceResolver: true)
   responseChunks: [JSONRawMessage!] @goField(forceResolver: true)
   channelID: ID
+  routingDecision: RequestRoutingDecision
   externalID: String
   status: RequestStatus!
   stream: Boolean!

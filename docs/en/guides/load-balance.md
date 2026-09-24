@@ -137,8 +137,10 @@ response = client.chat.completions.create(
   - **Probing**: When the open period expires, only new sessions without a sticky channel are admitted, one request at a time; M consecutive successes recover it, a failure reopens it with a doubled duration (capped).
 - **What counts**: 5xx, network errors, timeouts, empty responses, stream breaks before the first token, and 401/403 count as failures; 429, request errors such as 400/404/422, client cancellation, and local rate-limit/queue rejections are not counted.
 - **When everything is open**: The earliest-expiring combination is tried once; a counted failure returns a generic 503 without channel names, while request errors (e.g. 400) are returned as-is.
-- **Defaults**: N=5, first open period 5 minutes, cap 60 minutes, M=2, W=5 minutes. A channel can override N; 0 disables circuit breaking for that channel.
-- **Admin UI**: The channel list shows open/unstable model counts with an "abnormal only" filter; the health detail view lists each model's state, last error, and remaining time, with manual reset.
+- **Defaults**: N=5, first open period 5 minutes, cap 60 minutes, M=2, W=5 minutes, K=2. A channel can override N; 0 disables circuit breaking for that channel.
+- **Session ownership** (when session stickiness is "prefer previous channel"): a session is owned by one channel, written only after a request succeeds; the thread is authoritative when present. A one-off completion by a fallback channel keeps the owner, so the next request returns to it; the session moves to the channel that completed the request only when the owner's model is open or K consecutive requests needed a fallback. A moved session does not move back when the original channel recovers, to keep prompt caches warm. Ownership not renewed by a success within 30 minutes starts a new session.
+- **Admin UI**: The channel list shows open/unstable model counts with an "abnormal only" filter; the health detail view lists each model's state, last error, and remaining time, with manual reset. The request detail "Routing decision" card shows the session owner, skipped combinations, whether this was a temporary failover or a last resort, and whether the session moved and why.
+- **Notifications**: Webhooks can subscribe to `channel.health_gate_opened` (first open) and `channel.health_gate_recovered` (probe recovery); failed probes during an open period do not notify again.
 - **Limitations**: State lives in process memory only; it resets on restart and is not shared across instances.
 
 ## 🔧 Advanced Configuration

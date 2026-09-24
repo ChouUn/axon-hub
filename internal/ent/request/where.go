@@ -630,6 +630,16 @@ func ChannelIDNotNil() predicate.Request {
 	return predicate.Request(sql.FieldNotNull(FieldChannelID))
 }
 
+// RoutingDecisionIsNil applies the IsNil predicate on the "routing_decision" field.
+func RoutingDecisionIsNil() predicate.Request {
+	return predicate.Request(sql.FieldIsNull(FieldRoutingDecision))
+}
+
+// RoutingDecisionNotNil applies the NotNil predicate on the "routing_decision" field.
+func RoutingDecisionNotNil() predicate.Request {
+	return predicate.Request(sql.FieldNotNull(FieldRoutingDecision))
+}
+
 // ExternalIDEQ applies the EQ predicate on the "external_id" field.
 func ExternalIDEQ(v string) predicate.Request {
 	return predicate.Request(sql.FieldEQ(FieldExternalID, v))

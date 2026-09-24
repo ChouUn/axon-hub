@@ -20,6 +20,11 @@ import (
 const EventChannelAutoDisabled = "channel.auto_disabled"
 
 const (
+	EventChannelHealthGateOpened    = "channel.health_gate_opened"
+	EventChannelHealthGateRecovered = "channel.health_gate_recovered"
+)
+
+const (
 	defaultWebhookMethod    = http.MethodPost
 	defaultWebhookTimeoutMs = 3000
 )
@@ -50,12 +55,17 @@ type WebhookRenderContext struct {
 		Status   string `json:"status"`
 	} `json:"channel"`
 
+	Model struct {
+		ActualModel string `json:"actual_model"`
+	} `json:"model"`
+
 	Trigger struct {
 		Type        string `json:"type"`
 		StatusCode  int    `json:"status_code"`
 		Threshold   int    `json:"threshold"`
 		ActualCount int    `json:"actual_count"`
 		Reason      string `json:"reason"`
+		OpenUntil   string `json:"open_until"`
 	} `json:"trigger"`
 }
 
@@ -91,6 +101,50 @@ func (n *WebhookNotifier) NotifyChannelAutoDisabled(ctx context.Context, event C
 	renderCtx.Trigger.Reason = event.Reason
 
 	n.notify(ctx, EventChannelAutoDisabled, renderCtx)
+}
+
+// ChannelHealthGateEvent joins a gate transition with current channel metadata.
+type ChannelHealthGateEvent struct {
+	Transition      HealthGateTransition
+	ChannelName     string
+	ChannelProvider string
+	ChannelBaseURL  string
+	ChannelStatus   string
+}
+
+func (n *WebhookNotifier) NotifyChannelHealthGateOpened(ctx context.Context, event ChannelHealthGateEvent) {
+	n.notifyChannelHealthGate(ctx, EventChannelHealthGateOpened, "warning", "health_gate_opened", event)
+}
+
+func (n *WebhookNotifier) NotifyChannelHealthGateRecovered(ctx context.Context, event ChannelHealthGateEvent) {
+	n.notifyChannelHealthGate(ctx, EventChannelHealthGateRecovered, "info", "health_gate_recovered", event)
+}
+
+func (n *WebhookNotifier) notifyChannelHealthGate(ctx context.Context, eventName, severity, triggerType string, event ChannelHealthGateEvent) {
+	transition := event.Transition
+	renderCtx := WebhookRenderContext{
+		Event: eventName, Severity: severity, OccurredAt: transition.At.UTC().Format(time.RFC3339),
+	}
+	renderCtx.Channel.ID = transition.Key.ChannelID
+	renderCtx.Channel.Name = event.ChannelName
+	renderCtx.Channel.Provider = event.ChannelProvider
+	renderCtx.Channel.BaseURL = event.ChannelBaseURL
+	renderCtx.Channel.Status = event.ChannelStatus
+	renderCtx.Model.ActualModel = transition.Key.ActualModel
+	renderCtx.Trigger.Type = triggerType
+	renderCtx.Trigger.StatusCode = transition.LastStatusCode
+	renderCtx.Trigger.Reason = transition.LastError
+	if !transition.OpenUntil.IsZero() {
+		renderCtx.Trigger.OpenUntil = transition.OpenUntil.UTC().Format(time.RFC3339)
+	}
+	if eventName == EventChannelHealthGateOpened {
+		renderCtx.Trigger.Threshold = transition.FailureThreshold
+		renderCtx.Trigger.ActualCount = transition.ConsecutiveFailures
+	} else {
+		renderCtx.Trigger.Threshold = transition.ProbeSuccessThreshold
+		renderCtx.Trigger.ActualCount = transition.ProbeSuccesses
+	}
+	n.notify(ctx, eventName, renderCtx)
 }
 
 func (n *WebhookNotifier) notify(ctx context.Context, eventName string, renderCtx WebhookRenderContext) {

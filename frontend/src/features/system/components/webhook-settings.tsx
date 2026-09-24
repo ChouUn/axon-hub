@@ -14,7 +14,11 @@ import { Switch } from '@/components/ui/switch';
 import { proxyTypeSchema, type ProxyConfig, type ProxyType } from '@/features/channels/data/schema';
 import { useProxyPresets, useUpdateWebhookNotifierConfig, useWebhookNotifierConfig, type WebhookNotifierConfig, type WebhookTarget } from '../data/system';
 
-const AUTO_DISABLED_EVENT = 'channel.auto_disabled';
+const WEBHOOK_EVENTS = [
+  { event: 'channel.auto_disabled', descriptionKey: 'system.webhook.events.channelAutoDisabled' },
+  { event: 'channel.health_gate_opened', descriptionKey: 'system.webhook.events.channelHealthGateOpened' },
+  { event: 'channel.health_gate_recovered', descriptionKey: 'system.webhook.events.channelHealthGateRecovered' },
+] as const;
 
 const DEFAULT_WEBHOOK_BODY_TEMPLATE = `{
   "event": "{{.Event}}",
@@ -26,11 +30,15 @@ const DEFAULT_WEBHOOK_BODY_TEMPLATE = `{
     "provider": "{{.Channel.Provider}}",
     "status": "{{.Channel.Status}}"
   },
+  "model": {
+    "actual_model": "{{.Model.ActualModel}}"
+  },
   "trigger": {
     "status_code": {{.Trigger.StatusCode}},
     "threshold": {{.Trigger.Threshold}},
     "actual_count": {{.Trigger.ActualCount}},
-    "reason": "{{.Trigger.Reason}}"
+    "reason": "{{.Trigger.Reason}}",
+    "open_until": "{{.Trigger.OpenUntil}}"
   }
 }`;
 
@@ -68,12 +76,12 @@ export function WebhookSettings() {
   }, [webhookConfig]);
 
   const getSubscribedTargetNames = useCallback(
-    () => new Set(formData.subscriptions.find((subscription) => subscription.event === AUTO_DISABLED_EVENT)?.targetNames || []),
+    (event: string) => new Set(formData.subscriptions.find((subscription) => subscription.event === event)?.targetNames || []),
     [formData.subscriptions]
   );
 
   const isTargetSubscribed = useCallback(
-    (targetName: string) => getSubscribedTargetNames().has(targetName),
+    (event: string, targetName: string) => getSubscribedTargetNames(event).has(targetName),
     [getSubscribedTargetNames]
   );
 
@@ -226,25 +234,19 @@ export function WebhookSettings() {
     }));
   }, []);
 
-  const handleSubscriptionChange = useCallback((targetName: string, checked: boolean) => {
+  const handleSubscriptionChange = useCallback((event: string, targetName: string, checked: boolean) => {
     setFormData((prev) => {
-      const current = prev.subscriptions.find((subscription) => subscription.event === AUTO_DISABLED_EVENT);
+      const current = prev.subscriptions.find((subscription) => subscription.event === event);
       const nextTargetNames = checked
         ? Array.from(new Set([...(current?.targetNames || []), targetName]))
         : (current?.targetNames || []).filter((name) => name !== targetName);
 
-      const nextSubscriptions = prev.subscriptions.filter((subscription) => subscription.event !== AUTO_DISABLED_EVENT);
+      const nextSubscriptions = prev.subscriptions.filter((subscription) => subscription.event !== event);
       if (nextTargetNames.length > 0) {
-        nextSubscriptions.push({
-          event: AUTO_DISABLED_EVENT,
-          targetNames: nextTargetNames,
-        });
+        nextSubscriptions.push({ event, targetNames: nextTargetNames });
       }
 
-      return {
-        ...prev,
-        subscriptions: nextSubscriptions,
-      };
+      return { ...prev, subscriptions: nextSubscriptions };
     });
   }, []);
 
@@ -326,7 +328,6 @@ export function WebhookSettings() {
     );
   }
 
-  const subscribedTargetCount = getSubscribedTargetNames().size;
   const normalizedNameCounts = formData.targets.reduce<Record<string, number>>((acc, target) => {
     const normalizedName = target.name.trim();
     if (!normalizedName) {
@@ -348,15 +349,17 @@ export function WebhookSettings() {
           <div className='bg-muted/50 space-y-2 rounded-md border p-4'>
             <div className='text-sm font-medium'>{t('system.webhook.availableEvents.title')}</div>
             <div className='text-muted-foreground text-sm'>{t('system.webhook.availableEvents.description')}</div>
-            <div className='bg-background flex items-center justify-between rounded-md border p-3'>
-              <div className='space-y-1'>
-                <div className='font-mono text-xs'>{AUTO_DISABLED_EVENT}</div>
-                <div className='text-muted-foreground text-sm'>{t('system.webhook.events.channelAutoDisabled')}</div>
+            {WEBHOOK_EVENTS.map(({ event, descriptionKey }) => (
+              <div key={event} className='bg-background flex items-center justify-between rounded-md border p-3'>
+                <div className='space-y-1'>
+                  <div className='font-mono text-xs'>{event}</div>
+                  <div className='text-muted-foreground text-sm'>{t(descriptionKey)}</div>
+                </div>
+                <div className='text-muted-foreground text-sm'>
+                  {t('system.webhook.subscriptionCount', { count: getSubscribedTargetNames(event).size })}
+                </div>
               </div>
-              <div className='text-muted-foreground text-sm'>
-                {t('system.webhook.subscriptionCount', { count: subscribedTargetCount })}
-              </div>
-            </div>
+            ))}
           </div>
 
           <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3'>
@@ -376,7 +379,6 @@ export function WebhookSettings() {
             <div className='space-y-4'>
               {formData.targets.map((target, targetIndex) => {
                 const targetName = target.name.trim();
-                const targetSubscribed = targetName ? isTargetSubscribed(targetName) : false;
                 const hasDuplicateName = !!targetName && normalizedNameCounts[targetName] > 1;
                 const proxyType = target.proxy?.type || proxyTypeSchema.enum.disabled;
 
@@ -536,18 +538,20 @@ export function WebhookSettings() {
                         <div className='text-sm font-medium'>{t('system.webhook.subscription')}</div>
                         <div className='text-muted-foreground text-sm'>{t('system.webhook.subscriptionHelp')}</div>
                       </div>
-                      <label className='flex items-start gap-3'>
-                        <Checkbox
-                          checked={targetSubscribed}
-                          onCheckedChange={(checked) => handleSubscriptionChange(target.name.trim(), checked === true)}
-                          disabled={!target.name.trim()}
-                          className='shrink-0 mt-0.5'
-                        />
-                        <div className='space-y-1 min-w-0 flex-1'>
-                          <div className='font-mono text-xs break-all'>{AUTO_DISABLED_EVENT}</div>
-                          <div className='text-muted-foreground text-sm'>{t('system.webhook.events.channelAutoDisabled')}</div>
-                        </div>
-                      </label>
+                      {WEBHOOK_EVENTS.map(({ event, descriptionKey }) => (
+                        <label key={event} className='flex items-start gap-3'>
+                          <Checkbox
+                            checked={!!targetName && isTargetSubscribed(event, targetName)}
+                            onCheckedChange={(checked) => handleSubscriptionChange(event, targetName, checked === true)}
+                            disabled={!targetName}
+                            className='shrink-0 mt-0.5'
+                          />
+                          <div className='space-y-1 min-w-0 flex-1'>
+                            <div className='font-mono text-xs break-all'>{event}</div>
+                            <div className='text-muted-foreground text-sm'>{t(descriptionKey)}</div>
+                          </div>
+                        </label>
+                      ))}
                     </div>
 
                     <div className='space-y-3'>

@@ -108,6 +108,7 @@ const RETRY_POLICY_QUERY = `
         openDurationSeconds
         maxOpenDurationSeconds
         probeSuccessThreshold
+        ownerFailoverThreshold
         unstableWindowSeconds
       }
       upstreamErrorPolicy {
@@ -360,6 +361,7 @@ export interface HealthGatePolicy {
   maxOpenDurationSeconds: number;
   probeSuccessThreshold: number;
   unstableWindowSeconds: number;
+  ownerFailoverThreshold: number;
 }
 
 export const DEFAULT_HEALTH_GATE_POLICY: HealthGatePolicy = {
@@ -368,6 +370,7 @@ export const DEFAULT_HEALTH_GATE_POLICY: HealthGatePolicy = {
   maxOpenDurationSeconds: 3600,
   probeSuccessThreshold: 2,
   unstableWindowSeconds: 300,
+  ownerFailoverThreshold: 2,
 };
 
 export interface RetryPolicy {

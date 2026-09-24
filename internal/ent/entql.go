@@ -411,6 +411,7 @@ var schemaGraph = func() *sqlgraph.Schema {
 			request.FieldResponseBody:               {Type: field.TypeJSON, Column: request.FieldResponseBody},
 			request.FieldResponseChunks:             {Type: field.TypeJSON, Column: request.FieldResponseChunks},
 			request.FieldChannelID:                  {Type: field.TypeInt, Column: request.FieldChannelID},
+			request.FieldRoutingDecision:            {Type: field.TypeJSON, Column: request.FieldRoutingDecision},
 			request.FieldExternalID:                 {Type: field.TypeString, Column: request.FieldExternalID},
 			request.FieldStatus:                     {Type: field.TypeEnum, Column: request.FieldStatus},
 			request.FieldStream:                     {Type: field.TypeBool, Column: request.FieldStream},
@@ -3326,6 +3327,11 @@ func (f *RequestFilter) WhereResponseChunks(p entql.BytesP) {
 // WhereChannelID applies the entql int predicate on the channel_id field.
 func (f *RequestFilter) WhereChannelID(p entql.IntP) {
 	f.Where(p.Field(request.FieldChannelID))
+}
+
+// WhereRoutingDecision applies the entql json.RawMessage predicate on the routing_decision field.
+func (f *RequestFilter) WhereRoutingDecision(p entql.BytesP) {
+	f.Where(p.Field(request.FieldRoutingDecision))
 }
 
 // WhereExternalID applies the entql string predicate on the external_id field.

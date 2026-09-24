@@ -102,6 +102,20 @@ type HealthGateModelSnapshot struct {
 	OpenUntil           *time.Time
 }
 
+// HealthGateTransition describes a closed-to-open or open-to-recovered transition.
+type HealthGateTransition struct {
+	Key                   HealthGateKey
+	Kind                  string
+	At                    time.Time
+	ConsecutiveFailures   int
+	FailureThreshold      int
+	ProbeSuccesses        int
+	ProbeSuccessThreshold int
+	OpenUntil             time.Time
+	LastStatusCode        int
+	LastError             string
+}
+
 type healthGateEntry struct {
 	gen                  uint64
 	disabled             bool
@@ -124,12 +138,13 @@ type healthGateEntry struct {
 
 type HealthGate struct {
 	// Lock order: channel observation lock, then mu. Resolvers never run under mu.
-	obsMu       sync.Mutex
-	obsLocks    map[int]*sync.Mutex
-	mu          sync.Mutex
-	entries     map[HealthGateKey]*healthGateEntry
-	nextProbeID uint64
-	now         func() time.Time
+	obsMu             sync.Mutex
+	obsLocks          map[int]*sync.Mutex
+	mu                sync.Mutex
+	entries           map[HealthGateKey]*healthGateEntry
+	nextProbeID       uint64
+	now               func() time.Time
+	transitionHandler func(HealthGateTransition)
 }
 
 func NewHealthGate(now func() time.Time) *HealthGate {
@@ -140,8 +155,19 @@ func NewHealthGate(now func() time.Time) *HealthGate {
 }
 
 func (svc *ChannelService) HealthGate() *HealthGate {
-	svc.healthGateOnce.Do(func() { svc.healthGate = NewHealthGate(nil) })
+	svc.healthGateOnce.Do(func() {
+		svc.healthGate = NewHealthGate(nil)
+		svc.healthGate.SetTransitionHandler(svc.notifyHealthGateTransition)
+	})
 	return svc.healthGate
+}
+
+// SetTransitionHandler installs a callback for genuine opening and recovery transitions.
+// Finish invokes it after releasing both gate locks.
+func (g *HealthGate) SetTransitionHandler(handler func(HealthGateTransition)) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.transitionHandler = handler
 }
 
 func (g *HealthGate) observationLock(channelID int) *sync.Mutex {
@@ -300,10 +326,17 @@ func healthGateRecordError(entry *healthGateEntry, now time.Time, info HealthGat
 func (g *HealthGate) Finish(t HealthGateTicket, resolve HealthGateConfigResolver, outcome HealthGateOutcome, info HealthGateErrorInfo) {
 	observation := g.observationLock(t.key.ChannelID)
 	observation.Lock()
-	defer observation.Unlock()
 	cfg, current := resolve()
 	g.mu.Lock()
-	defer g.mu.Unlock()
+	var transition *HealthGateTransition
+	defer func() {
+		handler := g.transitionHandler
+		g.mu.Unlock()
+		observation.Unlock()
+		if transition != nil && handler != nil {
+			handler(*transition)
+		}
+	}()
 	entry := g.entries[t.key]
 	if t.noop || entry == nil || entry.gen != t.gen {
 		return
@@ -330,6 +363,12 @@ func (g *HealthGate) Finish(t HealthGateTicket, resolve HealthGateConfigResolver
 				entry.consecutiveFailures = 0
 				entry.probeSuccesses = 0
 				entry.recoveredAt = now
+				transition = &HealthGateTransition{
+					Key: t.key, Kind: "recovered", At: now,
+					ConsecutiveFailures: entry.consecutiveFailures, FailureThreshold: cfg.FailureThreshold,
+					ProbeSuccesses: cfg.ProbeSuccessThreshold, ProbeSuccessThreshold: cfg.ProbeSuccessThreshold,
+					LastStatusCode: entry.lastStatusCode, LastError: entry.lastError,
+				}
 			}
 		case HealthGateOutcomeFailure:
 			if healthGateOpenDuration(cfg, entry.backoffLevel) < cfg.MaxOpenDuration {
@@ -374,6 +413,12 @@ func (g *HealthGate) Finish(t HealthGateTicket, resolve HealthGateConfigResolver
 			entry.everOpened = true
 			entry.openUntil = now.Add(healthGateOpenDuration(cfg, entry.backoffLevel))
 			entry.probeSuccesses = 0
+			transition = &HealthGateTransition{
+				Key: t.key, Kind: "opened", At: now,
+				ConsecutiveFailures: entry.consecutiveFailures, FailureThreshold: cfg.FailureThreshold,
+				ProbeSuccesses: entry.probeSuccesses, ProbeSuccessThreshold: cfg.ProbeSuccessThreshold,
+				OpenUntil: entry.openUntil, LastStatusCode: entry.lastStatusCode, LastError: entry.lastError,
+			}
 		}
 	case HealthGateOutcomeUnstable:
 		entry.lastUnstableAt = now

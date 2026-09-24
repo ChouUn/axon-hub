@@ -36,6 +36,7 @@ type RequestService struct {
 	DataStorageService   *DataStorageService
 	LiveStreamRegistry   *LiveStreamRegistry
 	previousChannelCache xcache.Cache[int]
+	sessionOwnerCache    xcache.Cache[SessionOwner]
 }
 
 // NewRequestService creates a new RequestService.
@@ -56,6 +57,7 @@ func NewRequestService(
 		DataStorageService:   dataStorageService,
 		LiveStreamRegistry:   liveStreamRegistry,
 		previousChannelCache: xcache.NewFromConfig[int](cacheConfig),
+		sessionOwnerCache:    xcache.NewFromConfig[SessionOwner](cacheConfig),
 	}
 }
 

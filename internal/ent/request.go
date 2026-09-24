@@ -54,6 +54,8 @@ type Request struct {
 	ResponseChunks []objects.JSONRawMessage `json:"response_chunks,omitempty"`
 	// ChannelID holds the value of the "channel_id" field.
 	ChannelID int `json:"channel_id,omitempty"`
+	// RoutingDecision holds the value of the "routing_decision" field.
+	RoutingDecision *objects.RequestRoutingDecision `json:"routing_decision,omitempty"`
 	// ExternalID holds the value of the "external_id" field.
 	ExternalID string `json:"external_id,omitempty"`
 	// Status holds the value of the "status" field.
@@ -186,7 +188,7 @@ func (*Request) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case request.FieldRequestHeaders, request.FieldRequestBody, request.FieldResponseBody, request.FieldResponseChunks:
+		case request.FieldRequestHeaders, request.FieldRequestBody, request.FieldResponseBody, request.FieldResponseChunks, request.FieldRoutingDecision:
 			values[i] = new([]byte)
 		case request.FieldStream, request.FieldContentSaved:
 			values[i] = new(sql.NullBool)
@@ -314,6 +316,14 @@ func (_m *Request) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field channel_id", values[i])
 			} else if value.Valid {
 				_m.ChannelID = int(value.Int64)
+			}
+		case request.FieldRoutingDecision:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field routing_decision", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.RoutingDecision); err != nil {
+					return fmt.Errorf("unmarshal field routing_decision: %w", err)
+				}
 			}
 		case request.FieldExternalID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -502,6 +512,9 @@ func (_m *Request) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("channel_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ChannelID))
+	builder.WriteString(", ")
+	builder.WriteString("routing_decision=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RoutingDecision))
 	builder.WriteString(", ")
 	builder.WriteString("external_id=")
 	builder.WriteString(_m.ExternalID)

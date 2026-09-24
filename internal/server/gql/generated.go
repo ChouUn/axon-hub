@@ -877,6 +877,7 @@ type ComplexityRoot struct {
 		FailureThreshold       func(childComplexity int) int
 		MaxOpenDurationSeconds func(childComplexity int) int
 		OpenDurationSeconds    func(childComplexity int) int
+		OwnerFailoverThreshold func(childComplexity int) int
 		ProbeSuccessThreshold  func(childComplexity int) int
 		UnstableWindowSeconds  func(childComplexity int) int
 	}
@@ -1588,6 +1589,7 @@ type ComplexityRoot struct {
 		RequestHeaders             func(childComplexity int) int
 		ResponseBody               func(childComplexity int) int
 		ResponseChunks             func(childComplexity int) int
+		RoutingDecision            func(childComplexity int) int
 		Source                     func(childComplexity int) int
 		Status                     func(childComplexity int) int
 		Stream                     func(childComplexity int) int
@@ -1655,6 +1657,15 @@ type ComplexityRoot struct {
 		ItemCount    func(childComplexity int) int
 		OutputTokens func(childComplexity int) int
 		TotalTokens  func(childComplexity int) int
+	}
+
+	RequestRoutingDecision struct {
+		ConsecutiveFailovers func(childComplexity int) int
+		LastResort           func(childComplexity int) int
+		Migration            func(childComplexity int) int
+		Owner                func(childComplexity int) int
+		Skipped              func(childComplexity int) int
+		TemporaryFailover    func(childComplexity int) int
 	}
 
 	RequestStats struct {
@@ -1731,6 +1742,21 @@ type ComplexityRoot struct {
 
 	RoleInfo struct {
 		Name func(childComplexity int) int
+	}
+
+	RoutingDecisionCombo struct {
+		ActualModel func(childComplexity int) int
+		ChannelID   func(childComplexity int) int
+		ChannelName func(childComplexity int) int
+		State       func(childComplexity int) int
+	}
+
+	RoutingDecisionMigration struct {
+		FromChannelID   func(childComplexity int) int
+		FromChannelName func(childComplexity int) int
+		Reason          func(childComplexity int) int
+		ToChannelID     func(childComplexity int) int
+		ToChannelName   func(childComplexity int) int
 	}
 
 	S3 struct {
@@ -5613,6 +5639,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.HealthGatePolicy.OpenDurationSeconds(childComplexity), true
+	case "HealthGatePolicy.ownerFailoverThreshold":
+		if e.complexity.HealthGatePolicy.OwnerFailoverThreshold == nil {
+			break
+		}
+
+		return e.complexity.HealthGatePolicy.OwnerFailoverThreshold(childComplexity), true
 	case "HealthGatePolicy.probeSuccessThreshold":
 		if e.complexity.HealthGatePolicy.ProbeSuccessThreshold == nil {
 			break
@@ -9621,6 +9653,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Request.ResponseChunks(childComplexity), true
+	case "Request.routingDecision":
+		if e.complexity.Request.RoutingDecision == nil {
+			break
+		}
+
+		return e.complexity.Request.RoutingDecision(childComplexity), true
 	case "Request.source":
 		if e.complexity.Request.Source == nil {
 			break
@@ -9927,6 +9965,43 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.RequestMetadata.TotalTokens(childComplexity), true
 
+	case "RequestRoutingDecision.consecutiveFailovers":
+		if e.complexity.RequestRoutingDecision.ConsecutiveFailovers == nil {
+			break
+		}
+
+		return e.complexity.RequestRoutingDecision.ConsecutiveFailovers(childComplexity), true
+	case "RequestRoutingDecision.lastResort":
+		if e.complexity.RequestRoutingDecision.LastResort == nil {
+			break
+		}
+
+		return e.complexity.RequestRoutingDecision.LastResort(childComplexity), true
+	case "RequestRoutingDecision.migration":
+		if e.complexity.RequestRoutingDecision.Migration == nil {
+			break
+		}
+
+		return e.complexity.RequestRoutingDecision.Migration(childComplexity), true
+	case "RequestRoutingDecision.owner":
+		if e.complexity.RequestRoutingDecision.Owner == nil {
+			break
+		}
+
+		return e.complexity.RequestRoutingDecision.Owner(childComplexity), true
+	case "RequestRoutingDecision.skipped":
+		if e.complexity.RequestRoutingDecision.Skipped == nil {
+			break
+		}
+
+		return e.complexity.RequestRoutingDecision.Skipped(childComplexity), true
+	case "RequestRoutingDecision.temporaryFailover":
+		if e.complexity.RequestRoutingDecision.TemporaryFailover == nil {
+			break
+		}
+
+		return e.complexity.RequestRoutingDecision.TemporaryFailover(childComplexity), true
+
 	case "RequestStats.requestsLastWeek":
 		if e.complexity.RequestStats.RequestsLastWeek == nil {
 			break
@@ -10200,6 +10275,62 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.RoleInfo.Name(childComplexity), true
+
+	case "RoutingDecisionCombo.actualModel":
+		if e.complexity.RoutingDecisionCombo.ActualModel == nil {
+			break
+		}
+
+		return e.complexity.RoutingDecisionCombo.ActualModel(childComplexity), true
+	case "RoutingDecisionCombo.channelID":
+		if e.complexity.RoutingDecisionCombo.ChannelID == nil {
+			break
+		}
+
+		return e.complexity.RoutingDecisionCombo.ChannelID(childComplexity), true
+	case "RoutingDecisionCombo.channelName":
+		if e.complexity.RoutingDecisionCombo.ChannelName == nil {
+			break
+		}
+
+		return e.complexity.RoutingDecisionCombo.ChannelName(childComplexity), true
+	case "RoutingDecisionCombo.state":
+		if e.complexity.RoutingDecisionCombo.State == nil {
+			break
+		}
+
+		return e.complexity.RoutingDecisionCombo.State(childComplexity), true
+
+	case "RoutingDecisionMigration.fromChannelID":
+		if e.complexity.RoutingDecisionMigration.FromChannelID == nil {
+			break
+		}
+
+		return e.complexity.RoutingDecisionMigration.FromChannelID(childComplexity), true
+	case "RoutingDecisionMigration.fromChannelName":
+		if e.complexity.RoutingDecisionMigration.FromChannelName == nil {
+			break
+		}
+
+		return e.complexity.RoutingDecisionMigration.FromChannelName(childComplexity), true
+	case "RoutingDecisionMigration.reason":
+		if e.complexity.RoutingDecisionMigration.Reason == nil {
+			break
+		}
+
+		return e.complexity.RoutingDecisionMigration.Reason(childComplexity), true
+	case "RoutingDecisionMigration.toChannelID":
+		if e.complexity.RoutingDecisionMigration.ToChannelID == nil {
+			break
+		}
+
+		return e.complexity.RoutingDecisionMigration.ToChannelID(childComplexity), true
+	case "RoutingDecisionMigration.toChannelName":
+		if e.complexity.RoutingDecisionMigration.ToChannelName == nil {
+			break
+		}
+
+		return e.complexity.RoutingDecisionMigration.ToChannelName(childComplexity), true
 
 	case "S3.bucketName":
 		if e.complexity.S3.BucketName == nil {
@@ -12472,7 +12603,7 @@ func (ec *executionContext) introspectType(name string) (*introspection.Type, er
 	return introspection.WrapTypeFromDef(ec.Schema(), ec.Schema().Types[name]), nil
 }
 
-//go:embed "axonhub.graphql" "ent.graphql" "dashboard.graphql" "scopes.graphql" "me.graphql" "system.graphql" "filter.graphql" "model.graphql" "backup.graphql" "channel_probe.graphql" "channel_health_gate.graphql" "prompt.graphql" "prompt_protection_rule.graphql" "price.graphql" "cost.graphql" "analytics.graphql"
+//go:embed "axonhub.graphql" "ent.graphql" "dashboard.graphql" "scopes.graphql" "me.graphql" "system.graphql" "filter.graphql" "model.graphql" "backup.graphql" "channel_probe.graphql" "channel_health_gate.graphql" "request_routing.graphql" "prompt.graphql" "prompt_protection_rule.graphql" "price.graphql" "cost.graphql" "analytics.graphql"
 var sourcesFS embed.FS
 
 func sourceData(filename string) string {
@@ -12495,6 +12626,7 @@ var sources = []*ast.Source{
 	{Name: "backup.graphql", Input: sourceData("backup.graphql"), BuiltIn: false},
 	{Name: "channel_probe.graphql", Input: sourceData("channel_probe.graphql"), BuiltIn: false},
 	{Name: "channel_health_gate.graphql", Input: sourceData("channel_health_gate.graphql"), BuiltIn: false},
+	{Name: "request_routing.graphql", Input: sourceData("request_routing.graphql"), BuiltIn: false},
 	{Name: "prompt.graphql", Input: sourceData("prompt.graphql"), BuiltIn: false},
 	{Name: "prompt_protection_rule.graphql", Input: sourceData("prompt_protection_rule.graphql"), BuiltIn: false},
 	{Name: "price.graphql", Input: sourceData("price.graphql"), BuiltIn: false},
@@ -31354,6 +31486,35 @@ func (ec *executionContext) _HealthGatePolicy_unstableWindowSeconds(ctx context.
 }
 
 func (ec *executionContext) fieldContext_HealthGatePolicy_unstableWindowSeconds(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HealthGatePolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HealthGatePolicy_ownerFailoverThreshold(ctx context.Context, field graphql.CollectedField, obj *biz.HealthGatePolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_HealthGatePolicy_ownerFailoverThreshold,
+		func(ctx context.Context) (any, error) {
+			return obj.OwnerFailoverThreshold, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_HealthGatePolicy_ownerFailoverThreshold(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "HealthGatePolicy",
 		Field:      field,
@@ -51153,6 +51314,49 @@ func (ec *executionContext) fieldContext_Request_channelID(_ context.Context, fi
 	return fc, nil
 }
 
+func (ec *executionContext) _Request_routingDecision(ctx context.Context, field graphql.CollectedField, obj *ent.Request) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Request_routingDecision,
+		func(ctx context.Context) (any, error) {
+			return obj.RoutingDecision, nil
+		},
+		nil,
+		ec.marshalORequestRoutingDecision2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐRequestRoutingDecision,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_Request_routingDecision(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Request",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "owner":
+				return ec.fieldContext_RequestRoutingDecision_owner(ctx, field)
+			case "skipped":
+				return ec.fieldContext_RequestRoutingDecision_skipped(ctx, field)
+			case "temporaryFailover":
+				return ec.fieldContext_RequestRoutingDecision_temporaryFailover(ctx, field)
+			case "lastResort":
+				return ec.fieldContext_RequestRoutingDecision_lastResort(ctx, field)
+			case "consecutiveFailovers":
+				return ec.fieldContext_RequestRoutingDecision_consecutiveFailovers(ctx, field)
+			case "migration":
+				return ec.fieldContext_RequestRoutingDecision_migration(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type RequestRoutingDecision", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Request_externalID(ctx context.Context, field graphql.CollectedField, obj *ent.Request) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -52064,6 +52268,8 @@ func (ec *executionContext) fieldContext_RequestEdge_node(_ context.Context, fie
 				return ec.fieldContext_Request_responseChunks(ctx, field)
 			case "channelID":
 				return ec.fieldContext_Request_channelID(ctx, field)
+			case "routingDecision":
+				return ec.fieldContext_Request_routingDecision(ctx, field)
 			case "externalID":
 				return ec.fieldContext_Request_externalID(ctx, field)
 			case "status":
@@ -52888,6 +53094,8 @@ func (ec *executionContext) fieldContext_RequestExecution_request(_ context.Cont
 				return ec.fieldContext_Request_responseChunks(ctx, field)
 			case "channelID":
 				return ec.fieldContext_Request_channelID(ctx, field)
+			case "routingDecision":
+				return ec.fieldContext_Request_routingDecision(ctx, field)
 			case "externalID":
 				return ec.fieldContext_Request_externalID(ctx, field)
 			case "status":
@@ -53436,6 +53644,212 @@ func (ec *executionContext) fieldContext_RequestMetadata_cachedTokens(_ context.
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RequestRoutingDecision_owner(ctx context.Context, field graphql.CollectedField, obj *objects.RequestRoutingDecision) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RequestRoutingDecision_owner,
+		func(ctx context.Context) (any, error) {
+			return obj.Owner, nil
+		},
+		nil,
+		ec.marshalORoutingDecisionCombo2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐRoutingDecisionCombo,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_RequestRoutingDecision_owner(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RequestRoutingDecision",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "channelID":
+				return ec.fieldContext_RoutingDecisionCombo_channelID(ctx, field)
+			case "channelName":
+				return ec.fieldContext_RoutingDecisionCombo_channelName(ctx, field)
+			case "actualModel":
+				return ec.fieldContext_RoutingDecisionCombo_actualModel(ctx, field)
+			case "state":
+				return ec.fieldContext_RoutingDecisionCombo_state(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type RoutingDecisionCombo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RequestRoutingDecision_skipped(ctx context.Context, field graphql.CollectedField, obj *objects.RequestRoutingDecision) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RequestRoutingDecision_skipped,
+		func(ctx context.Context) (any, error) {
+			return obj.Skipped, nil
+		},
+		nil,
+		ec.marshalNRoutingDecisionCombo2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐRoutingDecisionComboᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RequestRoutingDecision_skipped(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RequestRoutingDecision",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "channelID":
+				return ec.fieldContext_RoutingDecisionCombo_channelID(ctx, field)
+			case "channelName":
+				return ec.fieldContext_RoutingDecisionCombo_channelName(ctx, field)
+			case "actualModel":
+				return ec.fieldContext_RoutingDecisionCombo_actualModel(ctx, field)
+			case "state":
+				return ec.fieldContext_RoutingDecisionCombo_state(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type RoutingDecisionCombo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RequestRoutingDecision_temporaryFailover(ctx context.Context, field graphql.CollectedField, obj *objects.RequestRoutingDecision) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RequestRoutingDecision_temporaryFailover,
+		func(ctx context.Context) (any, error) {
+			return obj.TemporaryFailover, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RequestRoutingDecision_temporaryFailover(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RequestRoutingDecision",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RequestRoutingDecision_lastResort(ctx context.Context, field graphql.CollectedField, obj *objects.RequestRoutingDecision) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RequestRoutingDecision_lastResort,
+		func(ctx context.Context) (any, error) {
+			return obj.LastResort, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RequestRoutingDecision_lastResort(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RequestRoutingDecision",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RequestRoutingDecision_consecutiveFailovers(ctx context.Context, field graphql.CollectedField, obj *objects.RequestRoutingDecision) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RequestRoutingDecision_consecutiveFailovers,
+		func(ctx context.Context) (any, error) {
+			return obj.ConsecutiveFailovers, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RequestRoutingDecision_consecutiveFailovers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RequestRoutingDecision",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RequestRoutingDecision_migration(ctx context.Context, field graphql.CollectedField, obj *objects.RequestRoutingDecision) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RequestRoutingDecision_migration,
+		func(ctx context.Context) (any, error) {
+			return obj.Migration, nil
+		},
+		nil,
+		ec.marshalORoutingDecisionMigration2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐRoutingDecisionMigration,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_RequestRoutingDecision_migration(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RequestRoutingDecision",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "fromChannelID":
+				return ec.fieldContext_RoutingDecisionMigration_fromChannelID(ctx, field)
+			case "fromChannelName":
+				return ec.fieldContext_RoutingDecisionMigration_fromChannelName(ctx, field)
+			case "toChannelID":
+				return ec.fieldContext_RoutingDecisionMigration_toChannelID(ctx, field)
+			case "toChannelName":
+				return ec.fieldContext_RoutingDecisionMigration_toChannelName(ctx, field)
+			case "reason":
+				return ec.fieldContext_RoutingDecisionMigration_reason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type RoutingDecisionMigration", field.Name)
 		},
 	}
 	return fc, nil
@@ -54183,6 +54597,8 @@ func (ec *executionContext) fieldContext_RetryPolicy_healthGate(_ context.Contex
 				return ec.fieldContext_HealthGatePolicy_probeSuccessThreshold(ctx, field)
 			case "unstableWindowSeconds":
 				return ec.fieldContext_HealthGatePolicy_unstableWindowSeconds(ctx, field)
+			case "ownerFailoverThreshold":
+				return ec.fieldContext_HealthGatePolicy_ownerFailoverThreshold(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type HealthGatePolicy", field.Name)
 		},
@@ -54812,6 +55228,267 @@ func (ec *executionContext) _RoleInfo_name(ctx context.Context, field graphql.Co
 func (ec *executionContext) fieldContext_RoleInfo_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "RoleInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RoutingDecisionCombo_channelID(ctx context.Context, field graphql.CollectedField, obj *objects.RoutingDecisionCombo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RoutingDecisionCombo_channelID,
+		func(ctx context.Context) (any, error) {
+			return obj.ChannelID, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RoutingDecisionCombo_channelID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RoutingDecisionCombo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RoutingDecisionCombo_channelName(ctx context.Context, field graphql.CollectedField, obj *objects.RoutingDecisionCombo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RoutingDecisionCombo_channelName,
+		func(ctx context.Context) (any, error) {
+			return obj.ChannelName, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RoutingDecisionCombo_channelName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RoutingDecisionCombo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RoutingDecisionCombo_actualModel(ctx context.Context, field graphql.CollectedField, obj *objects.RoutingDecisionCombo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RoutingDecisionCombo_actualModel,
+		func(ctx context.Context) (any, error) {
+			return obj.ActualModel, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RoutingDecisionCombo_actualModel(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RoutingDecisionCombo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RoutingDecisionCombo_state(ctx context.Context, field graphql.CollectedField, obj *objects.RoutingDecisionCombo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RoutingDecisionCombo_state,
+		func(ctx context.Context) (any, error) {
+			return obj.State, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_RoutingDecisionCombo_state(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RoutingDecisionCombo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RoutingDecisionMigration_fromChannelID(ctx context.Context, field graphql.CollectedField, obj *objects.RoutingDecisionMigration) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RoutingDecisionMigration_fromChannelID,
+		func(ctx context.Context) (any, error) {
+			return obj.FromChannelID, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RoutingDecisionMigration_fromChannelID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RoutingDecisionMigration",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RoutingDecisionMigration_fromChannelName(ctx context.Context, field graphql.CollectedField, obj *objects.RoutingDecisionMigration) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RoutingDecisionMigration_fromChannelName,
+		func(ctx context.Context) (any, error) {
+			return obj.FromChannelName, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RoutingDecisionMigration_fromChannelName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RoutingDecisionMigration",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RoutingDecisionMigration_toChannelID(ctx context.Context, field graphql.CollectedField, obj *objects.RoutingDecisionMigration) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RoutingDecisionMigration_toChannelID,
+		func(ctx context.Context) (any, error) {
+			return obj.ToChannelID, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RoutingDecisionMigration_toChannelID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RoutingDecisionMigration",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RoutingDecisionMigration_toChannelName(ctx context.Context, field graphql.CollectedField, obj *objects.RoutingDecisionMigration) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RoutingDecisionMigration_toChannelName,
+		func(ctx context.Context) (any, error) {
+			return obj.ToChannelName, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RoutingDecisionMigration_toChannelName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RoutingDecisionMigration",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RoutingDecisionMigration_reason(ctx context.Context, field graphql.CollectedField, obj *objects.RoutingDecisionMigration) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RoutingDecisionMigration_reason,
+		func(ctx context.Context) (any, error) {
+			return obj.Reason, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RoutingDecisionMigration_reason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RoutingDecisionMigration",
 		Field:      field,
 		IsMethod:   false,
 		IsResolver: false,
@@ -61519,6 +62196,8 @@ func (ec *executionContext) fieldContext_UsageLog_request(_ context.Context, fie
 				return ec.fieldContext_Request_responseChunks(ctx, field)
 			case "channelID":
 				return ec.fieldContext_Request_channelID(ctx, field)
+			case "routingDecision":
+				return ec.fieldContext_Request_routingDecision(ctx, field)
 			case "externalID":
 				return ec.fieldContext_Request_externalID(ctx, field)
 			case "status":
@@ -75391,7 +76070,7 @@ func (ec *executionContext) unmarshalInputHealthGatePolicyInput(ctx context.Cont
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"failureThreshold", "openDurationSeconds", "maxOpenDurationSeconds", "probeSuccessThreshold", "unstableWindowSeconds"}
+	fieldsInOrder := [...]string{"failureThreshold", "openDurationSeconds", "maxOpenDurationSeconds", "probeSuccessThreshold", "unstableWindowSeconds", "ownerFailoverThreshold"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -75433,6 +76112,13 @@ func (ec *executionContext) unmarshalInputHealthGatePolicyInput(ctx context.Cont
 				return it, err
 			}
 			it.UnstableWindowSeconds = data
+		case "ownerFailoverThreshold":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("ownerFailoverThreshold"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OwnerFailoverThreshold = data
 		}
 	}
 
@@ -100190,6 +100876,11 @@ func (ec *executionContext) _HealthGatePolicy(ctx context.Context, sel ast.Selec
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "ownerFailoverThreshold":
+			out.Values[i] = ec._HealthGatePolicy_ownerFailoverThreshold(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -107490,6 +108181,8 @@ func (ec *executionContext) _Request(ctx context.Context, sel ast.SelectionSet, 
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "routingDecision":
+			out.Values[i] = ec._Request_routingDecision(ctx, field, obj)
 		case "externalID":
 			out.Values[i] = ec._Request_externalID(ctx, field, obj)
 		case "status":
@@ -108439,6 +109132,64 @@ func (ec *executionContext) _RequestMetadata(ctx context.Context, sel ast.Select
 	return out
 }
 
+var requestRoutingDecisionImplementors = []string{"RequestRoutingDecision"}
+
+func (ec *executionContext) _RequestRoutingDecision(ctx context.Context, sel ast.SelectionSet, obj *objects.RequestRoutingDecision) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, requestRoutingDecisionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RequestRoutingDecision")
+		case "owner":
+			out.Values[i] = ec._RequestRoutingDecision_owner(ctx, field, obj)
+		case "skipped":
+			out.Values[i] = ec._RequestRoutingDecision_skipped(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "temporaryFailover":
+			out.Values[i] = ec._RequestRoutingDecision_temporaryFailover(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lastResort":
+			out.Values[i] = ec._RequestRoutingDecision_lastResort(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "consecutiveFailovers":
+			out.Values[i] = ec._RequestRoutingDecision_consecutiveFailovers(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "migration":
+			out.Values[i] = ec._RequestRoutingDecision_migration(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var requestStatsImplementors = []string{"RequestStats"}
 
 func (ec *executionContext) _RequestStats(ctx context.Context, sel ast.SelectionSet, obj *RequestStats) graphql.Marshaler {
@@ -109133,6 +109884,116 @@ func (ec *executionContext) _RoleInfo(ctx context.Context, sel ast.SelectionSet,
 			out.Values[i] = graphql.MarshalString("RoleInfo")
 		case "name":
 			out.Values[i] = ec._RoleInfo_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var routingDecisionComboImplementors = []string{"RoutingDecisionCombo"}
+
+func (ec *executionContext) _RoutingDecisionCombo(ctx context.Context, sel ast.SelectionSet, obj *objects.RoutingDecisionCombo) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, routingDecisionComboImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RoutingDecisionCombo")
+		case "channelID":
+			out.Values[i] = ec._RoutingDecisionCombo_channelID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "channelName":
+			out.Values[i] = ec._RoutingDecisionCombo_channelName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "actualModel":
+			out.Values[i] = ec._RoutingDecisionCombo_actualModel(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "state":
+			out.Values[i] = ec._RoutingDecisionCombo_state(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var routingDecisionMigrationImplementors = []string{"RoutingDecisionMigration"}
+
+func (ec *executionContext) _RoutingDecisionMigration(ctx context.Context, sel ast.SelectionSet, obj *objects.RoutingDecisionMigration) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, routingDecisionMigrationImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RoutingDecisionMigration")
+		case "fromChannelID":
+			out.Values[i] = ec._RoutingDecisionMigration_fromChannelID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "fromChannelName":
+			out.Values[i] = ec._RoutingDecisionMigration_fromChannelName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "toChannelID":
+			out.Values[i] = ec._RoutingDecisionMigration_toChannelID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "toChannelName":
+			out.Values[i] = ec._RoutingDecisionMigration_toChannelName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "reason":
+			out.Values[i] = ec._RoutingDecisionMigration_reason(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -119711,6 +120572,54 @@ func (ec *executionContext) unmarshalNRoleWhereInput2ᚖgithubᚗcomᚋloopljᚋ
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalNRoutingDecisionCombo2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐRoutingDecisionCombo(ctx context.Context, sel ast.SelectionSet, v objects.RoutingDecisionCombo) graphql.Marshaler {
+	return ec._RoutingDecisionCombo(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNRoutingDecisionCombo2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐRoutingDecisionComboᚄ(ctx context.Context, sel ast.SelectionSet, v []objects.RoutingDecisionCombo) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNRoutingDecisionCombo2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐRoutingDecisionCombo(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
 func (ec *executionContext) unmarshalNSaveChannelEndpointsInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋbizᚐSaveChannelEndpointsInput(ctx context.Context, v any) (biz.SaveChannelEndpointsInput, error) {
 	res, err := ec.unmarshalInputSaveChannelEndpointsInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -126370,6 +127279,13 @@ func (ec *executionContext) unmarshalORequestOrder2ᚖgithubᚗcomᚋloopljᚋax
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalORequestRoutingDecision2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐRequestRoutingDecision(ctx context.Context, sel ast.SelectionSet, v *objects.RequestRoutingDecision) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._RequestRoutingDecision(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalORequestSource2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋentᚋrequestᚐSourceᚄ(ctx context.Context, v any) ([]request.Source, error) {
 	if v == nil {
 		return nil, nil
@@ -126791,6 +127707,20 @@ func (ec *executionContext) unmarshalORoleWhereInput2ᚖgithubᚗcomᚋloopljᚋ
 	}
 	res, err := ec.unmarshalInputRoleWhereInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalORoutingDecisionCombo2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐRoutingDecisionCombo(ctx context.Context, sel ast.SelectionSet, v *objects.RoutingDecisionCombo) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._RoutingDecisionCombo(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalORoutingDecisionMigration2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐRoutingDecisionMigration(ctx context.Context, sel ast.SelectionSet, v *objects.RoutingDecisionMigration) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._RoutingDecisionMigration(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalOS32ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐS3(ctx context.Context, sel ast.SelectionSet, v *objects.S3) graphql.Marshaler {

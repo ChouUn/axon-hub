@@ -1,0 +1,23 @@
+type RequestRoutingDecision {
+  owner: RoutingDecisionCombo
+  skipped: [RoutingDecisionCombo!]!
+  temporaryFailover: Boolean!
+  lastResort: Boolean!
+  consecutiveFailovers: Int!
+  migration: RoutingDecisionMigration
+}
+
+type RoutingDecisionCombo {
+  channelID: Int!
+  channelName: String!
+  actualModel: String!
+  state: String
+}
+
+type RoutingDecisionMigration {
+  fromChannelID: Int!
+  fromChannelName: String!
+  toChannelID: Int!
+  toChannelName: String!
+  reason: String!
+}

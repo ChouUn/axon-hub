@@ -87,6 +87,9 @@ func (Request) Fields() []ent.Field {
 			entgql.Directives(forceResolver()),
 		),
 		field.Int("channel_id").Optional(),
+		field.JSON("routing_decision", &objects.RequestRoutingDecision{}).
+			Optional().
+			Annotations(entgql.Skip(entgql.SkipMutationCreateInput, entgql.SkipMutationUpdateInput)),
 		// External ID for tracking requests in external systems
 		field.String("external_id").
 			Optional().

@@ -7,6 +7,8 @@ type HealthGatePolicy struct {
 	MaxOpenDurationSeconds int `json:"max_open_duration_seconds"`
 	ProbeSuccessThreshold  int `json:"probe_success_threshold"`
 	UnstableWindowSeconds  int `json:"unstable_window_seconds"`
+	// OwnerFailoverThreshold (K) migrates a session after K consecutive failover-completed requests.
+	OwnerFailoverThreshold int `json:"owner_failover_threshold"`
 }
 
 func DefaultHealthGatePolicy() HealthGatePolicy {
@@ -16,6 +18,7 @@ func DefaultHealthGatePolicy() HealthGatePolicy {
 		MaxOpenDurationSeconds: 3600,
 		ProbeSuccessThreshold:  2,
 		UnstableWindowSeconds:  300,
+		OwnerFailoverThreshold: 2,
 	}
 }
 
@@ -55,6 +58,9 @@ func normalizedHealthGatePolicy(policy HealthGatePolicy) HealthGatePolicy {
 	}
 	if policy.UnstableWindowSeconds <= 0 {
 		policy.UnstableWindowSeconds = defaults.UnstableWindowSeconds
+	}
+	if policy.OwnerFailoverThreshold <= 0 {
+		policy.OwnerFailoverThreshold = defaults.OwnerFailoverThreshold
 	}
 	return policy
 }

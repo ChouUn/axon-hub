@@ -16,6 +16,21 @@ import (
 	"github.com/looplj/axonhub/llm/httpclient"
 )
 
+type healthGateLegacySessionProvider struct {
+	PreviousChannelProvider
+}
+
+func (p healthGateLegacySessionProvider) GetSessionOwner(ctx context.Context, threadID, traceID int) (biz.SessionOwner, bool, error) {
+	id := 0
+	var err error
+	if threadID != 0 {
+		id, err = p.GetPreviousChannelIDByThread(ctx, threadID)
+	} else if traceID != 0 {
+		id, err = p.GetPreviousChannelID(ctx, traceID)
+	}
+	return biz.SessionOwner{ChannelID: id}, id != 0, err
+}
+
 func healthGateResolver(cfg biz.HealthGateConfig) biz.HealthGateConfigResolver {
 	return func() (biz.HealthGateConfig, bool) { return cfg, true }
 }
@@ -27,6 +42,9 @@ func healthGateSelectorFixture(now *time.Time, candidates []*ChannelModelsCandid
 		TraceStickyMode: stickyMode, HealthGate: &biz.HealthGatePolicy{FailureThreshold: 1, OpenDurationSeconds: 10, MaxOpenDurationSeconds: 60, ProbeSuccessThreshold: 2, UnstableWindowSeconds: 30},
 	}
 	provider := &mockRetryPolicyProvider{policy: policy}
+	if previous != nil {
+		previous = healthGateLegacySessionProvider{previous}
+	}
 	selector := WithTraceStickyLoadBalancedSelector(&staticChannelSelector{candidates: candidates}, NewLoadBalancer(provider, nil).WithHealthGate(gate), provider, previous)
 	return selector, gate, policy
 }

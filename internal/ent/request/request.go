@@ -48,6 +48,8 @@ const (
 	FieldResponseChunks = "response_chunks"
 	// FieldChannelID holds the string denoting the channel_id field in the database.
 	FieldChannelID = "channel_id"
+	// FieldRoutingDecision holds the string denoting the routing_decision field in the database.
+	FieldRoutingDecision = "routing_decision"
 	// FieldExternalID holds the string denoting the external_id field in the database.
 	FieldExternalID = "external_id"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -155,6 +157,7 @@ var Columns = []string{
 	FieldResponseBody,
 	FieldResponseChunks,
 	FieldChannelID,
+	FieldRoutingDecision,
 	FieldExternalID,
 	FieldStatus,
 	FieldStream,

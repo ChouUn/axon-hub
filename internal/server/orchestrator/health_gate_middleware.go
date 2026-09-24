@@ -28,6 +28,7 @@ type healthGateAttemptTracker struct {
 	lastOutcome biz.HealthGateOutcome
 	lastInfo    biz.HealthGateErrorInfo
 	lastResort  bool
+	decision    *healthGateRequestDecision
 	committed   bool
 }
 
@@ -73,6 +74,12 @@ func (m *healthGateAttemptTracker) OnOutboundRawRequest(ctx context.Context, req
 	m.finishActive(ctx)
 	candidate := m.outbound.state.CurrentCandidate
 	info := candidate.healthGate
+	if info != nil {
+		m.decision = info.decision
+		if info.lastResort && m.decision != nil {
+			m.decision.record.LastResort = true
+		}
+	}
 	resolve := currentHealthGateConfig(ctx, m.outbound.state.RetryPolicyProvider, m.outbound.state.ChannelService, channel, m.policy)
 	allowProbe, lastResort := false, false
 	if info != nil {
@@ -122,6 +129,9 @@ func (m *healthGateAttemptTracker) finalize(ctx context.Context, err error, stre
 		return err
 	}
 	m.mu.Lock()
+	if m.decision == nil {
+		m.decision = healthGateDecisionFromContext(ctx)
+	}
 	defer m.mu.Unlock()
 	if err == nil && stream {
 		m.committed = true
@@ -130,6 +140,9 @@ func (m *healthGateAttemptTracker) finalize(ctx context.Context, err error, stre
 	if err == nil {
 		m.lastOutcome = biz.HealthGateOutcomeSuccess
 		m.lastInfo = biz.HealthGateErrorInfo{}
+		if healthGateClientCanceled(ctx) {
+			m.lastOutcome = biz.HealthGateOutcomeNeutral
+		}
 	} else if m.active {
 		// The final error can be synthesized after the raw error callback (timeouts,
 		// empty bodies); use its classification when it carries new information.
@@ -138,6 +151,7 @@ func (m *healthGateAttemptTracker) finalize(ctx context.Context, err error, stre
 	}
 	failure := m.lastResort && m.lastOutcome == biz.HealthGateOutcomeFailure
 	m.finishActive(ctx)
+	m.finishSession(ctx, err == nil && !healthGateClientCanceled(ctx))
 	if err != nil && (failure || errors.Is(err, errSkipCandidateByHealthGate)) {
 		return healthGateUnavailableError()
 	}
@@ -172,6 +186,9 @@ func (s *healthGateStream) Close() error {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		if !m.active {
+			if m.committed {
+				m.finishSession(s.ctx, false)
+			}
 			return
 		}
 		var outcome biz.HealthGateOutcome
@@ -196,6 +213,7 @@ func (s *healthGateStream) Close() error {
 		m.lastInfo = healthGateErrorInfo(streamErr)
 		if m.committed {
 			m.finishActive(s.ctx)
+			m.finishSession(s.ctx, outcome == biz.HealthGateOutcomeSuccess && !healthGateClientCanceled(s.ctx))
 		}
 	})
 	return closeErr

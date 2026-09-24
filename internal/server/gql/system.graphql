@@ -139,6 +139,7 @@ type HealthGatePolicy {
   maxOpenDurationSeconds: Int!
   probeSuccessThreshold: Int!
   unstableWindowSeconds: Int!
+  ownerFailoverThreshold: Int!
 }
 
 input HealthGatePolicyInput {
@@ -147,6 +148,7 @@ input HealthGatePolicyInput {
   maxOpenDurationSeconds: Int!
   probeSuccessThreshold: Int!
   unstableWindowSeconds: Int!
+  ownerFailoverThreshold: Int!
 }
 
 type UpstreamErrorPolicy {

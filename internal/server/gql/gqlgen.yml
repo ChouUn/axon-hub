@@ -13,6 +13,7 @@ schema:
   - backup.graphql
   - channel_probe.graphql
   - channel_health_gate.graphql
+  - request_routing.graphql
   - prompt.graphql
   - prompt_protection_rule.graphql
   - price.graphql
@@ -227,6 +228,15 @@ models:
   HealthGatePolicyInput:
     model:
       - github.com/looplj/axonhub/internal/server/biz.HealthGatePolicy
+  RequestRoutingDecision:
+    model:
+      - github.com/looplj/axonhub/internal/objects.RequestRoutingDecision
+  RoutingDecisionCombo:
+    model:
+      - github.com/looplj/axonhub/internal/objects.RoutingDecisionCombo
+  RoutingDecisionMigration:
+    model:
+      - github.com/looplj/axonhub/internal/objects.RoutingDecisionMigration
   WebhookNotifierConfig:
     model:
       - github.com/looplj/axonhub/internal/server/biz.WebhookNotifierConfig

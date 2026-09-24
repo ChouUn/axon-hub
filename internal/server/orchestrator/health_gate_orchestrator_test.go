@@ -59,7 +59,7 @@ func healthGateOrchestratorFixture(t *testing.T, ctx context.Context, client *en
 		PipelineFactory: pipeline.NewFactory(executor), ModelMapper: NewModelMapper(),
 		channelLimiterManager:   NewChannelLimiterManager(),
 		Middlewares:             []pipeline.Middleware{stream.EnsureUsage()},
-		healthGatedLoadBalancer: NewLoadBalancer(systemService, nil).WithHealthGate(gate),
+		healthGatedLoadBalancer: NewLoadBalancer(systemService, channelService).WithHealthGate(gate),
 	}
 	return ctx, processor, gate
 }
@@ -92,6 +92,40 @@ func TestHealthGateOrchestrator_OpensAndSkipsBrokenChannel(t *testing.T) {
 	cfg := biz.ResolveHealthGateConfig(orchestrator.SystemService.RetryPolicyOrDefault(processCtx).HealthGateOrDefault(), &biz.Channel{Channel: first})
 	view := gate.Inspect(biz.HealthGateKey{ChannelID: first.ID, ActualModel: "gpt-4"}, healthGateResolver(cfg))
 	require.Equal(t, biz.HealthGateStateOpen, view.State)
+}
+
+func TestHealthGateOrchestrator_OwnerOpensDuringFailoverAndMigratesImmediately(t *testing.T) {
+	ctx, client := setupTest(t)
+	primary := createTestChannel(t, ctx, client)
+	backup, err := client.Channel.Create().SetType(channel.TypeOpenai).SetName("Backup Channel").
+		SetBaseURL("https://backup.example/v1").SetCredentials(objects.ChannelCredentials{APIKey: "backup-key"}).
+		SetSupportedModels([]string{"gpt-4"}).SetDefaultTestModel("gpt-4").Save(ctx)
+	require.NoError(t, err)
+	executor := &sequenceExecutor{steps: []executorStep{{err: healthGateServerError()}, {resp: healthGateResponse()}}}
+	processCtx, processor, gate := healthGateOrchestratorFixture(t, ctx, client, executor, primary, backup)
+	policy := processor.SystemService.RetryPolicyOrDefault(processCtx)
+	policy.TraceStickyMode = biz.TraceStickyPreferPreviousChannel
+	policy.HealthGate.FailureThreshold = 1
+	policy.HealthGate.OwnerFailoverThreshold = 2
+	require.NoError(t, processor.SystemService.SetRetryPolicy(processCtx, policy))
+	processCtx = contexts.WithTrace(processCtx, &ent.Trace{ID: 10, ThreadID: 20})
+	setHealthGateSessionOwner(processor.RequestService, processCtx, 20, 10, biz.SessionOwner{ChannelID: primary.ID})
+	result, err := processor.Process(processCtx, buildTestRequest("gpt-4", "hello", false))
+	require.NoError(t, err)
+	require.NotNil(t, result.ChatCompletion)
+	require.Len(t, executor.requests, 2)
+	cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), &biz.Channel{Channel: primary})
+	require.Equal(t, biz.HealthGateStateOpen, gate.Inspect(biz.HealthGateKey{ChannelID: primary.ID, ActualModel: "gpt-4"}, healthGateResolver(cfg)).State)
+	owner, found, err := processor.RequestService.GetSessionOwner(processCtx, 20, 10)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, biz.SessionOwner{ChannelID: backup.ID}, owner)
+	requests, err := client.Request.Query().All(processCtx)
+	require.NoError(t, err)
+	require.Len(t, requests, 1)
+	require.NotNil(t, requests[0].RoutingDecision)
+	require.Equal(t, objects.RoutingMigrationReasonOwnerOpen, requests[0].RoutingDecision.Migration.Reason)
+	require.False(t, requests[0].RoutingDecision.TemporaryFailover)
 }
 
 type healthGateTimeoutExecutor struct {

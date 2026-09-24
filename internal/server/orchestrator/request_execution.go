@@ -104,7 +104,12 @@ func (m *persistRequestExecutionMiddleware) OnOutboundRawRequest(ctx context.Con
 
 	// Update request with channel ID after channel selection
 	if state.Request != nil && state.Request.ChannelID != channel.ID {
-		err := state.RequestService.UpdateRequestChannelID(ctx, state.Request.ID, channel.ID)
+		var err error
+		if state.RoutingPolicy.LoadBalancerStrategy == biz.LoadBalancerStrategyHealthGated {
+			err = state.RequestService.UpdateRequestChannelIDWithoutSticky(ctx, state.Request.ID, channel.ID)
+		} else {
+			err = state.RequestService.UpdateRequestChannelID(ctx, state.Request.ID, channel.ID)
+		}
 		if err != nil {
 			return nil, err
 		}

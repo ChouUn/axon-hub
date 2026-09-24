@@ -199,6 +199,8 @@ func (processor *ChatCompletionOrchestrator) Process(ctx context.Context, reques
 
 	// Get retry policy from system settings
 	retryPolicy := processor.SystemService.RetryPolicyOrDefault(ctx)
+	var healthGateDecision *healthGateRequestDecision
+	ctx = context.WithValue(ctx, healthGateDecisionContextKey{}, &healthGateDecision)
 
 	if log.DebugEnabled(ctx) {
 		log.Debug(ctx, "chat request received",

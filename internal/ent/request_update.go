@@ -114,6 +114,18 @@ func (_u *RequestUpdate) ClearChannelID() *RequestUpdate {
 	return _u
 }
 
+// SetRoutingDecision sets the "routing_decision" field.
+func (_u *RequestUpdate) SetRoutingDecision(v *objects.RequestRoutingDecision) *RequestUpdate {
+	_u.mutation.SetRoutingDecision(v)
+	return _u
+}
+
+// ClearRoutingDecision clears the value of the "routing_decision" field.
+func (_u *RequestUpdate) ClearRoutingDecision() *RequestUpdate {
+	_u.mutation.ClearRoutingDecision()
+	return _u
+}
+
 // SetExternalID sets the "external_id" field.
 func (_u *RequestUpdate) SetExternalID(v string) *RequestUpdate {
 	_u.mutation.SetExternalID(v)
@@ -515,6 +527,12 @@ func (_u *RequestUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.ResponseChunksCleared() {
 		_spec.ClearField(request.FieldResponseChunks, field.TypeJSON)
 	}
+	if value, ok := _u.mutation.RoutingDecision(); ok {
+		_spec.SetField(request.FieldRoutingDecision, field.TypeJSON, value)
+	}
+	if _u.mutation.RoutingDecisionCleared() {
+		_spec.ClearField(request.FieldRoutingDecision, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.ExternalID(); ok {
 		_spec.SetField(request.FieldExternalID, field.TypeString, value)
 	}
@@ -793,6 +811,18 @@ func (_u *RequestUpdateOne) SetNillableChannelID(v *int) *RequestUpdateOne {
 // ClearChannelID clears the value of the "channel_id" field.
 func (_u *RequestUpdateOne) ClearChannelID() *RequestUpdateOne {
 	_u.mutation.ClearChannelID()
+	return _u
+}
+
+// SetRoutingDecision sets the "routing_decision" field.
+func (_u *RequestUpdateOne) SetRoutingDecision(v *objects.RequestRoutingDecision) *RequestUpdateOne {
+	_u.mutation.SetRoutingDecision(v)
+	return _u
+}
+
+// ClearRoutingDecision clears the value of the "routing_decision" field.
+func (_u *RequestUpdateOne) ClearRoutingDecision() *RequestUpdateOne {
+	_u.mutation.ClearRoutingDecision()
 	return _u
 }
 
@@ -1226,6 +1256,12 @@ func (_u *RequestUpdateOne) sqlSave(ctx context.Context) (_node *Request, err er
 	}
 	if _u.mutation.ResponseChunksCleared() {
 		_spec.ClearField(request.FieldResponseChunks, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.RoutingDecision(); ok {
+		_spec.SetField(request.FieldRoutingDecision, field.TypeJSON, value)
+	}
+	if _u.mutation.RoutingDecisionCleared() {
+		_spec.ClearField(request.FieldRoutingDecision, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.ExternalID(); ok {
 		_spec.SetField(request.FieldExternalID, field.TypeString, value)

@@ -16318,6 +16318,7 @@ type RequestMutation struct {
 	appendresponse_body               objects.JSONRawMessage
 	response_chunks                   *[]objects.JSONRawMessage
 	appendresponse_chunks             []objects.JSONRawMessage
+	routing_decision                  **objects.RequestRoutingDecision
 	external_id                       *string
 	status                            *request.Status
 	stream                            *bool
@@ -17158,6 +17159,55 @@ func (m *RequestMutation) ChannelIDCleared() bool {
 func (m *RequestMutation) ResetChannelID() {
 	m.channel = nil
 	delete(m.clearedFields, request.FieldChannelID)
+}
+
+// SetRoutingDecision sets the "routing_decision" field.
+func (m *RequestMutation) SetRoutingDecision(ord *objects.RequestRoutingDecision) {
+	m.routing_decision = &ord
+}
+
+// RoutingDecision returns the value of the "routing_decision" field in the mutation.
+func (m *RequestMutation) RoutingDecision() (r *objects.RequestRoutingDecision, exists bool) {
+	v := m.routing_decision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRoutingDecision returns the old "routing_decision" field's value of the Request entity.
+// If the Request object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RequestMutation) OldRoutingDecision(ctx context.Context) (v *objects.RequestRoutingDecision, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRoutingDecision is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRoutingDecision requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRoutingDecision: %w", err)
+	}
+	return oldValue.RoutingDecision, nil
+}
+
+// ClearRoutingDecision clears the value of the "routing_decision" field.
+func (m *RequestMutation) ClearRoutingDecision() {
+	m.routing_decision = nil
+	m.clearedFields[request.FieldRoutingDecision] = struct{}{}
+}
+
+// RoutingDecisionCleared returns if the "routing_decision" field was cleared in this mutation.
+func (m *RequestMutation) RoutingDecisionCleared() bool {
+	_, ok := m.clearedFields[request.FieldRoutingDecision]
+	return ok
+}
+
+// ResetRoutingDecision resets all changes to the "routing_decision" field.
+func (m *RequestMutation) ResetRoutingDecision() {
+	m.routing_decision = nil
+	delete(m.clearedFields, request.FieldRoutingDecision)
 }
 
 // SetExternalID sets the "external_id" field.
@@ -18008,7 +18058,7 @@ func (m *RequestMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RequestMutation) Fields() []string {
-	fields := make([]string, 0, 26)
+	fields := make([]string, 0, 27)
 	if m.created_at != nil {
 		fields = append(fields, request.FieldCreatedAt)
 	}
@@ -18053,6 +18103,9 @@ func (m *RequestMutation) Fields() []string {
 	}
 	if m.channel != nil {
 		fields = append(fields, request.FieldChannelID)
+	}
+	if m.routing_decision != nil {
+		fields = append(fields, request.FieldRoutingDecision)
 	}
 	if m.external_id != nil {
 		fields = append(fields, request.FieldExternalID)
@@ -18125,6 +18178,8 @@ func (m *RequestMutation) Field(name string) (ent.Value, bool) {
 		return m.ResponseChunks()
 	case request.FieldChannelID:
 		return m.ChannelID()
+	case request.FieldRoutingDecision:
+		return m.RoutingDecision()
 	case request.FieldExternalID:
 		return m.ExternalID()
 	case request.FieldStatus:
@@ -18186,6 +18241,8 @@ func (m *RequestMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldResponseChunks(ctx)
 	case request.FieldChannelID:
 		return m.OldChannelID(ctx)
+	case request.FieldRoutingDecision:
+		return m.OldRoutingDecision(ctx)
 	case request.FieldExternalID:
 		return m.OldExternalID(ctx)
 	case request.FieldStatus:
@@ -18321,6 +18378,13 @@ func (m *RequestMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetChannelID(v)
+		return nil
+	case request.FieldRoutingDecision:
+		v, ok := value.(*objects.RequestRoutingDecision)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRoutingDecision(v)
 		return nil
 	case request.FieldExternalID:
 		v, ok := value.(string)
@@ -18504,6 +18568,9 @@ func (m *RequestMutation) ClearedFields() []string {
 	if m.FieldCleared(request.FieldChannelID) {
 		fields = append(fields, request.FieldChannelID)
 	}
+	if m.FieldCleared(request.FieldRoutingDecision) {
+		fields = append(fields, request.FieldRoutingDecision)
+	}
 	if m.FieldCleared(request.FieldExternalID) {
 		fields = append(fields, request.FieldExternalID)
 	}
@@ -18562,6 +18629,9 @@ func (m *RequestMutation) ClearField(name string) error {
 		return nil
 	case request.FieldChannelID:
 		m.ClearChannelID()
+		return nil
+	case request.FieldRoutingDecision:
+		m.ClearRoutingDecision()
 		return nil
 	case request.FieldExternalID:
 		m.ClearExternalID()
@@ -18636,6 +18706,9 @@ func (m *RequestMutation) ResetField(name string) error {
 		return nil
 	case request.FieldChannelID:
 		m.ResetChannelID()
+		return nil
+	case request.FieldRoutingDecision:
+		m.ResetRoutingDecision()
 		return nil
 	case request.FieldExternalID:
 		m.ResetExternalID()

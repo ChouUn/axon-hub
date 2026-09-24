@@ -3807,6 +3807,11 @@ func (_q *RequestQuery) collectField(ctx context.Context, oneNode bool, opCtx *g
 				selectedFields = append(selectedFields, request.FieldChannelID)
 				fieldSeen[request.FieldChannelID] = struct{}{}
 			}
+		case "routingDecision":
+			if _, ok := fieldSeen[request.FieldRoutingDecision]; !ok {
+				selectedFields = append(selectedFields, request.FieldRoutingDecision)
+				fieldSeen[request.FieldRoutingDecision] = struct{}{}
+			}
 		case "externalID":
 			if _, ok := fieldSeen[request.FieldExternalID]; !ok {
 				selectedFields = append(selectedFields, request.FieldExternalID)

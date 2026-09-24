@@ -118,6 +118,17 @@ function buildRequestsQuery(permissions: { canViewApiKeys: boolean; canViewChann
   `;
 }
 
+const REQUEST_ROUTING_DECISION_SELECTION = `
+          routingDecision {
+            owner { channelID channelName actualModel state }
+            skipped { channelID channelName actualModel state }
+            temporaryFailover
+            lastResort
+            consecutiveFailovers
+            migration { fromChannelID fromChannelName toChannelID toChannelName reason }
+          }
+`;
+
 function buildRequestDetailQuery(permissions: { canViewApiKeys: boolean; canViewChannels: boolean; canViewCallerUser: boolean }) {
   const apiKeyFields = permissions.canViewApiKeys
     ? `
@@ -160,6 +171,7 @@ function buildRequestDetailQuery(permissions: { canViewApiKeys: boolean; canView
           responseChunks
           status
           format
+          ${REQUEST_ROUTING_DECISION_SELECTION}
           metricsReasoningDurationMs
           usageLogs(first: 1) {
             edges {
@@ -219,6 +231,7 @@ function buildRequestDetailPollingQuery(permissions: { canViewApiKeys: boolean; 
           contentStorageKey
           status
           format
+          ${REQUEST_ROUTING_DECISION_SELECTION}
           metricsReasoningDurationMs
         }
       }
@@ -398,6 +411,7 @@ export function useRequest(
           requestBody: previousRequest?.requestBody,
           responseBody: previousRequest?.responseBody,
           responseChunks: previousRequest?.responseChunks,
+          routingDecision: parsedRequest.routingDecision ?? previousRequest?.routingDecision,
           usageLogs: previousRequest?.usageLogs,
         });
       } catch (error) {

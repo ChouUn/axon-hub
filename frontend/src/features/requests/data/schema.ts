@@ -43,6 +43,30 @@ export const requestExecutionSchema = z.object({
 });
 export type RequestExecution = z.infer<typeof requestExecutionSchema>;
 
+export const routingDecisionComboSchema = z.object({
+  channelID: z.number(),
+  channelName: z.string(),
+  actualModel: z.string(),
+  state: z.string().nullable().optional(),
+});
+
+export const routingDecisionMigrationSchema = z.object({
+  fromChannelID: z.number(),
+  fromChannelName: z.string(),
+  toChannelID: z.number(),
+  toChannelName: z.string(),
+  reason: z.string(),
+});
+
+export const requestRoutingDecisionSchema = z.object({
+  owner: routingDecisionComboSchema.nullable(),
+  skipped: z.array(routingDecisionComboSchema),
+  temporaryFailover: z.boolean(),
+  lastResort: z.boolean(),
+  consecutiveFailovers: z.number(),
+  migration: routingDecisionMigrationSchema.nullable(),
+});
+
 // Request
 export const requestSchema = z.object({
   id: z.string(),
@@ -61,6 +85,7 @@ export const requestSchema = z.object({
   requestBody: z.any().nullable().optional(), // JSONRawMessage
   responseBody: z.any().nullable().optional(), // JSONRawMessage
   responseChunks: z.array(z.any()).nullable().optional(), // [JSONRawMessage!]
+  routingDecision: requestRoutingDecisionSchema.nullable().optional(),
   status: requestStatusSchema,
   format: z.string().optional(),
   clientIP: z.string().nullable().optional(),

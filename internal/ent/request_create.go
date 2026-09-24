@@ -200,6 +200,12 @@ func (_c *RequestCreate) SetNillableChannelID(v *int) *RequestCreate {
 	return _c
 }
 
+// SetRoutingDecision sets the "routing_decision" field.
+func (_c *RequestCreate) SetRoutingDecision(v *objects.RequestRoutingDecision) *RequestCreate {
+	_c.mutation.SetRoutingDecision(v)
+	return _c
+}
+
 // SetExternalID sets the "external_id" field.
 func (_c *RequestCreate) SetExternalID(v string) *RequestCreate {
 	_c.mutation.SetExternalID(v)
@@ -593,6 +599,10 @@ func (_c *RequestCreate) createSpec() (*Request, *sqlgraph.CreateSpec) {
 		_spec.SetField(request.FieldResponseChunks, field.TypeJSON, value)
 		_node.ResponseChunks = value
 	}
+	if value, ok := _c.mutation.RoutingDecision(); ok {
+		_spec.SetField(request.FieldRoutingDecision, field.TypeJSON, value)
+		_node.RoutingDecision = value
+	}
 	if value, ok := _c.mutation.ExternalID(); ok {
 		_spec.SetField(request.FieldExternalID, field.TypeString, value)
 		_node.ExternalID = value
@@ -887,6 +897,24 @@ func (u *RequestUpsert) UpdateChannelID() *RequestUpsert {
 // ClearChannelID clears the value of the "channel_id" field.
 func (u *RequestUpsert) ClearChannelID() *RequestUpsert {
 	u.SetNull(request.FieldChannelID)
+	return u
+}
+
+// SetRoutingDecision sets the "routing_decision" field.
+func (u *RequestUpsert) SetRoutingDecision(v *objects.RequestRoutingDecision) *RequestUpsert {
+	u.Set(request.FieldRoutingDecision, v)
+	return u
+}
+
+// UpdateRoutingDecision sets the "routing_decision" field to the value that was provided on create.
+func (u *RequestUpsert) UpdateRoutingDecision() *RequestUpsert {
+	u.SetExcluded(request.FieldRoutingDecision)
+	return u
+}
+
+// ClearRoutingDecision clears the value of the "routing_decision" field.
+func (u *RequestUpsert) ClearRoutingDecision() *RequestUpsert {
+	u.SetNull(request.FieldRoutingDecision)
 	return u
 }
 
@@ -1237,6 +1265,27 @@ func (u *RequestUpsertOne) UpdateChannelID() *RequestUpsertOne {
 func (u *RequestUpsertOne) ClearChannelID() *RequestUpsertOne {
 	return u.Update(func(s *RequestUpsert) {
 		s.ClearChannelID()
+	})
+}
+
+// SetRoutingDecision sets the "routing_decision" field.
+func (u *RequestUpsertOne) SetRoutingDecision(v *objects.RequestRoutingDecision) *RequestUpsertOne {
+	return u.Update(func(s *RequestUpsert) {
+		s.SetRoutingDecision(v)
+	})
+}
+
+// UpdateRoutingDecision sets the "routing_decision" field to the value that was provided on create.
+func (u *RequestUpsertOne) UpdateRoutingDecision() *RequestUpsertOne {
+	return u.Update(func(s *RequestUpsert) {
+		s.UpdateRoutingDecision()
+	})
+}
+
+// ClearRoutingDecision clears the value of the "routing_decision" field.
+func (u *RequestUpsertOne) ClearRoutingDecision() *RequestUpsertOne {
+	return u.Update(func(s *RequestUpsert) {
+		s.ClearRoutingDecision()
 	})
 }
 
@@ -1782,6 +1831,27 @@ func (u *RequestUpsertBulk) UpdateChannelID() *RequestUpsertBulk {
 func (u *RequestUpsertBulk) ClearChannelID() *RequestUpsertBulk {
 	return u.Update(func(s *RequestUpsert) {
 		s.ClearChannelID()
+	})
+}
+
+// SetRoutingDecision sets the "routing_decision" field.
+func (u *RequestUpsertBulk) SetRoutingDecision(v *objects.RequestRoutingDecision) *RequestUpsertBulk {
+	return u.Update(func(s *RequestUpsert) {
+		s.SetRoutingDecision(v)
+	})
+}
+
+// UpdateRoutingDecision sets the "routing_decision" field to the value that was provided on create.
+func (u *RequestUpsertBulk) UpdateRoutingDecision() *RequestUpsertBulk {
+	return u.Update(func(s *RequestUpsert) {
+		s.UpdateRoutingDecision()
+	})
+}
+
+// ClearRoutingDecision clears the value of the "routing_decision" field.
+func (u *RequestUpsertBulk) ClearRoutingDecision() *RequestUpsertBulk {
+	return u.Update(func(s *RequestUpsert) {
+		s.ClearRoutingDecision()
 	})
 }
 

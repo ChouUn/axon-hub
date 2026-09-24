@@ -21,6 +21,7 @@ function policyToDraft(policy: HealthGatePolicy): HealthGateDraft {
     openDurationSeconds: String(policy.openDurationSeconds / 60),
     maxOpenDurationSeconds: String(policy.maxOpenDurationSeconds / 60),
     probeSuccessThreshold: String(policy.probeSuccessThreshold),
+    ownerFailoverThreshold: String(policy.ownerFailoverThreshold),
     unstableWindowSeconds: String(policy.unstableWindowSeconds / 60),
   };
 }
@@ -151,13 +152,16 @@ export function RetrySettings() {
         const errors: Partial<Record<keyof HealthGatePolicy, string>> = {};
         for (const field of Object.keys(healthGateDraft) as Array<keyof HealthGatePolicy>) {
           const raw = healthGateDraft[field].trim();
-          const value = Number(raw) * (field.endsWith('Seconds') ? 60 : 1);
+          const isDuration = field.endsWith('Seconds');
+          const value = Number(raw) * (isDuration ? 60 : 1);
           const rounded = Math.round(value);
-          if (!raw || !Number.isSafeInteger(rounded) || Math.abs(value - rounded) >= 1e-6 ||
-            (field === 'failureThreshold' ? rounded < 0 : rounded <= 0)) {
+          const validInteger = isDuration
+            ? Number.isSafeInteger(rounded) && Math.abs(value - rounded) < 1e-6
+            : Number.isSafeInteger(value);
+          if (!raw || !validInteger || (field === 'failureThreshold' ? rounded < 0 : rounded <= 0)) {
             errors[field] = t('system.retry.healthGate.invalidValue');
           } else {
-            parsed[field] = rounded;
+            parsed[field] = isDuration ? rounded : value;
           }
         }
         if (Object.keys(errors).length) {
@@ -298,6 +302,7 @@ export function RetrySettings() {
                     ['openDurationSeconds', 'openDurationMinutes'],
                     ['maxOpenDurationSeconds', 'maxOpenDurationMinutes'],
                     ['probeSuccessThreshold', 'probeSuccessThreshold'],
+                    ['ownerFailoverThreshold', 'ownerFailoverThreshold'],
                     ['unstableWindowSeconds', 'unstableWindowMinutes'],
                   ] as const).map(([field, label]) => (
                     <div key={field} className='space-y-2'>
