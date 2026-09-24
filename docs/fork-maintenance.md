@@ -84,7 +84,7 @@ fork 改动，由用户决定。
 
 ### 健康门控路由策略
 
-- 状态：需求已确认，实现方案待评审，未实现。提交：尚未提交。
+- 状态：阶段一已实现。提交：`6298a0cb`（`feat(routing): 新增健康门控路由策略`）。
 - 动机：管理端无法直观看到哪个渠道×模型坏了。现有 `(渠道, 模型)` 熔断器只挂在
   `circuit-breaker` 策略下，阈值写死，查询与重置方法无调用方
   （`internal/server/biz/model_circuit_breaker.go:144-149,359-435`）；默认 `adaptive`
@@ -104,8 +104,10 @@ fork 改动，由用户决定。
     中选择。上游四种策略的行为不变，以降低同步上游的冲突面。
   - D2 粒度：熔断主体为 `(渠道, 上游实际模型)`，即经渠道模型映射后发往上游的模型
     （候选项 `ActualModel`），不是请求模型或别名。
-  - D3 全部候选熔断：选熔断最早到期的一个试一次；仍失败则返回 503，错误体为通用的
-    服务不可用文案，不暴露渠道名（沿用 CCH，`src/app/v1/_lib/proxy/forwarder.ts:3214-3216,8626`）。
+  - D3 全部候选熔断：选熔断最早到期的一个试一次；该次为计数失败或试探名额被占时返回 503，
+    错误体为通用的服务不可用文案，不暴露渠道名（沿用 CCH，
+    `src/app/v1/_lib/proxy/forwarder.ts:3214-3216,8626`）；结果为「不计入」类（如 400/404/422、429）
+    时原样返回上游错误，不改写为 503。
     503 仅适用于尚未向客户端提交响应的失败；流式响应头已发出后
     （`internal/server/api/chat.go:190-197`）发生的中断沿用现有流内错误与终止语义，不重试、
     不改写 HTTP 状态码，健康结果按 R4、R6 记录；客户端取消后不再写响应。
@@ -122,12 +124,14 @@ fork 改动，由用户决定。
     候选，也跳过粘性优先，但不删除、不改写粘性缓存。普通试探只放行无粘性渠道的新会话，
     同一渠道×模型同时只放一个请求（试探名额）。「无粘性渠道」以 trace/thread 粘性缓存原值
     为准（`internal/server/biz/request.go:1652-1671`），不以粘性渠道是否仍在候选中推断。
+    有试探资格时，试探组合与健康候选按同一优先级分组和负载均衡评分正常排序，不前置也不后置。
   - R2 转换：连续计数失败达到 N 进入熔断；熔断到期进入试探；试探连续计数成功 M 次回到
     非门控状态（按 R1 的窗口规则显示健康或不稳），计数失败则重新熔断且时长翻倍（有上限）。
     健康或不稳下计数成功一次即清零连续失败。翻倍级数在恢复后保留，恢复后持续无计数失败
     超过熔断时长上限才清零；其间再次熔断从已达级数继续翻倍。
   - R3 计数单位：一次请求在某 `(渠道, ActualModel)` 上的尝试（含对该组合的同渠道重试）
-    结束时记一次结果；中途失败、最终成功记为成功（沿用 CCH）。同渠道重试可能切换到该
+    结束时记一次结果；中途失败、最终成功记为成功（沿用 CCH），最终失败按该组合最后一次尝试
+    的分类记录。同渠道重试可能切换到该
     渠道的另一个 ActualModel（`internal/server/orchestrator/outbound.go:761-765`），各组合分别记录。
   - R4 结果分类：计数成功、计数失败、仅不稳、不计入四类（口径见 R6）。流式请求以完整
     终态为成功，收到 HTTP 200 或首个 token 不算成功。试探遇到「仅不稳」或「不计入」时释放
@@ -137,14 +141,17 @@ fork 改动，由用户决定。
     不稳的候选，先按普通试探规则尝试取得试探名额；因本请求无试探资格（已有粘性渠道）、
     全部仍处于熔断或试探名额已被占用而无法取得时，进入最后一试。最后一试优先选已到期的
     试探组合，没有则选熔断最早到期的组合，按试探处理，计数失败按 R2 翻倍。最后一试与普通
-    试探共用试探名额，选中组合的名额已被占用则立即返回 D3 的通用 503，不记健康失败。该
+    试探共用试探名额，选中组合的名额已被占用则立即返回 D3 的通用 503，不记健康失败。最后一试
+    只尝试一次，不做同渠道重试。该
     出口不得返回模型不存在错误（现有空候选会映射为 `ErrInvalidModel`，
     `internal/server/orchestrator/select_candidates.go:111-115`）。
 - 失败口径（R6，参考 CCH `src/app/v1/_lib/proxy/errors.ts:992-1064` 并按 AH 适配）：
-  - 计数失败：上游 5xx、网络错误、超时、首个 token 前的流中断、401/403（按普通失败计数，
-    与 CCH 一致；现有自动禁用规则照常独立运作）。
+  - 计数失败：上游 5xx、网络错误、超时（含 408 与首事件/非流式响应超时）、首个 token 前的
+    流中断、空响应检测命中、401/403（按普通失败计数，与 CCH 一致；现有自动禁用规则照常独立
+    运作）。
   - 仅不稳：首个 token 后的流中断，不计入连续失败。
-  - 不计入：429、400/404/422、客户端取消、本地 RPM 与排队拒绝、熔断自身跳过。
+  - 不计入：429、400/404/422 及其他未列出的 4xx、客户端取消、本地 RPM 与排队拒绝、熔断
+    自身跳过（含试探名额被占）、无状态码且非网络/超时的本地错误（如请求转换失败）。
   - 429 边界：429 不计入本熔断器。仅当上游带可解析的 `Retry-After` 时沿用现有渠道冷却
     （`internal/server/orchestrator/rate_limit_tracking.go:90-102`）；无有效 `Retry-After` 时只影响
     本请求的故障转移，后续请求仍可正常选择该渠道，本 topic 不新增兜底冷却。
@@ -157,12 +164,16 @@ fork 改动，由用户决定。
     重置完全清零该组合：连续失败、试探进度、翻倍级数、最近异常及各截止时间全部清除，回到
     健康，并释放试探名额。重置开启该组合的新统计周期：重置前已发出的请求照常完成业务响应，
     但其迟到结果不改变新周期的健康状态，也不得释放新周期持有的试探名额。
-  - R9 统一视图：429 冷却与凭证自动禁用在同一健康视图展示，机制保持各自独立。
-- 配置规则（R10）：系统级默认值放入重试策略，渠道级覆盖放入渠道 `settings` JSON（沿用
-  现有可选指针字段惯例，`internal/objects/channel.go:220-240`）；阈值为 0 时关闭该渠道熔断：
+  - R9 统一视图：凭证自动禁用在健康详情中一并展示，机制保持独立。429 冷却不展示：其状态
+    由各接口编排器各持一份（`internal/server/orchestrator/orchestrator.go:37`），合并为全局会连带
+    改变上游 RPM/TPM 计数行为。
+- 配置规则（R10）：系统级参数（N、首次熔断时长、上限、M、W）放入重试策略；渠道级只覆盖
+  阈值 N，放入渠道 `settings` JSON（沿用现有可选指针字段惯例，
+  `internal/objects/channel.go:220-240`），留空沿用系统值。阈值为 0 时关闭该渠道熔断：
   该渠道各组合既不门控也不计数，管理端显示「熔断已关闭」而非残留状态。阈值由正数改为 0
   时结束原统计周期；由 0 改回正数时按空白健康状态开启新周期，关闭前及关闭期间发起的请求
-  结果不回写新周期（与 R8 重置同一语义）。不为配置新增表字段。
+  结果不回写新周期（与 R8 重置同一语义）。阈值切换在该组合下一次被选路、记录结果或被管理端
+  读取时观察并生效；不为配置变更增加跨服务通知。不为配置新增表字段。
 - 生命周期（R11）：渠道停用、删除、归档或模型映射变更时不主动清理健康状态，只随时间演进
   或由管理员重置。条目数以实际用过的渠道×上游模型组合为上限，不做定期回收。
 - 默认值：N=5；首次熔断 5 分钟，试探失败翻倍，上限 60 分钟；M=2；W=5 分钟。
@@ -170,19 +181,30 @@ fork 改动，由用户决定。
   合成探测请求（试探只用真实业务请求：普通试探仅放行无粘性渠道的请求，R5 最后一试除外）；
   不替代 429 冷却与自动禁用；不稳状态不降权。
   会话归属、请求决策记录与 Webhook 见「健康门控会话归属迟滞与决策记录」。
-- 代码（预计）：新策略与健康状态使用新文件，不改上游熔断实现；接入点为
-  `internal/objects/routing.go`、`internal/server/biz/system.go`（策略枚举与校验）、
-  `internal/server/orchestrator/orchestrator.go`（注册负载均衡器）、
-  `internal/server/orchestrator/select_candidates.go`、`internal/server/orchestrator/candidates.go`、
-  `internal/server/orchestrator/outbound.go`、`internal/objects/channel.go`、`internal/server/gql/`；
-  前端策略下拉（`frontend/src/features/system/components/retry-settings.tsx`、
+- 代码：新策略与健康状态使用新文件，不改上游熔断实现：
+  `internal/server/biz/health_gate.go`（状态机）、`internal/server/biz/system_health_gate.go`（配置）、
+  `internal/server/orchestrator/health_gate_{selector,middleware,outcome,errors,load_balancer}.go`、
+  `internal/server/gql/channel_health_gate{.graphql,.go,.resolvers.go}`、
+  `frontend/src/features/channels/components/channels-health-gate-dialog.tsx`。
+  上游文件只做追加式接入：`internal/objects/routing.go`、`internal/objects/channel.go`（渠道阈值字段）、
+  `internal/server/biz/system.go`（策略常量、`RetryPolicy.HealthGate`、归一化调用）、
+  `internal/server/biz/channel.go`（状态字段）、`internal/server/biz/channel_query.go`（筛选入参）、
+  `internal/server/orchestrator/orchestrator.go`（负载均衡器、中间件、`finalize` 改写最后一试错误）、
+  `internal/server/orchestrator/candidates.go`（选路钩子）、`internal/server/orchestrator/load_balancer.go`、
+  `internal/server/orchestrator/outbound.go`（最后一试不做同渠道重试）、`internal/server/gql/` 的
+  `system.graphql`、`axonhub.graphql`、`gqlgen.yml`、`axonhub.resolvers.go`（`QueryChannels` 一行筛选钩子）
+  与生成文件；前端策略下拉（`frontend/src/features/system/components/retry-settings.tsx`、
   `frontend/src/features/apikeys/components/apikeys-*-dialog.tsx`、
   `frontend/src/features/models/components/models-association-dialog.tsx`、
   `frontend/src/features/models/data/schema.ts`）、`frontend/src/features/channels/`、
-  `frontend/src/locales/`。
-- 迁移：无 schema 或 data migration；重试策略与渠道 `settings` 新增可选 JSON 字段，
-  旧数据缺省走系统默认。
-- 测试与 fixture：待实现方案确定。
+  `frontend/src/locales/`；用户文档 `docs/{zh,en}/guides/load-balance.md`。
+- 迁移：无 schema 或 data migration；重试策略新增可选 `health_gate` 对象、渠道 `settings`
+  新增可选 `healthGateFailureThreshold`，旧数据缺省走系统默认。
+- 测试与 fixture：`internal/server/biz/health_gate_test.go`（状态机、翻倍与清零、代次失效、
+  阈值 0 切换、归一化）、`internal/server/orchestrator/health_gate_outcome_test.go`（失败口径边界）、
+  `health_gate_selector_test.go`（门控、粘性跳过、试探资格、最后一试选择）、
+  `health_gate_orchestrator_test.go`（端到端熔断、503 与透传、流式首 token 后断流）、
+  `internal/server/gql/channel_health_gate_test.go`（状态映射与计数）。
 - 同步上游注意：策略枚举与前端策略下拉为追加式冲突点；上游若新增策略、改动负载均衡
   组装或自行实现熔断可视化，需逐条对照 D1–D7、R1–R11。
 
