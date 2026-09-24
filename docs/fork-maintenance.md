@@ -351,6 +351,87 @@ fork 改动，由用户决定。
   `frontend/src/features/analytics-date-range.test.mjs`、
   `scripts/e2e/fixtures/api-key-analytics.sql`。
 
+### API Key 自助用量页
+
+- 状态：需求已确认，尚未实现。
+- 动机：只持有 API Key 的使用者无法查看自己的用量。普通推理 Key 可达的路由只有推理与模型列表
+  （`internal/server/routes.go:170-259`）；上游 beta10 的 `apiKeyQuotaUsages` 只接受
+  service_account 类型的 Key，需要 `read_api_keys`，可查同项目内隐私规则允许的非 personal Key，
+  且只返回已配额度的 profile（`internal/server/middleware/auth.go:129-151`、
+  `internal/server/gql/openapi/openapi.graphql:146-182`、`internal/scopes/rule_apikey_scope.go:78-87`，
+  上游 PR #1779、#1838）；管理端的 Key 统计与请求列表需要用户 JWT，按项目授权后可见项目内
+  非 personal Key 及本人的 personal Key，项目 owner 权限更宽
+  （`internal/scopes/rule_user_project_scope_requests.go:19-22`）。
+- 参考：CCH 用 Key 登录后进入独立只读页 `/my-usage`，页面有额度、按日期统计与逐条日志，
+  日志顶层字段隐藏用户、Key、供应商名称和错误详情（`src/app/[locale]/my-usage/page.tsx:38-79`、
+  `src/actions/my-usage.ts:90-110`）；CCH 的额度与按模型统计会一并返回所属用户名下所有 Key 的
+  聚合（`src/actions/my-usage.ts:337-360,1014-1049,1112-1121`）。本 topic 只取页面形态，范围与
+  口径按下列决策。
+- 业务场景（用户确认）：拿到 Key 的人自己能看到用了多少、花了多少、哪些请求失败，
+  不需要管理员账号，也看不到别人的数据。
+- 已确认决策：
+  - D1 只做页面：新增用 Key 登录的独立只读用量页，不进入管理后台；页面背后的查询接口
+    不作为对外契约，不写入用户文档的 API 说明。
+  - D2 只看本 Key：统计、趋势、日志只含登录所用 Key 自身的请求；不汇总创建者名下的其他
+    Key，也不汇总项目。
+  - D3 内容：用量统计、按天趋势、逐条日志；不展示额度。
+  - D4 可用范围：所有 `user` 与 `personal` 类型的 Key 默认可用，不设开关。
+  - D5 登录保持：Key 只保存在当前标签页，同一标签页刷新后保持登录，关闭标签页或登出即结束
+    页面登录状态（不吊销 Key）；页面每次查询携带该 Key 认证，后端不新增登录凭证类型。
+  - D6 失败请求：日志列出本 Key 的全部请求并标出成功或失败；请求数分成功、失败两项。
+    Token 与费用按已落库的用量记录计入，失败或取消的请求若留有用量记录也计入（用户确认，
+    与上游实际消耗一致）。
+  - D7 时间范围：预设今天、昨天、近 7 天、近 30 天、本月，另可自定义起止日期，跨度最长
+    90 天；自然日边界使用系统设置中的时区。
+- 规则：
+  - R1 认证：只接受启用状态、所属项目为 active 的 `user` / `personal` Key；`service_account`、
+    `noauth`、禁用或归档的 Key 拒绝，不回退到系统 noauth Key（现有 `WithAPIKeyConfig` 会回退，
+    `internal/server/middleware/auth.go:36-42`，需专用认证入口，不改推理路由）；Key 的 IP 白名单
+    照常生效。Key 只经 `Authorization: Bearer` 请求头传输，不进入 URL，日志不记录明文。
+    用户被停用或删除时其 personal Key 随之禁用或归档（`internal/server/biz/user.go:227-231,626-629`），
+    沿用该联动。
+  - R2 隔离：后端以认证 Key 的 ID 作为所有查询的显式条件（即使查询走系统 bypass 也保留该条件），
+    查询参数不接受 Key 的 ID、名称或明文；访问不属于本 Key 的请求按不存在处理。
+  - R3 统计口径：
+    - 时间锚点统一为请求创建时间（`requests.created_at`）：用量经 `request_id` 归属到所属请求，
+      跨日完成的请求其用量计在请求创建日，保证统计、趋势与日志可对账。
+    - 请求数按请求表每行一次，`completed` 计成功，`failed` 与 `canceled` 计失败，进行中的请求
+      不计入；不与用量表连接计数（一次请求可有多条用量记录）。
+    - Token（输入、输出、缓存读取、缓存写入、推理）与费用为该请求全部用量记录之和，
+      不按请求最终状态过滤（D6）；缺价不影响 Token 统计。
+    - 模型统一使用 `requests.model_id`，即 API Key 模型映射后的请求模型，不是客户端原始别名；
+      不使用 `usage_logs.model_id`（上游实际模型）展示、分组或筛选。
+  - R4 趋势：后端按系统时区的自然日分桶并补零，返回日历日期；前端不按浏览器时区重新分桶。
+    展示请求数（成功、失败）、Token 与费用。
+  - R5 日志：按请求创建时间倒序、同时间按 ID 倒序分页，默认每页 20 条，后端上限 100 条；列为
+    时间、模型名、状态、是否流式、Token、费用、耗时与首字时间；时间按系统时区显示并标注时区；
+    可按时间范围、模型与状态筛选。不展示渠道、上游实际模型、请求与响应正文、错误详情。
+  - R6 费用：按系统设置的币种格式显示。单条用量未定价为「—」，不按 0 计入；汇总（日志行、
+    每日、每模型、总计）无用量为 0，有用量但全部未定价为「—」，部分未定价时显示已知费用并
+    标注未定价记录数；真实零价显示为 0。
+  - R7 页面：独立公开路由，不经管理端登录；提供登出；中英文界面。页面使用独立的 Key 认证状态、
+    请求与错误处理：不附加管理端 JWT 与项目上下文，不清除或改写管理端登录（现有全局 401 处理会
+    清除管理登录并跳转 `/sign-in`，`frontend/src/main.tsx:59-64`、`frontend/src/gql/graphql.ts:96-101,139-143`）；
+    认证失败只清除本页 Key 并回到本页登录；根布局的管理端查询与命令菜单不在本页触发。Key 只存于
+    本页的 sessionStorage 与内存，不进入管理端 `authStore`、localStorage 或 URL；登出或换 Key 时
+    清除旧查询缓存。
+  - R8 元数据：页面查询接口随结果提供系统币种与时区，不要求 `read_settings`，不暴露其他系统设置
+    （管理端 `useGeneralSettings` 需要 `read_settings`，`frontend/src/features/system/data/system.ts:1128-1149`）。
+  - R9 查询开销：时间跨度由后端校验（不超过 90 天）；过滤条件为 Key ID 等值加 UTC 半开时间范围，
+    时区换算只用于分桶；请求查询须命中 `requests_by_api_key_id_created_at`，用量经 `request_id`
+    关联（`usage_logs_by_request_id`）。是否另设查询限流在实现方案中确认。
+- 提交：尚未提交。
+- 代码（预计）：专用认证入口与自助查询路由组、查询服务、独立前端页面及中英文词条；实现方案确定后
+  补具体路径。
+- 文档：实现时同步新增中英文使用说明（`docs/{zh,en}/guides/`），覆盖入口、可用 Key 类型、登录与登出、
+  时间范围与统计口径、未定价显示及隐私范围，不列内部查询接口。
+- 迁移：预计无 schema migration、data migration 与缓存键变化。
+- 测试与 fixture：尚无；实现时覆盖 Key 隔离、拒绝 noauth 与 service_account、禁用及归档 Key、
+  跨日归属、多条用量与失败请求用量、全部与部分未定价、分页上限、90 天跨度校验。
+- 同步上游注意：与上游 OpenAPI `apiKeyQuotaUsages` 功能不重叠，不修改其权限；新路由组在
+  `internal/server/routes.go` 追加。上游 PR #2510 重做管理端分析页，本页不复用管理端分析组件，
+  避免交叉冲突。
+
 ### 模型详情分析
 
 - 行为：仪表盘以模型为汇总项，以实际请求渠道为明细项，按费用排名且默认全部收起；
