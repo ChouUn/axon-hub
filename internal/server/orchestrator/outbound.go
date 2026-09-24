@@ -690,6 +690,9 @@ func (p *PersistentOutboundTransformer) CanRetry(err error) bool {
 	if p.state.CurrentCandidate == nil {
 		return false
 	}
+	if p.state.CurrentCandidate.healthGate != nil && p.state.CurrentCandidate.healthGate.lastResort || errors.Is(err, errSkipCandidateByHealthGate) {
+		return false
+	}
 
 	// Trace/thread sticky candidates are intentionally one-shot. A failed
 	// sticky attempt must proceed to the normal fallback candidates instead of

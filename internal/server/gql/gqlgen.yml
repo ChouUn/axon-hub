@@ -12,6 +12,7 @@ schema:
   - model.graphql
   - backup.graphql
   - channel_probe.graphql
+  - channel_health_gate.graphql
   - prompt.graphql
   - prompt_protection_rule.graphql
   - price.graphql
@@ -220,6 +221,12 @@ models:
   UpdateRetryPolicyInput:
     model:
       - github.com/looplj/axonhub/internal/server/biz.RetryPolicy
+  HealthGatePolicy:
+    model:
+      - github.com/looplj/axonhub/internal/server/biz.HealthGatePolicy
+  HealthGatePolicyInput:
+    model:
+      - github.com/looplj/axonhub/internal/server/biz.HealthGatePolicy
   WebhookNotifierConfig:
     model:
       - github.com/looplj/axonhub/internal/server/biz.WebhookNotifierConfig

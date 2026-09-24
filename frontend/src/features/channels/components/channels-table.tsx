@@ -50,6 +50,8 @@ interface DataTableProps {
   modelFilter: string;
   selectedTypeTab?: string;
   showErrorOnly?: boolean;
+  showHealthGateAbnormal: boolean;
+  onHealthGateAbnormalChange: (checked: boolean) => void;
   onExitErrorOnlyMode?: () => void;
   sorting: SortingState;
   onSortingChange: (updater: SortingState | ((prev: SortingState) => SortingState)) => void;
@@ -81,6 +83,8 @@ export function ChannelsTable({
   modelFilter,
   selectedTypeTab = 'all',
   showErrorOnly,
+  showHealthGateAbnormal,
+  onHealthGateAbnormalChange,
   sorting,
   onSortingChange,
   onExitErrorOnlyMode,
@@ -270,6 +274,8 @@ export function ChannelsTable({
         selectedCount={selectedCount}
         selectedTypeTab={selectedTypeTab}
         showErrorOnly={showErrorOnly}
+        showHealthGateAbnormal={showHealthGateAbnormal}
+        onHealthGateAbnormalChange={onHealthGateAbnormalChange}
         onExitErrorOnlyMode={onExitErrorOnlyMode}
       />
       <div className='shadow-soft relative mt-4 flex-1 overflow-auto rounded-2xl border border-[var(--table-border)]'>

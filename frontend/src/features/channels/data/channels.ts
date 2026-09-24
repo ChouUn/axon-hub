@@ -17,6 +17,8 @@ import {
   UpdateChannelInput,
   channelConnectionSchema,
   channelSchema,
+  channelHealthGateStatusSchema,
+  disabledAPIKeySchema,
   channelEndpointsResponseSchema,
   BulkImportChannelsInput,
   BulkImportChannelsResult,
@@ -92,6 +94,7 @@ const CREATE_CHANNEL_MUTATION = `
       tags
       defaultTestModel
       settings {
+        healthGateFailureThreshold
         extraModelPrefix
         modelMappings {
           from
@@ -172,6 +175,7 @@ const DUPLICATE_CHANNEL_MUTATION = `
       tags
       defaultTestModel
       settings {
+        healthGateFailureThreshold
         extraModelPrefix
         modelMappings {
           from
@@ -252,6 +256,7 @@ const BULK_CREATE_CHANNELS_MUTATION = `
       tags
       defaultTestModel
       settings {
+        healthGateFailureThreshold
         extraModelPrefix
         modelMappings {
           from
@@ -332,6 +337,7 @@ const UPDATE_CHANNEL_MUTATION = `
       tags
       defaultTestModel
       settings {
+        healthGateFailureThreshold
         extraModelPrefix
         modelMappings {
           from
@@ -534,6 +540,7 @@ const BULK_IMPORT_CHANNELS_MUTATION = `
           transport
         }
         settings {
+          healthGateFailureThreshold
           extraModelPrefix
           modelMappings {
             from
@@ -624,12 +631,85 @@ const GET_CHANNEL_DISABLED_API_KEYS_QUERY = `
   }
 `;
 
+const GET_CHANNEL_HEALTH_GATE_QUERY = `
+  query GetChannelHealthGate($id: ID!) {
+    node(id: $id) {
+      ... on Channel {
+        id
+        healthGate {
+          disabled
+          failureThreshold
+          probeSuccessThreshold
+          openCount
+          unstableCount
+          models {
+            actualModel
+            state
+            consecutiveFailures
+            probeSuccesses
+            backoffLevel
+            lastError
+            lastStatusCode
+            lastErrorAt
+            openUntil
+          }
+        }
+        disabledAPIKeys { key disabledAt errorCode reason expiresAt }
+      }
+    }
+  }
+`;
+
+const RESET_CHANNEL_HEALTH_GATE_MUTATION = `
+  mutation ResetChannelHealthGate($channelID: ID!, $actualModel: String) {
+    resetChannelHealthGate(channelID: $channelID, actualModel: $actualModel)
+  }
+`;
+
+const channelHealthGateDetailSchema = z.object({
+  id: z.string(),
+  healthGate: channelHealthGateStatusSchema.nullable(),
+  disabledAPIKeys: z.array(disabledAPIKeySchema).nullable(),
+});
+
+export function useChannelHealthGate(channelID?: string, enabled = true) {
+  return useQuery({
+    queryKey: ['channelHealthGate', channelID],
+    queryFn: async () => {
+      const data = await graphqlRequest<{ node: unknown }>(GET_CHANNEL_HEALTH_GATE_QUERY, { id: channelID });
+      return channelHealthGateDetailSchema.parse(data.node);
+    },
+    enabled: enabled && Boolean(channelID),
+    refetchInterval: enabled ? 5000 : false,
+    refetchIntervalInBackground: false,
+  });
+}
+
+export function useResetChannelHealthGate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ channelID, actualModel }: { channelID: string; actualModel?: string }) => {
+      const data = await graphqlRequest<{ resetChannelHealthGate: boolean }>(RESET_CHANNEL_HEALTH_GATE_MUTATION, {
+        channelID,
+        actualModel: actualModel ?? null,
+      });
+      if (!data.resetChannelHealthGate) throw new Error('Health-gate reset was rejected');
+      return true;
+    },
+    onSuccess: (_result, { channelID }) => {
+      queryClient.invalidateQueries({ queryKey: ['channelHealthGate', channelID] });
+      queryClient.invalidateQueries({ queryKey: ['channel', channelID] });
+      queryClient.invalidateQueries({ queryKey: ['channels'] });
+    },
+  });
+}
+
 const GET_CHANNEL_MODEL_PRICES_QUERY = `
   query GetChannelModelPrices($id: ID!) {
     node(id: $id) {
     ... on Channel {
       id
-      settings { modelPriceMultiplier }
+      settings { modelPriceMultiplier healthGateFailureThreshold }
       channelModelPrices {
         id
         modelID
@@ -687,6 +767,7 @@ const BULK_UPDATE_CHANNEL_ORDERING_MUTATION = `
           transport
         }
         settings {
+          healthGateFailureThreshold
           extraModelPrefix
           modelMappings {
             from
@@ -813,6 +894,7 @@ const CHANNEL_QUERY_FULL_NODE_SELECTION = `
           tags
           defaultTestModel
           settings {
+            healthGateFailureThreshold
             extraModelPrefix
             modelMappings {
               from
@@ -911,6 +993,7 @@ const CHANNEL_QUERY_FULL_NODE_SELECTION = `
             reason
             expiresAt
           }
+          healthGate { disabled openCount unstableCount }
           liveLimiterStats {
             inFlight
             waiting
@@ -937,6 +1020,7 @@ const CHANNEL_QUERY_LIST_NODE_BASE_SELECTION = `
           defaultTestModel
           errorMessage
           settings {
+            healthGateFailureThreshold
             primaryApiFormat
           }
           disabledAPIKeys {
@@ -946,6 +1030,7 @@ const CHANNEL_QUERY_LIST_NODE_BASE_SELECTION = `
             reason
             expiresAt
           }
+          healthGate { disabled openCount unstableCount }
 `;
 
 const CHANNEL_QUERY_SUPPORTED_MODELS_SELECTION = `
@@ -958,6 +1043,7 @@ const CHANNEL_QUERY_TAGS_SELECTION = `
 
 const CHANNEL_QUERY_PROXY_SELECTION = `
           settings {
+            healthGateFailureThreshold
             proxy {
               type
               url
@@ -1109,6 +1195,7 @@ export function useQueryChannels(
     model?: string;
     primaryApiFormat?: string;
     excludePrimaryApiFormat?: string;
+    healthGateAbnormal?: boolean;
     columnVisibility?: ChannelListColumnVisibility;
   },
   options?: {
@@ -1132,6 +1219,7 @@ export function useQueryChannels(
       variables?.model,
       variables?.primaryApiFormat,
       variables?.excludePrimaryApiFormat,
+      variables?.healthGateAbnormal,
       variables?.first,
       variables?.last,
       variables?.after,

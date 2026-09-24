@@ -15,6 +15,7 @@ import { ChannelsBulkTestDialog } from './channels-bulk-test-dialog';
 import { ChannelsDeleteDialog } from './channels-delete-dialog';
 import { ChannelsDisabledAPIKeysDialog } from './channels-disabled-api-keys-dialog';
 import { ChannelsErrorResolvedDialog } from './channels-error-resolved-dialog';
+import { ChannelsHealthGateDialog } from './channels-health-gate-dialog';
 import { ChannelsModelMappingDialog } from './channels-model-mapping-dialog';
 import { ChannelsModelPriceDialog } from './channels-model-price-dialog';
 import { ChannelsOverrideDialog } from './channels-override-dialog';
@@ -317,6 +318,17 @@ export function ChannelsDialogs() {
               }
             }}
             channel={currentRow}
+          />
+
+          <ChannelsHealthGateDialog
+            key={`channel-health-gate-${currentRow.id}`}
+            open={open === 'healthGate'}
+            onOpenChange={(isOpen) => {
+              if (!isOpen) {
+                setOpen(null);
+                setTimeout(() => setCurrentRow(null), 500);
+              }
+            }}
           />
 
           <ChannelsDisabledAPIKeysDialog

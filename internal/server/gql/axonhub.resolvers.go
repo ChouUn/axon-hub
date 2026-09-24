@@ -896,6 +896,9 @@ func (r *queryResolver) QueryChannels(ctx context.Context, input biz.QueryChanne
 	if input.OrderBy != nil && input.OrderBy.Field.String() == "CREATED_AT" {
 		input.OrderBy.Field = ent.DefaultChannelOrder.Field
 	}
+	if err := r.filterHealthGateAbnormal(ctx, &input); err != nil {
+		return nil, err
+	}
 	return r.channelService.QueryChannels(ctx, input)
 }
 

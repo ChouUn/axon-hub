@@ -132,6 +132,7 @@ type LoadBalancer struct {
 	selectionTracker       ChannelSelectionTracker
 	weightTieBreaker       bool
 	roundRobinHealthFilter *RoundRobinHealthStrategy
+	healthGate             *biz.HealthGate
 	debug                  bool
 }
 

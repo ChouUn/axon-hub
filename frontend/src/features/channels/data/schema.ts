@@ -315,6 +315,7 @@ export type ChannelProviderQuotaSettings = z.infer<typeof channelProviderQuotaSe
 
 // Channel Settings
 export const channelSettingsSchema = z.object({
+  healthGateFailureThreshold: z.number().int().min(0).optional().nullable(),
   modelPriceMultiplier: z.union([z.string(), z.number()]).optional().nullable(),
   extraModelPrefix: z.string().optional(),
   modelMappings: z.array(modelMappingSchema).optional().nullable(),
@@ -401,6 +402,29 @@ export type DisabledAPIKey = z.infer<typeof disabledAPIKeySchema>;
 // so it must be labelled rather than masked, and it cannot be deleted.
 export const OAUTH_CREDENTIAL_REF = '__oauth__';
 
+export const channelHealthGateModelSchema = z.object({
+  actualModel: z.string(),
+  state: z.enum(['healthy', 'unstable', 'open', 'probing']),
+  consecutiveFailures: z.number(),
+  probeSuccesses: z.number(),
+  backoffLevel: z.number(),
+  lastError: z.string().optional().nullable(),
+  lastStatusCode: z.number().optional().nullable(),
+  lastErrorAt: z.string().optional().nullable(),
+  openUntil: z.string().optional().nullable(),
+});
+export const channelHealthGateSummarySchema = z.object({
+  disabled: z.boolean(),
+  openCount: z.number(),
+  unstableCount: z.number(),
+});
+export const channelHealthGateStatusSchema = channelHealthGateSummarySchema.extend({
+  failureThreshold: z.number(),
+  probeSuccessThreshold: z.number(),
+  models: z.array(channelHealthGateModelSchema),
+});
+export type ChannelHealthGateStatus = z.infer<typeof channelHealthGateStatusSchema>;
+
 // Channel
 export const channelSchema = z.object({
   id: z.string(),
@@ -414,6 +438,7 @@ export const channelSchema = z.object({
   credentials: channelCredentialsSchema.optional().nullable(),
   providerQuotaStatus: providerQuotaStatusSchema.optional().nullable(),
   disabledAPIKeys: z.array(disabledAPIKeySchema).optional().nullable(),
+  healthGate: channelHealthGateSummarySchema.optional().nullable(),
   supportedModels: z.array(z.string()).default([]),
   autoSyncSupportedModels: z.boolean().default(false),
   autoSyncModelPattern: z.string().optional().default(''),

@@ -103,6 +103,13 @@ const RETRY_POLICY_QUERY = `
       traceStickyMode
       enabled
       emptyResponseDetection
+      healthGate {
+        failureThreshold
+        openDurationSeconds
+        maxOpenDurationSeconds
+        probeSuccessThreshold
+        unstableWindowSeconds
+      }
       upstreamErrorPolicy {
         mode
         customMessage
@@ -347,6 +354,22 @@ export interface AutoDisableChannel {
   statuses: AutoDisableChannelStatus[];
 }
 
+export interface HealthGatePolicy {
+  failureThreshold: number;
+  openDurationSeconds: number;
+  maxOpenDurationSeconds: number;
+  probeSuccessThreshold: number;
+  unstableWindowSeconds: number;
+}
+
+export const DEFAULT_HEALTH_GATE_POLICY: HealthGatePolicy = {
+  failureThreshold: 5,
+  openDurationSeconds: 300,
+  maxOpenDurationSeconds: 3600,
+  probeSuccessThreshold: 2,
+  unstableWindowSeconds: 300,
+};
+
 export interface RetryPolicy {
   maxChannelRetries: number;
   maxSingleChannelRetries: number;
@@ -359,6 +382,7 @@ export interface RetryPolicy {
   autoDisableChannel: AutoDisableChannel;
   emptyResponseDetection: boolean;
   upstreamErrorPolicy: UpstreamErrorPolicy;
+  healthGate: HealthGatePolicy | null;
 }
 
 export interface UpstreamErrorPolicy {
@@ -388,6 +412,7 @@ export interface RetryPolicyInput {
   autoDisableChannel?: AutoDisableChannelInput;
   emptyResponseDetection?: boolean;
   upstreamErrorPolicy?: Partial<UpstreamErrorPolicy>;
+  healthGate: HealthGatePolicy;
 }
 
 export type TraceStickyMode = 'DISABLED' | 'PREFER_PREVIOUS_CHANNEL';

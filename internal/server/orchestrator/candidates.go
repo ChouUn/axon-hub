@@ -33,6 +33,7 @@ type ChannelModelsCandidate struct {
 	// Models are retried in order, so the candidate-level APIFormat is updated
 	// from this slice whenever the current model changes.
 	modelAPIFormats    []string
+	healthGate         *healthGateCandidateInfo
 	TraceSticky        bool // selected from the last successful trace or thread channel
 	ModelRoutingPolicy *ModelRoutingPolicy
 }
@@ -699,6 +700,9 @@ func (s *LoadBalancedSelector) Select(ctx context.Context, req *llm.Request) ([]
 		}
 		*s.effectiveRoutingPolicy = resolvedPolicy
 		traceStickyMode = resolvedPolicy.TraceStickyMode
+	}
+	if loadBalancer != nil && loadBalancer.healthGate != nil {
+		return s.selectHealthGated(ctx, req, candidates, retryPolicy, traceStickyMode, loadBalancer)
 	}
 
 	requiredCount := 1

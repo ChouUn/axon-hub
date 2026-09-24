@@ -11,7 +11,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { useRetryPolicy, useUpdateRetryPolicy, type RetryPolicyInput } from '../data/system';
+import { DEFAULT_HEALTH_GATE_POLICY, useRetryPolicy, useUpdateRetryPolicy, type RetryPolicyInput, type HealthGatePolicy } from '../data/system';
+
+type HealthGateDraft = Record<keyof HealthGatePolicy, string>;
+
+function policyToDraft(policy: HealthGatePolicy): HealthGateDraft {
+  return {
+    failureThreshold: String(policy.failureThreshold),
+    openDurationSeconds: String(policy.openDurationSeconds / 60),
+    maxOpenDurationSeconds: String(policy.maxOpenDurationSeconds / 60),
+    probeSuccessThreshold: String(policy.probeSuccessThreshold),
+    unstableWindowSeconds: String(policy.unstableWindowSeconds / 60),
+  };
+}
 
 export function RetrySettings() {
   const { t } = useTranslation();
@@ -27,6 +39,7 @@ export function RetrySettings() {
     nonStreamResponseTimeoutSeconds: 0,
     loadBalancerStrategy: 'adaptive',
     traceStickyMode: 'PREFER_PREVIOUS_CHANNEL',
+    healthGate: { ...DEFAULT_HEALTH_GATE_POLICY },
     emptyResponseDetection: false,
     upstreamErrorPolicy: {
       mode: 'passthrough',
@@ -37,6 +50,8 @@ export function RetrySettings() {
       statuses: [],
     },
   });
+  const [healthGateDraft, setHealthGateDraft] = useState<HealthGateDraft>(() => policyToDraft(DEFAULT_HEALTH_GATE_POLICY));
+  const [healthGateErrors, setHealthGateErrors] = useState<Partial<Record<keyof HealthGatePolicy, string>>>({});
 
   useEffect(() => {
     if (retryPolicy) {
@@ -49,6 +64,7 @@ export function RetrySettings() {
         nonStreamResponseTimeoutSeconds: retryPolicy.nonStreamResponseTimeoutSeconds,
         loadBalancerStrategy: retryPolicy.loadBalancerStrategy,
         traceStickyMode: retryPolicy.traceStickyMode,
+        healthGate: retryPolicy.healthGate ?? { ...DEFAULT_HEALTH_GATE_POLICY },
         emptyResponseDetection: retryPolicy.emptyResponseDetection,
         upstreamErrorPolicy: {
           mode: retryPolicy.upstreamErrorPolicy?.mode || 'passthrough',
@@ -59,6 +75,8 @@ export function RetrySettings() {
           statuses: retryPolicy.autoDisableChannel?.statuses || [],
         },
       });
+      setHealthGateDraft(policyToDraft(retryPolicy.healthGate ?? DEFAULT_HEALTH_GATE_POLICY));
+      setHealthGateErrors({});
     }
   }, [retryPolicy]);
 
@@ -87,6 +105,11 @@ export function RetrySettings() {
         [field]: value,
       },
     }));
+  }, []);
+
+  const handleHealthGateChange = useCallback((field: keyof HealthGatePolicy, value: string) => {
+    setHealthGateDraft((prev) => ({ ...prev, [field]: value }));
+    setHealthGateErrors((prev) => ({ ...prev, [field]: undefined }));
   }, []);
 
   const handleStatusChange = useCallback((index: number, field: 'status' | 'times', value: number) => {
@@ -122,9 +145,31 @@ export function RetrySettings() {
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      await updateRetryPolicy.mutateAsync(formData);
+      let healthGate = formData.healthGate;
+      if (formData.enabled && formData.loadBalancerStrategy === 'health-gated') {
+        const parsed = { ...healthGate };
+        const errors: Partial<Record<keyof HealthGatePolicy, string>> = {};
+        for (const field of Object.keys(healthGateDraft) as Array<keyof HealthGatePolicy>) {
+          const raw = healthGateDraft[field].trim();
+          const value = Number(raw) * (field.endsWith('Seconds') ? 60 : 1);
+          const rounded = Math.round(value);
+          if (!raw || !Number.isSafeInteger(rounded) || Math.abs(value - rounded) >= 1e-6 ||
+            (field === 'failureThreshold' ? rounded < 0 : rounded <= 0)) {
+            errors[field] = t('system.retry.healthGate.invalidValue');
+          } else {
+            parsed[field] = rounded;
+          }
+        }
+        if (Object.keys(errors).length) {
+          setHealthGateErrors(errors);
+          return;
+        }
+        healthGate = parsed;
+      }
+      setHealthGateErrors({});
+      await updateRetryPolicy.mutateAsync({ ...formData, healthGate });
     },
-    [updateRetryPolicy, formData]
+    [updateRetryPolicy, formData, healthGateDraft, t]
   );
 
   if (isLoading) {
@@ -210,6 +255,7 @@ export function RetrySettings() {
                         <SelectItem value='adaptive'>{t('system.retry.loadBalancerStrategy.options.adaptive')}</SelectItem>
                         <SelectItem value='failover'>{t('system.retry.loadBalancerStrategy.options.failover')}</SelectItem>
                         <SelectItem value='circuit-breaker'>{t('system.retry.loadBalancerStrategy.options.circuitBreaker')}</SelectItem>
+                        <SelectItem value='health-gated'>{t('system.retry.loadBalancerStrategy.options.healthGated')}</SelectItem>
                         <SelectItem value='round-robin'>{t('system.retry.loadBalancerStrategy.options.roundRobin')}</SelectItem>
                       </SelectContent>
                     </Select>
@@ -241,6 +287,35 @@ export function RetrySettings() {
                   </div>
                 )}
               </div>
+              {formData.loadBalancerStrategy === 'health-gated' && (
+                <div className='grid gap-4 rounded-lg border p-4 sm:grid-cols-2'>
+                  <div className='sm:col-span-2'>
+                    <Label className='text-base'>{t('system.retry.healthGate.title')}</Label>
+                    <p className='text-muted-foreground text-sm'>{t('system.retry.healthGate.description')}</p>
+                  </div>
+                  {([
+                    ['failureThreshold', 'failureThreshold'],
+                    ['openDurationSeconds', 'openDurationMinutes'],
+                    ['maxOpenDurationSeconds', 'maxOpenDurationMinutes'],
+                    ['probeSuccessThreshold', 'probeSuccessThreshold'],
+                    ['unstableWindowSeconds', 'unstableWindowMinutes'],
+                  ] as const).map(([field, label]) => (
+                    <div key={field} className='space-y-2'>
+                      <Label htmlFor={`health-gate-${field}`}>{t(`system.retry.healthGate.${label}`)}</Label>
+                      <Input
+                        id={`health-gate-${field}`}
+                        type='text'
+                        inputMode='decimal'
+                        aria-invalid={Boolean(healthGateErrors[field])}
+                        aria-describedby={healthGateErrors[field] ? `health-gate-${field}-error` : undefined}
+                        value={healthGateDraft[field]}
+                        onChange={(e) => handleHealthGateChange(field, e.target.value)}
+                      />
+                      {healthGateErrors[field] && <p id={`health-gate-${field}-error`} role='alert' className='text-destructive text-sm'>{healthGateErrors[field]}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Max Channel Retries */}
               <div className='space-y-2' id='retry-max-retries'>

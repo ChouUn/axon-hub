@@ -5,6 +5,7 @@ import { Table } from '@tanstack/react-table';
 import { useQueryModels } from '@/gql/models';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { DataTableFacetedFilter } from '@/components/data-table-faceted-filter';
 import { useHorizontalScroll } from '@/hooks/use-horizontal-scroll';
@@ -19,6 +20,8 @@ interface DataTableToolbarProps<TData> {
   selectedCount?: number;
   selectedTypeTab?: string;
   showErrorOnly?: boolean;
+  showHealthGateAbnormal?: boolean;
+  onHealthGateAbnormalChange?: (checked: boolean) => void;
   onExitErrorOnlyMode?: () => void;
 }
 
@@ -28,6 +31,8 @@ export function DataTableToolbar<TData>({
   selectedCount: externalSelectedCount,
   selectedTypeTab = 'all',
   showErrorOnly,
+  showHealthGateAbnormal,
+  onHealthGateAbnormalChange,
   onExitErrorOnlyMode,
 }: DataTableToolbarProps<TData>) {
   const { t } = useTranslation();
@@ -125,6 +130,10 @@ export function DataTableToolbar<TData>({
       {table.getColumn('model') && modelOptions?.length > 0 && (
         <DataTableFacetedFilter column={table.getColumn('model')} title={t('channels.filters.model')} options={modelOptions} singleSelect />
       )}
+      <label className='flex shrink-0 cursor-pointer items-center gap-2 text-sm'>
+        <Checkbox checked={showHealthGateAbnormal} onCheckedChange={(checked) => onHealthGateAbnormalChange?.(checked === true)} />
+        {t('channels.healthGate.abnormalOnly')}
+      </label>
       {isFiltered && (
         <Button
           variant='ghost'

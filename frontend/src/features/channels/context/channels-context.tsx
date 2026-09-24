@@ -33,6 +33,7 @@ type ChannelsDialogType =
   | 'availability'
   | 'keyManagement'
   | 'disabledAPIKeys'
+  | 'healthGate'
   | 'endpoints';
 
 interface ChannelsContextType {

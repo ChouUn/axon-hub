@@ -243,6 +243,27 @@ type BulkUpdateChannelOrderingResult struct {
 	Channels []*ent.Channel `json:"channels"`
 }
 
+type ChannelHealthGateModel struct {
+	ActualModel         string     `json:"actualModel"`
+	State               string     `json:"state"`
+	ConsecutiveFailures int        `json:"consecutiveFailures"`
+	ProbeSuccesses      int        `json:"probeSuccesses"`
+	BackoffLevel        int        `json:"backoffLevel"`
+	LastError           *string    `json:"lastError,omitempty"`
+	LastStatusCode      *int       `json:"lastStatusCode,omitempty"`
+	LastErrorAt         *time.Time `json:"lastErrorAt,omitempty"`
+	OpenUntil           *time.Time `json:"openUntil,omitempty"`
+}
+
+type ChannelHealthGateStatus struct {
+	Disabled              bool                      `json:"disabled"`
+	FailureThreshold      int                       `json:"failureThreshold"`
+	ProbeSuccessThreshold int                       `json:"probeSuccessThreshold"`
+	OpenCount             int                       `json:"openCount"`
+	UnstableCount         int                       `json:"unstableCount"`
+	Models                []*ChannelHealthGateModel `json:"models"`
+}
+
 // ChannelLimiterStats is a point-in-time snapshot of the per-channel concurrency limiter.
 type ChannelLimiterStats struct {
 	// Number of requests currently holding a capacity slot.

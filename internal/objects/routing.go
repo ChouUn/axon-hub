@@ -11,6 +11,7 @@ const (
 	LoadBalancerStrategyAdaptive       = "adaptive"
 	LoadBalancerStrategyFailover       = "failover"
 	LoadBalancerStrategyCircuitBreaker = "circuit-breaker"
+	LoadBalancerStrategyHealthGated    = "health-gated"
 	LoadBalancerStrategyRoundRobin     = "round-robin"
 
 	TraceStickyModeDisabled              = "disabled"
@@ -32,6 +33,7 @@ func IsValidLoadBalancerStrategy(value string) bool {
 		LoadBalancerStrategyAdaptive,
 		LoadBalancerStrategyFailover,
 		LoadBalancerStrategyCircuitBreaker,
+		LoadBalancerStrategyHealthGated,
 		LoadBalancerStrategyRoundRobin:
 		return true
 	default:

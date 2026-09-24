@@ -908,6 +908,8 @@ function ProfileCard({
                       ? t('system.retry.loadBalancerStrategy.documentation.failover')
                       : field.value === 'circuit-breaker'
                         ? t('system.retry.loadBalancerStrategy.documentation.circuit-breaker')
+                        : field.value === 'health-gated'
+                          ? t('system.retry.loadBalancerStrategy.documentation.health-gated')
                         : field.value === 'round-robin'
                           ? t('system.retry.loadBalancerStrategy.documentation.round-robin')
                           : t('apikeys.profiles.loadBalancerStrategyDescription');
@@ -938,6 +940,7 @@ function ProfileCard({
                             <SelectItem value='failover'>{t('system.retry.loadBalancerStrategy.options.failover')}</SelectItem>
                             <SelectItem value='circuit-breaker'>{t('system.retry.loadBalancerStrategy.options.circuitBreaker')}</SelectItem>
                             <SelectItem value='round-robin'>{t('system.retry.loadBalancerStrategy.options.roundRobin')}</SelectItem>
+                            <SelectItem value='health-gated'>{t('system.retry.loadBalancerStrategy.options.healthGated')}</SelectItem>
                           </SelectContent>
                         </Select>
                       </FormControl>

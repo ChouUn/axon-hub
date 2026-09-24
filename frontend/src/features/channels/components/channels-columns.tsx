@@ -1,6 +1,7 @@
 import { useCallback, useState, memo, useRef, useEffect } from 'react';
 import { format } from 'date-fns';
 import { DotsHorizontalIcon } from '@radix-ui/react-icons';
+import { HeartPulse } from 'lucide-react';
 import { ColumnDef, Row, Table } from '@tanstack/react-table';
 import {
   IconPlayerPlay,
@@ -262,6 +263,15 @@ const ActionCell = memo(({ row }: { row: Row<Channel> }) => {
             <IconHistory size={16} className='mr-2' />
             {t('channels.actions.testHistory')}
           </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
+              setCurrentRow(channel);
+              setOpen('healthGate');
+            }}
+          >
+            <IconGauge size={16} className='mr-2' />
+            {t('channels.healthGate.title')}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
 
           <DropdownMenuItem
@@ -458,10 +468,16 @@ function getProxyURLSummary(proxyURL: string): { label: string; detail?: string 
 const NameCell = memo(({ row }: { row: Row<Channel> }) => {
   const { t } = useTranslation();
   const channel = row.original;
+  const { setOpen, setCurrentRow } = useChannels();
+  const gate = channel.healthGate;
   const hasError = channel.errorMessage != null;
   const disabledKeysCount = channel.disabledAPIKeys?.length ?? 0;
   const hasDisabledKeys = disabledKeysCount > 0;
   const websiteURL = getChannelWebsiteURL(channel.baseURL);
+  const openHealthGate = () => {
+    setCurrentRow(channel);
+    setOpen('healthGate');
+  };
 
   const nameElement = websiteURL ? (
     <a
@@ -490,11 +506,42 @@ const NameCell = memo(({ row }: { row: Row<Channel> }) => {
     </div>
   );
 
+  const gateBadges = gate && (gate.openCount > 0 || gate.unstableCount > 0) ? (
+    <div className='flex justify-center gap-1'>
+      {gate.openCount > 0 && (
+        <Badge variant='destructive' asChild>
+          <button type='button' onClick={openHealthGate}>
+            {t('channels.healthGate.openBadge', { count: gate.openCount })}
+          </button>
+        </Badge>
+      )}
+      {gate.unstableCount > 0 && (
+        <Badge variant='outline' className='border-amber-500 text-amber-600' asChild>
+          <button type='button' onClick={openHealthGate}>
+            {t('channels.healthGate.unstableBadge', { count: gate.unstableCount })}
+          </button>
+        </Badge>
+      )}
+    </div>
+  ) : (
+    <div className='flex justify-center'>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button type='button' size='icon' variant='ghost' className='text-muted-foreground h-6 w-6' onClick={openHealthGate} aria-label={t('channels.healthGate.view')}>
+            <HeartPulse className='h-4 w-4' />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t('channels.healthGate.view')}</TooltipContent>
+      </Tooltip>
+    </div>
+  );
+
   if (!hasError && !hasDisabledKeys) {
-    return content;
+    return <div className='space-y-1'>{content}{gateBadges}</div>;
   }
 
   return (
+    <div className='space-y-1'>
     <Tooltip>
       <TooltipTrigger asChild>{content}</TooltipTrigger>
       <TooltipContent>
@@ -512,6 +559,8 @@ const NameCell = memo(({ row }: { row: Row<Channel> }) => {
         </div>
       </TooltipContent>
     </Tooltip>
+      {gateBadges}
+    </div>
   );
 });
 

@@ -63,6 +63,12 @@ func NewChatCompletionOrchestrator(
 
 	circuitBreakerLoadBalancer := NewLoadBalancer(systemService, channelService,
 		NewWeightStrategy(), NewModelAwareCircuitBreakerStrategy(modelCircuitBreaker), rateLimitStrategy, quotaStrategy)
+	healthGatedLoadBalancer := NewLoadBalancer(systemService, channelService,
+		NewWeightRoundRobinStrategy(channelService),
+		NewLatencyAwareStrategy(channelService),
+		rateLimitStrategy,
+		quotaStrategy,
+	).WithHealthGate(channelService.HealthGate())
 
 	roundRobinHealthFilter := NewRoundRobinHealthStrategy(channelService)
 	roundRobinLoadBalancer := NewLoadBalancer(systemService, channelService,
@@ -94,6 +100,7 @@ func NewChatCompletionOrchestrator(
 		adaptiveLoadBalancer:       adaptiveLoadBalancer,
 		failoverLoadBalancer:       failoverLoadBalancer,
 		circuitBreakerLoadBalancer: circuitBreakerLoadBalancer,
+		healthGatedLoadBalancer:    healthGatedLoadBalancer,
 		roundRobinLoadBalancer:     roundRobinLoadBalancer,
 		modelCircuitBreaker:        modelCircuitBreaker,
 		quotaProvider:              quotaProvider,
@@ -124,6 +131,7 @@ type ChatCompletionOrchestrator struct {
 	adaptiveLoadBalancer       *LoadBalancer
 	failoverLoadBalancer       *LoadBalancer
 	circuitBreakerLoadBalancer *LoadBalancer
+	healthGatedLoadBalancer    *LoadBalancer
 	roundRobinLoadBalancer     *LoadBalancer
 	// channelLimiterManager owns per-channel concurrency admission control and
 	// supplies in-flight / queue stats to the rate-limit-aware load-balancer strategy.
@@ -213,6 +221,7 @@ func (processor *ChatCompletionOrchestrator) Process(ctx context.Context, reques
 			biz.LoadBalancerStrategyFailover:       processor.failoverLoadBalancer,
 			biz.LoadBalancerStrategyCircuitBreaker: processor.circuitBreakerLoadBalancer,
 			biz.LoadBalancerStrategyRoundRobin:     processor.roundRobinLoadBalancer,
+			biz.LoadBalancerStrategyHealthGated:    processor.healthGatedLoadBalancer,
 		},
 		RoutingPolicy:         deriveRoutingPolicy(retryPolicy, apiKey, nil),
 		ModelMapper:           processor.ModelMapper,
@@ -247,6 +256,7 @@ func (processor *ChatCompletionOrchestrator) Process(ctx context.Context, reques
 	middlewares = append(middlewares, newBillingSystemMessageMiddleware(state))
 
 	inbound, outbound := NewPersistentTransformers(state, processor.Inbound, middlewares...)
+	healthGateTracker := withHealthGate(outbound, processor.ChannelService.HealthGate(), retryPolicy.HealthGateOrDefault())
 
 	// Add inbound middlewares (executed after inbound.TransformRequest)
 	middlewares = append(middlewares,
@@ -285,6 +295,7 @@ func (processor *ChatCompletionOrchestrator) Process(ctx context.Context, reques
 		withPerformanceRecording(outbound),
 
 		withModelCircuitBreaker(outbound, processor.modelCircuitBreaker),
+		healthGateTracker,
 
 		// The request execution middleware must be the final middleware
 		// to ensure that the request execution is created with the correct request bodys.
@@ -347,8 +358,9 @@ func (processor *ChatCompletionOrchestrator) Process(ctx context.Context, reques
 			}
 		}
 
-		return ChatCompletionResult{}, err
+		return ChatCompletionResult{}, healthGateTracker.finalize(ctx, err, false)
 	}
+	healthGateTracker.finalize(ctx, nil, result.Stream)
 
 	// Return result based on stream type
 	if result.Stream {

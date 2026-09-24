@@ -126,6 +126,21 @@ response = client.chat.completions.create(
 - **Configuration**: Set RPM, TPM, and Max Concurrent limits per channel in the management interface under **Rate Limit** settings
 - **Concurrency Fallback**: If `MaxConcurrent` is not configured but the default connection tracker has a per-channel capacity, adaptive balancing still penalizes channels with many in-flight requests and treats fully saturated channels as exhausted fallback candidates
 
+### Health-Gated Strategy (health-gated)
+- **Purpose**: Remove persistently failing "channel × upstream model" combinations from routing, keep one-off failures scoped to the current request, and show exactly which combination is broken in the admin UI.
+- **How to enable**: Set the load balancer strategy to "Health-gated" in the system retry policy, an API key profile, or model settings. The other strategies are unchanged.
+- **Ordering**: Same as adaptive without the error-aware score (weighted round robin + latency aware + rate limit aware + quota aware).
+- **Granularity**: Tracked per channel and the actual upstream model after model mapping; one broken model does not affect other models on the same channel.
+- **States**:
+  - **Healthy / Unstable**: Routed normally; shown as unstable when a failure or a post-first-token stream break happened within the last W minutes. Unstable is display-only and not penalized.
+  - **Open**: After N consecutive counted failures the combination is skipped during routing, including sticky session channels (the sticky record itself is kept).
+  - **Probing**: When the open period expires, only new sessions without a sticky channel are admitted, one request at a time; M consecutive successes recover it, a failure reopens it with a doubled duration (capped).
+- **What counts**: 5xx, network errors, timeouts, empty responses, stream breaks before the first token, and 401/403 count as failures; 429, request errors such as 400/404/422, client cancellation, and local rate-limit/queue rejections are not counted.
+- **When everything is open**: The earliest-expiring combination is tried once; a counted failure returns a generic 503 without channel names, while request errors (e.g. 400) are returned as-is.
+- **Defaults**: N=5, first open period 5 minutes, cap 60 minutes, M=2, W=5 minutes. A channel can override N; 0 disables circuit breaking for that channel.
+- **Admin UI**: The channel list shows open/unstable model counts with an "abnormal only" filter; the health detail view lists each model's state, last error, and remaining time, with manual reset.
+- **Limitations**: State lives in process memory only; it resets on restart and is not shared across instances.
+
 ## 🔧 Advanced Configuration
 
 ### Enable Debug Mode

@@ -25,6 +25,7 @@ type QueryChannelsInput struct {
 	Model                   *string
 	PrimaryAPIFormat        *string
 	ExcludePrimaryAPIFormat *string
+	HealthGateAbnormal      *bool
 }
 
 // QueryChannels queries channels with the specified input parameters, including model filtering.

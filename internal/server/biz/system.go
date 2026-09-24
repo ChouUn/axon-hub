@@ -316,6 +316,9 @@ const (
 	// LoadBalancerStrategyCircuitBreaker is a dynamic load balancer strategy that monitors the health of channels and fails over to a backup channel when the primary channel is unhealthy.
 	LoadBalancerStrategyCircuitBreaker = "circuit-breaker"
 
+	// LoadBalancerStrategyHealthGated gates unhealthy channel-model combinations until real requests probe their recovery.
+	LoadBalancerStrategyHealthGated = "health-gated"
+
 	// LoadBalancerStrategyRoundRobin is a simple load balancer strategy that rotates channels based on historical request counts.
 	LoadBalancerStrategyRoundRobin = "round-robin"
 
@@ -355,7 +358,7 @@ type RetryPolicy struct {
 	// Set to 0 to disable. Values above 600 seconds are clamped.
 	NonStreamResponseTimeoutSeconds int `json:"non_stream_response_timeout_seconds"`
 	// LoadBalancerStrategy defines which channel load balancer strategy to use.
-	// Supported values: "adaptive", "failover", "circuit-breaker", "round-robin".
+	// Supported values: "adaptive", "failover", "circuit-breaker", "health-gated", "round-robin".
 	LoadBalancerStrategy string `json:"load_balancer_strategy"`
 	// TraceStickyMode controls whether the most recently selected channel from
 	// the current trace or thread is selected before normal load balancing.
@@ -373,6 +376,8 @@ type RetryPolicy struct {
 
 	// UpstreamErrorPolicy controls how provider errors are exposed to API users.
 	UpstreamErrorPolicy UpstreamErrorPolicy `json:"upstream_error_policy"`
+	// HealthGate configures health-gated channel-model routing.
+	HealthGate *HealthGatePolicy `json:"health_gate,omitempty"`
 }
 
 type TraceStickyMode string
@@ -1127,6 +1132,7 @@ func normalizeRetryPolicy(policy *RetryPolicy) {
 	case LoadBalancerStrategyAdaptive,
 		LoadBalancerStrategyFailover,
 		LoadBalancerStrategyCircuitBreaker,
+		LoadBalancerStrategyHealthGated,
 		LoadBalancerStrategyRoundRobin:
 	default:
 		policy.LoadBalancerStrategy = defaultRetryPolicy.LoadBalancerStrategy
@@ -1166,6 +1172,8 @@ func normalizeRetryPolicy(policy *RetryPolicy) {
 		strings.TrimSpace(policy.UpstreamErrorPolicy.CustomMessage) == "" {
 		policy.UpstreamErrorPolicy.Mode = UpstreamErrorModeHidden
 	}
+
+	normalizeHealthGatePolicy(policy)
 }
 
 func normalizeWebhookNotifierConfig(cfg *WebhookNotifierConfig) {

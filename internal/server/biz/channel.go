@@ -162,6 +162,10 @@ type ChannelService struct {
 
 	httpClient *httpclient.HttpClient
 
+	// healthGate holds process-local health-gated routing state (fork).
+	healthGateOnce sync.Once
+	healthGate     *HealthGate
+
 	enabledChannelsCache *live.Cache[[]*Channel]
 	channelNotifier      watcher.Notifier[live.CacheEvent[struct{}]]
 

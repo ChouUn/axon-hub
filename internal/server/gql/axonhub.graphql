@@ -184,6 +184,7 @@ type ChannelSettings {
   modelProtocols: [ModelProtocol!]
   providerQuota: ChannelProviderQuotaSettings @goField(forceResolver: true)
   primaryApiFormat: String
+  healthGateFailureThreshold: Int
 }
 
 enum CapabilityPolicy {
@@ -253,6 +254,7 @@ input ChannelSettingsInput {
   modelProtocols: [ModelProtocolInput!]
   providerQuota: ChannelProviderQuotaSettingsInput
   primaryApiFormat: String
+  healthGateFailureThreshold: Int
 }
 
 input ChannelRateLimitInput {
@@ -1035,6 +1037,7 @@ input QueryChannelInput {
   Used so a vendor tab does not also list image-generation channels.
   """
   excludePrimaryApiFormat: String
+  healthGateAbnormal: Boolean
 }
 
 input CountChannelsByTypeInput {

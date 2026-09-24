@@ -130,6 +130,23 @@ type RetryPolicy {
   autoDisableChannel: AutoDisableChannel!
   emptyResponseDetection: Boolean!
   upstreamErrorPolicy: UpstreamErrorPolicy!
+  healthGate: HealthGatePolicy
+}
+
+type HealthGatePolicy {
+  failureThreshold: Int!
+  openDurationSeconds: Int!
+  maxOpenDurationSeconds: Int!
+  probeSuccessThreshold: Int!
+  unstableWindowSeconds: Int!
+}
+
+input HealthGatePolicyInput {
+  failureThreshold: Int!
+  openDurationSeconds: Int!
+  maxOpenDurationSeconds: Int!
+  probeSuccessThreshold: Int!
+  unstableWindowSeconds: Int!
 }
 
 type UpstreamErrorPolicy {
@@ -164,6 +181,7 @@ input UpdateRetryPolicyInput {
   autoDisableChannel: AutoDisableChannelInput
   emptyResponseDetection: Boolean
   upstreamErrorPolicy: UpstreamErrorPolicyInput
+  healthGate: HealthGatePolicyInput
 }
 
 enum TraceStickyMode {

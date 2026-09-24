@@ -1357,6 +1357,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
           selectedApiFormat === 'zenmux/video' ||
           existingModelProtocols?.some((protocol) => protocol.apiFormats.includes('zenmux/video')) === true;
         const settingsPatch: Partial<ChannelSettings> = {
+          healthGateFailureThreshold: values.settings?.healthGateFailureThreshold ?? null,
           passThroughUserAgent,
           passThroughBody,
           retryableStatusCodes,
@@ -2896,6 +2897,32 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
                           )}
                         </div>
                       </FormItem>
+
+                      <FormField
+                        control={form.control}
+                        name='settings.healthGateFailureThreshold'
+                        render={({ field }) => (
+                          <FormItem className='grid grid-cols-1 items-start gap-x-6 gap-y-2 md:grid-cols-8'>
+                            <FormLabel className='pt-2 font-medium md:col-span-2 md:text-right'>
+                              {t('channels.dialogs.healthGate.failureThreshold')}
+                            </FormLabel>
+                            <div className='space-y-1 md:col-span-6'>
+                              <FormControl>
+                                <Input
+                                  type='number'
+                                  min='0'
+                                  step='1'
+                                  value={field.value ?? ''}
+                                  onChange={(event) => field.onChange(event.target.value === '' ? null : Number(event.target.value))}
+                                  placeholder={t('channels.dialogs.healthGate.inherit')}
+                                />
+                              </FormControl>
+                              <FormDescription>{t('channels.dialogs.healthGate.overrideDescription')}</FormDescription>
+                              <FormMessage />
+                            </div>
+                          </FormItem>
+                        )}
+                      />
 
                       <FormItem className='grid grid-cols-1 items-start gap-x-6 gap-y-2 md:grid-cols-8'>
                         <div className='flex items-center gap-1.5 pt-2 md:col-span-2 md:justify-start'>

@@ -1,0 +1,28 @@
+type ChannelHealthGateModel {
+  actualModel: String!
+  state: String!
+  consecutiveFailures: Int!
+  probeSuccesses: Int!
+  backoffLevel: Int!
+  lastError: String
+  lastStatusCode: Int
+  lastErrorAt: Time
+  openUntil: Time
+}
+
+type ChannelHealthGateStatus {
+  disabled: Boolean!
+  failureThreshold: Int!
+  probeSuccessThreshold: Int!
+  openCount: Int!
+  unstableCount: Int!
+  models: [ChannelHealthGateModel!]!
+}
+
+extend type Channel {
+  healthGate: ChannelHealthGateStatus @goField(forceResolver: true)
+}
+
+extend type Mutation {
+  resetChannelHealthGate(channelID: ID!, actualModel: String): Boolean!
+}

@@ -42,6 +42,7 @@ function ChannelsContent() {
   const [modelFilter, setModelFilter] = useState<string>('');
   const [selectedTypeTab, setSelectedTypeTab] = useState<string>('all');
   const [showErrorOnly, setShowErrorOnly] = useState<boolean>(false);
+  const [showHealthGateAbnormal, setShowHealthGateAbnormal] = useState(false);
   const [sorting, setSorting] = useState<SortingState>(() => {
     const stored = localStorage.getItem('channels-table-sorting');
     if (stored) {
@@ -168,6 +169,7 @@ function ChannelsContent() {
     primaryApiFormat: selectedTypeGroup?.primaryApiFormat,
     excludePrimaryApiFormat:
       selectedTypeTab !== 'all' && !selectedTypeGroup?.primaryApiFormat ? IMAGE_PRIMARY_API_FORMAT : undefined,
+    healthGateAbnormal: showHealthGateAbnormal || undefined,
     columnVisibility,
   });
 
@@ -282,6 +284,11 @@ function ChannelsContent() {
     resetCursor();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const handleHealthGateAbnormalChange = useCallback((checked: boolean) => {
+    setShowHealthGateAbnormal(checked);
+    resetCursor();
+  }, [resetCursor]);
+
 
   const columns = useMemo(() => createColumns(t, channelPermissions.canWrite), [t, channelPermissions.canWrite]);
 
@@ -308,6 +315,8 @@ function ChannelsContent() {
         modelFilter={modelFilter}
         selectedTypeTab={selectedTypeTab}
         showErrorOnly={showErrorOnly}
+        showHealthGateAbnormal={showHealthGateAbnormal}
+        onHealthGateAbnormalChange={handleHealthGateAbnormalChange}
         sorting={sorting}
         onSortingChange={handleSortingChange}
         onExitErrorOnlyMode={handleExitErrorOnlyMode}

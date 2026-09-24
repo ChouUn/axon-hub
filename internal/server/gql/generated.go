@@ -413,6 +413,7 @@ type ComplexityRoot struct {
 		Endpoints               func(childComplexity int) int
 		ErrorMessage            func(childComplexity int) int
 		Executions              func(childComplexity int, after *entgql.Cursor[int], first *int, before *entgql.Cursor[int], last *int, orderBy *ent.RequestExecutionOrder, where *ent.RequestExecutionWhereInput) int
+		HealthGate              func(childComplexity int) int
 		ID                      func(childComplexity int) int
 		LiveLimiterStats        func(childComplexity int) int
 		ManualModels            func(childComplexity int) int
@@ -454,6 +455,27 @@ type ComplexityRoot struct {
 		BaseURL   func(childComplexity int) int
 		Path      func(childComplexity int) int
 		Transport func(childComplexity int) int
+	}
+
+	ChannelHealthGateModel struct {
+		ActualModel         func(childComplexity int) int
+		BackoffLevel        func(childComplexity int) int
+		ConsecutiveFailures func(childComplexity int) int
+		LastError           func(childComplexity int) int
+		LastErrorAt         func(childComplexity int) int
+		LastStatusCode      func(childComplexity int) int
+		OpenUntil           func(childComplexity int) int
+		ProbeSuccesses      func(childComplexity int) int
+		State               func(childComplexity int) int
+	}
+
+	ChannelHealthGateStatus struct {
+		Disabled              func(childComplexity int) int
+		FailureThreshold      func(childComplexity int) int
+		Models                func(childComplexity int) int
+		OpenCount             func(childComplexity int) int
+		ProbeSuccessThreshold func(childComplexity int) int
+		UnstableCount         func(childComplexity int) int
 	}
 
 	ChannelLimiterStats struct {
@@ -613,25 +635,26 @@ type ComplexityRoot struct {
 	}
 
 	ChannelSettings struct {
-		AutoTrimedModelPrefixes  func(childComplexity int) int
-		BodyOverrideOperations   func(childComplexity int) int
-		ExtraModelPrefix         func(childComplexity int) int
-		HeaderOverrideOperations func(childComplexity int) int
-		HideMappedModels         func(childComplexity int) int
-		HideOriginalModels       func(childComplexity int) int
-		LowercaseModelID         func(childComplexity int) int
-		ModelMappings            func(childComplexity int) int
-		ModelPriceMultiplier     func(childComplexity int) int
-		ModelProtocols           func(childComplexity int) int
-		PassThroughBody          func(childComplexity int) int
-		PassThroughUserAgent     func(childComplexity int) int
-		PrimaryAPIFormat         func(childComplexity int) int
-		ProviderQuota            func(childComplexity int) int
-		Proxy                    func(childComplexity int) int
-		RateLimit                func(childComplexity int) int
-		RetryableErrorPatterns   func(childComplexity int) int
-		RetryableStatusCodes     func(childComplexity int) int
-		TransformOptions         func(childComplexity int) int
+		AutoTrimedModelPrefixes    func(childComplexity int) int
+		BodyOverrideOperations     func(childComplexity int) int
+		ExtraModelPrefix           func(childComplexity int) int
+		HeaderOverrideOperations   func(childComplexity int) int
+		HealthGateFailureThreshold func(childComplexity int) int
+		HideMappedModels           func(childComplexity int) int
+		HideOriginalModels         func(childComplexity int) int
+		LowercaseModelID           func(childComplexity int) int
+		ModelMappings              func(childComplexity int) int
+		ModelPriceMultiplier       func(childComplexity int) int
+		ModelProtocols             func(childComplexity int) int
+		PassThroughBody            func(childComplexity int) int
+		PassThroughUserAgent       func(childComplexity int) int
+		PrimaryAPIFormat           func(childComplexity int) int
+		ProviderQuota              func(childComplexity int) int
+		Proxy                      func(childComplexity int) int
+		RateLimit                  func(childComplexity int) int
+		RetryableErrorPatterns     func(childComplexity int) int
+		RetryableStatusCodes       func(childComplexity int) int
+		TransformOptions           func(childComplexity int) int
 	}
 
 	ChannelSuccessRate struct {
@@ -848,6 +871,14 @@ type ComplexityRoot struct {
 	HeaderEntry struct {
 		Key   func(childComplexity int) int
 		Value func(childComplexity int) int
+	}
+
+	HealthGatePolicy struct {
+		FailureThreshold       func(childComplexity int) int
+		MaxOpenDurationSeconds func(childComplexity int) int
+		OpenDurationSeconds    func(childComplexity int) int
+		ProbeSuccessThreshold  func(childComplexity int) int
+		UnstableWindowSeconds  func(childComplexity int) int
 	}
 
 	HourlyRequestStats struct {
@@ -1082,6 +1113,7 @@ type ComplexityRoot struct {
 		PreviewPromptProtectionRule           func(childComplexity int, input PromptProtectionRulePreviewInput) int
 		RefreshProvidersCatalog               func(childComplexity int) int
 		RemoveUserFromProject                 func(childComplexity int, input RemoveUserFromProjectInput) int
+		ResetChannelHealthGate                func(childComplexity int, channelID objects.GUID, actualModel *string) int
 		ResetChannelQuotaNow                  func(childComplexity int, channelID objects.GUID) int
 		Restore                               func(childComplexity int, file graphql.Upload, input backup.RestoreOptions) int
 		RetainThread                          func(childComplexity int, id objects.GUID) int
@@ -1657,6 +1689,7 @@ type ComplexityRoot struct {
 		AutoDisableChannel              func(childComplexity int) int
 		EmptyResponseDetection          func(childComplexity int) int
 		Enabled                         func(childComplexity int) int
+		HealthGate                      func(childComplexity int) int
 		LoadBalancerStrategy            func(childComplexity int) int
 		MaxChannelRetries               func(childComplexity int) int
 		MaxSingleChannelRetries         func(childComplexity int) int
@@ -2235,6 +2268,7 @@ type ChannelResolver interface {
 	Credentials(ctx context.Context, obj *ent.Channel) (*objects.ChannelCredentials, error)
 	DisabledAPIKeys(ctx context.Context, obj *ent.Channel) ([]*objects.DisabledAPIKey, error)
 	LiveLimiterStats(ctx context.Context, obj *ent.Channel) (*ChannelLimiterStats, error)
+	HealthGate(ctx context.Context, obj *ent.Channel) (*ChannelHealthGateStatus, error)
 }
 type ChannelModelPriceResolver interface {
 	ID(ctx context.Context, obj *ent.ChannelModelPrice) (*objects.GUID, error)
@@ -2385,6 +2419,7 @@ type MutationResolver interface {
 	Restore(ctx context.Context, file graphql.Upload, input backup.RestoreOptions) (*RestorePayload, error)
 	UpdateAutoBackupSettings(ctx context.Context, input UpdateAutoBackupSettingsInput) (bool, error)
 	TriggerAutoBackup(ctx context.Context) (*TriggerBackupPayload, error)
+	ResetChannelHealthGate(ctx context.Context, channelID objects.GUID, actualModel *string) (bool, error)
 	CreatePrompt(ctx context.Context, input ent.CreatePromptInput) (*ent.Prompt, error)
 	UpdatePrompt(ctx context.Context, id objects.GUID, input ent.UpdatePromptInput) (*ent.Prompt, error)
 	DeletePrompt(ctx context.Context, id objects.GUID) (bool, error)
@@ -3845,6 +3880,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Channel.Executions(childComplexity, args["after"].(*entgql.Cursor[int]), args["first"].(*int), args["before"].(*entgql.Cursor[int]), args["last"].(*int), args["orderBy"].(*ent.RequestExecutionOrder), args["where"].(*ent.RequestExecutionWhereInput)), true
+	case "Channel.healthGate":
+		if e.complexity.Channel.HealthGate == nil {
+			break
+		}
+
+		return e.complexity.Channel.HealthGate(childComplexity), true
 	case "Channel.id":
 		if e.complexity.Channel.ID == nil {
 			break
@@ -4033,6 +4074,98 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ChannelEndpoint.Transport(childComplexity), true
+
+	case "ChannelHealthGateModel.actualModel":
+		if e.complexity.ChannelHealthGateModel.ActualModel == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateModel.ActualModel(childComplexity), true
+	case "ChannelHealthGateModel.backoffLevel":
+		if e.complexity.ChannelHealthGateModel.BackoffLevel == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateModel.BackoffLevel(childComplexity), true
+	case "ChannelHealthGateModel.consecutiveFailures":
+		if e.complexity.ChannelHealthGateModel.ConsecutiveFailures == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateModel.ConsecutiveFailures(childComplexity), true
+	case "ChannelHealthGateModel.lastError":
+		if e.complexity.ChannelHealthGateModel.LastError == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateModel.LastError(childComplexity), true
+	case "ChannelHealthGateModel.lastErrorAt":
+		if e.complexity.ChannelHealthGateModel.LastErrorAt == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateModel.LastErrorAt(childComplexity), true
+	case "ChannelHealthGateModel.lastStatusCode":
+		if e.complexity.ChannelHealthGateModel.LastStatusCode == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateModel.LastStatusCode(childComplexity), true
+	case "ChannelHealthGateModel.openUntil":
+		if e.complexity.ChannelHealthGateModel.OpenUntil == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateModel.OpenUntil(childComplexity), true
+	case "ChannelHealthGateModel.probeSuccesses":
+		if e.complexity.ChannelHealthGateModel.ProbeSuccesses == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateModel.ProbeSuccesses(childComplexity), true
+	case "ChannelHealthGateModel.state":
+		if e.complexity.ChannelHealthGateModel.State == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateModel.State(childComplexity), true
+
+	case "ChannelHealthGateStatus.disabled":
+		if e.complexity.ChannelHealthGateStatus.Disabled == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateStatus.Disabled(childComplexity), true
+	case "ChannelHealthGateStatus.failureThreshold":
+		if e.complexity.ChannelHealthGateStatus.FailureThreshold == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateStatus.FailureThreshold(childComplexity), true
+	case "ChannelHealthGateStatus.models":
+		if e.complexity.ChannelHealthGateStatus.Models == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateStatus.Models(childComplexity), true
+	case "ChannelHealthGateStatus.openCount":
+		if e.complexity.ChannelHealthGateStatus.OpenCount == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateStatus.OpenCount(childComplexity), true
+	case "ChannelHealthGateStatus.probeSuccessThreshold":
+		if e.complexity.ChannelHealthGateStatus.ProbeSuccessThreshold == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateStatus.ProbeSuccessThreshold(childComplexity), true
+	case "ChannelHealthGateStatus.unstableCount":
+		if e.complexity.ChannelHealthGateStatus.UnstableCount == nil {
+			break
+		}
+
+		return e.complexity.ChannelHealthGateStatus.UnstableCount(childComplexity), true
 
 	case "ChannelLimiterStats.capacity":
 		if e.complexity.ChannelLimiterStats.Capacity == nil {
@@ -4620,6 +4753,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ChannelSettings.HeaderOverrideOperations(childComplexity), true
+	case "ChannelSettings.healthGateFailureThreshold":
+		if e.complexity.ChannelSettings.HealthGateFailureThreshold == nil {
+			break
+		}
+
+		return e.complexity.ChannelSettings.HealthGateFailureThreshold(childComplexity), true
 	case "ChannelSettings.hideMappedModels":
 		if e.complexity.ChannelSettings.HideMappedModels == nil {
 			break
@@ -5455,6 +5594,37 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.HeaderEntry.Value(childComplexity), true
+
+	case "HealthGatePolicy.failureThreshold":
+		if e.complexity.HealthGatePolicy.FailureThreshold == nil {
+			break
+		}
+
+		return e.complexity.HealthGatePolicy.FailureThreshold(childComplexity), true
+	case "HealthGatePolicy.maxOpenDurationSeconds":
+		if e.complexity.HealthGatePolicy.MaxOpenDurationSeconds == nil {
+			break
+		}
+
+		return e.complexity.HealthGatePolicy.MaxOpenDurationSeconds(childComplexity), true
+	case "HealthGatePolicy.openDurationSeconds":
+		if e.complexity.HealthGatePolicy.OpenDurationSeconds == nil {
+			break
+		}
+
+		return e.complexity.HealthGatePolicy.OpenDurationSeconds(childComplexity), true
+	case "HealthGatePolicy.probeSuccessThreshold":
+		if e.complexity.HealthGatePolicy.ProbeSuccessThreshold == nil {
+			break
+		}
+
+		return e.complexity.HealthGatePolicy.ProbeSuccessThreshold(childComplexity), true
+	case "HealthGatePolicy.unstableWindowSeconds":
+		if e.complexity.HealthGatePolicy.UnstableWindowSeconds == nil {
+			break
+		}
+
+		return e.complexity.HealthGatePolicy.UnstableWindowSeconds(childComplexity), true
 
 	case "HourlyRequestStats.count":
 		if e.complexity.HourlyRequestStats.Count == nil {
@@ -6749,6 +6919,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.RemoveUserFromProject(childComplexity, args["input"].(RemoveUserFromProjectInput)), true
+	case "Mutation.resetChannelHealthGate":
+		if e.complexity.Mutation.ResetChannelHealthGate == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_resetChannelHealthGate_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.ResetChannelHealthGate(childComplexity, args["channelID"].(objects.GUID), args["actualModel"].(*string)), true
 	case "Mutation.resetChannelQuotaNow":
 		if e.complexity.Mutation.ResetChannelQuotaNow == nil {
 			break
@@ -9847,6 +10028,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.RetryPolicy.Enabled(childComplexity), true
+	case "RetryPolicy.healthGate":
+		if e.complexity.RetryPolicy.HealthGate == nil {
+			break
+		}
+
+		return e.complexity.RetryPolicy.HealthGate(childComplexity), true
 	case "RetryPolicy.loadBalancerStrategy":
 		if e.complexity.RetryPolicy.LoadBalancerStrategy == nil {
 			break
@@ -12060,6 +12247,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputGetCacheDiagnosticsInput,
 		ec.unmarshalInputGetChannelProbeDataInput,
 		ec.unmarshalInputHeaderEntryInput,
+		ec.unmarshalInputHealthGatePolicyInput,
 		ec.unmarshalInputInitializeSystemInput,
 		ec.unmarshalInputLoadApiKeyProfileTemplateInput,
 		ec.unmarshalInputModelAssociationInput,
@@ -12284,7 +12472,7 @@ func (ec *executionContext) introspectType(name string) (*introspection.Type, er
 	return introspection.WrapTypeFromDef(ec.Schema(), ec.Schema().Types[name]), nil
 }
 
-//go:embed "axonhub.graphql" "ent.graphql" "dashboard.graphql" "scopes.graphql" "me.graphql" "system.graphql" "filter.graphql" "model.graphql" "backup.graphql" "channel_probe.graphql" "prompt.graphql" "prompt_protection_rule.graphql" "price.graphql" "cost.graphql" "analytics.graphql"
+//go:embed "axonhub.graphql" "ent.graphql" "dashboard.graphql" "scopes.graphql" "me.graphql" "system.graphql" "filter.graphql" "model.graphql" "backup.graphql" "channel_probe.graphql" "channel_health_gate.graphql" "prompt.graphql" "prompt_protection_rule.graphql" "price.graphql" "cost.graphql" "analytics.graphql"
 var sourcesFS embed.FS
 
 func sourceData(filename string) string {
@@ -12306,6 +12494,7 @@ var sources = []*ast.Source{
 	{Name: "model.graphql", Input: sourceData("model.graphql"), BuiltIn: false},
 	{Name: "backup.graphql", Input: sourceData("backup.graphql"), BuiltIn: false},
 	{Name: "channel_probe.graphql", Input: sourceData("channel_probe.graphql"), BuiltIn: false},
+	{Name: "channel_health_gate.graphql", Input: sourceData("channel_health_gate.graphql"), BuiltIn: false},
 	{Name: "prompt.graphql", Input: sourceData("prompt.graphql"), BuiltIn: false},
 	{Name: "prompt_protection_rule.graphql", Input: sourceData("prompt_protection_rule.graphql"), BuiltIn: false},
 	{Name: "price.graphql", Input: sourceData("price.graphql"), BuiltIn: false},
@@ -13254,6 +13443,22 @@ func (ec *executionContext) field_Mutation_removeUserFromProject_args(ctx contex
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_resetChannelHealthGate_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "channelID", ec.unmarshalNID2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐGUID)
+	if err != nil {
+		return nil, err
+	}
+	args["channelID"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "actualModel", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["actualModel"] = arg1
 	return args, nil
 }
 
@@ -20267,6 +20472,8 @@ func (ec *executionContext) fieldContext_ApplyChannelOverrideTemplatePayload_cha
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -21329,6 +21536,8 @@ func (ec *executionContext) fieldContext_BulkImportChannelsResult_channels(_ con
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -21480,6 +21689,8 @@ func (ec *executionContext) fieldContext_BulkUpdateChannelOrderingResult_channel
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -22019,6 +22230,8 @@ func (ec *executionContext) fieldContext_Channel_settings(_ context.Context, fie
 				return ec.fieldContext_ChannelSettings_providerQuota(ctx, field)
 			case "primaryApiFormat":
 				return ec.fieldContext_ChannelSettings_primaryApiFormat(ctx, field)
+			case "healthGateFailureThreshold":
+				return ec.fieldContext_ChannelSettings_healthGateFailureThreshold(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type ChannelSettings", field.Name)
 		},
@@ -22674,6 +22887,49 @@ func (ec *executionContext) fieldContext_Channel_liveLimiterStats(_ context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _Channel_healthGate(ctx context.Context, field graphql.CollectedField, obj *ent.Channel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Channel_healthGate,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Channel().HealthGate(ctx, obj)
+		},
+		nil,
+		ec.marshalOChannelHealthGateStatus2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐChannelHealthGateStatus,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_Channel_healthGate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Channel",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "disabled":
+				return ec.fieldContext_ChannelHealthGateStatus_disabled(ctx, field)
+			case "failureThreshold":
+				return ec.fieldContext_ChannelHealthGateStatus_failureThreshold(ctx, field)
+			case "probeSuccessThreshold":
+				return ec.fieldContext_ChannelHealthGateStatus_probeSuccessThreshold(ctx, field)
+			case "openCount":
+				return ec.fieldContext_ChannelHealthGateStatus_openCount(ctx, field)
+			case "unstableCount":
+				return ec.fieldContext_ChannelHealthGateStatus_unstableCount(ctx, field)
+			case "models":
+				return ec.fieldContext_ChannelHealthGateStatus_models(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ChannelHealthGateStatus", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _ChannelConnection_edges(ctx context.Context, field graphql.CollectedField, obj *ent.ChannelConnection) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -23001,6 +23257,8 @@ func (ec *executionContext) fieldContext_ChannelEdge_node(_ context.Context, fie
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -23148,6 +23406,461 @@ func (ec *executionContext) fieldContext_ChannelEndpoint_transport(_ context.Con
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateModel_actualModel(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateModel_actualModel,
+		func(ctx context.Context) (any, error) {
+			return obj.ActualModel, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateModel_actualModel(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateModel",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateModel_state(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateModel_state,
+		func(ctx context.Context) (any, error) {
+			return obj.State, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateModel_state(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateModel",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateModel_consecutiveFailures(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateModel_consecutiveFailures,
+		func(ctx context.Context) (any, error) {
+			return obj.ConsecutiveFailures, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateModel_consecutiveFailures(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateModel",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateModel_probeSuccesses(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateModel_probeSuccesses,
+		func(ctx context.Context) (any, error) {
+			return obj.ProbeSuccesses, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateModel_probeSuccesses(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateModel",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateModel_backoffLevel(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateModel_backoffLevel,
+		func(ctx context.Context) (any, error) {
+			return obj.BackoffLevel, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateModel_backoffLevel(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateModel",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateModel_lastError(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateModel_lastError,
+		func(ctx context.Context) (any, error) {
+			return obj.LastError, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateModel_lastError(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateModel",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateModel_lastStatusCode(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateModel_lastStatusCode,
+		func(ctx context.Context) (any, error) {
+			return obj.LastStatusCode, nil
+		},
+		nil,
+		ec.marshalOInt2ᚖint,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateModel_lastStatusCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateModel",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateModel_lastErrorAt(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateModel_lastErrorAt,
+		func(ctx context.Context) (any, error) {
+			return obj.LastErrorAt, nil
+		},
+		nil,
+		ec.marshalOTime2ᚖtimeᚐTime,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateModel_lastErrorAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateModel",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateModel_openUntil(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateModel_openUntil,
+		func(ctx context.Context) (any, error) {
+			return obj.OpenUntil, nil
+		},
+		nil,
+		ec.marshalOTime2ᚖtimeᚐTime,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateModel_openUntil(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateModel",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateStatus_disabled(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateStatus_disabled,
+		func(ctx context.Context) (any, error) {
+			return obj.Disabled, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateStatus_disabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateStatus_failureThreshold(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateStatus_failureThreshold,
+		func(ctx context.Context) (any, error) {
+			return obj.FailureThreshold, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateStatus_failureThreshold(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateStatus_probeSuccessThreshold(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateStatus_probeSuccessThreshold,
+		func(ctx context.Context) (any, error) {
+			return obj.ProbeSuccessThreshold, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateStatus_probeSuccessThreshold(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateStatus_openCount(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateStatus_openCount,
+		func(ctx context.Context) (any, error) {
+			return obj.OpenCount, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateStatus_openCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateStatus_unstableCount(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateStatus_unstableCount,
+		func(ctx context.Context) (any, error) {
+			return obj.UnstableCount, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateStatus_unstableCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelHealthGateStatus_models(ctx context.Context, field graphql.CollectedField, obj *ChannelHealthGateStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelHealthGateStatus_models,
+		func(ctx context.Context) (any, error) {
+			return obj.Models, nil
+		},
+		nil,
+		ec.marshalNChannelHealthGateModel2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐChannelHealthGateModelᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelHealthGateStatus_models(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelHealthGateStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "actualModel":
+				return ec.fieldContext_ChannelHealthGateModel_actualModel(ctx, field)
+			case "state":
+				return ec.fieldContext_ChannelHealthGateModel_state(ctx, field)
+			case "consecutiveFailures":
+				return ec.fieldContext_ChannelHealthGateModel_consecutiveFailures(ctx, field)
+			case "probeSuccesses":
+				return ec.fieldContext_ChannelHealthGateModel_probeSuccesses(ctx, field)
+			case "backoffLevel":
+				return ec.fieldContext_ChannelHealthGateModel_backoffLevel(ctx, field)
+			case "lastError":
+				return ec.fieldContext_ChannelHealthGateModel_lastError(ctx, field)
+			case "lastStatusCode":
+				return ec.fieldContext_ChannelHealthGateModel_lastStatusCode(ctx, field)
+			case "lastErrorAt":
+				return ec.fieldContext_ChannelHealthGateModel_lastErrorAt(ctx, field)
+			case "openUntil":
+				return ec.fieldContext_ChannelHealthGateModel_openUntil(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ChannelHealthGateModel", field.Name)
 		},
 	}
 	return fc, nil
@@ -23742,6 +24455,8 @@ func (ec *executionContext) fieldContext_ChannelModelPrice_channel(_ context.Con
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -25675,6 +26390,8 @@ func (ec *executionContext) fieldContext_ChannelProbe_channel(_ context.Context,
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -26840,6 +27557,35 @@ func (ec *executionContext) fieldContext_ChannelSettings_primaryApiFormat(_ cont
 	return fc, nil
 }
 
+func (ec *executionContext) _ChannelSettings_healthGateFailureThreshold(ctx context.Context, field graphql.CollectedField, obj *objects.ChannelSettings) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelSettings_healthGateFailureThreshold,
+		func(ctx context.Context) (any, error) {
+			return obj.HealthGateFailureThreshold, nil
+		},
+		nil,
+		ec.marshalOInt2ᚖint,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelSettings_healthGateFailureThreshold(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelSettings",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _ChannelSuccessRate_channelId(ctx context.Context, field graphql.CollectedField, obj *ChannelSuccessRate) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -27593,6 +28339,8 @@ func (ec *executionContext) fieldContext_ClearChannelOverrideTemplatesPayload_ch
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -30473,6 +31221,151 @@ func (ec *executionContext) fieldContext_HeaderEntry_value(_ context.Context, fi
 	return fc, nil
 }
 
+func (ec *executionContext) _HealthGatePolicy_failureThreshold(ctx context.Context, field graphql.CollectedField, obj *biz.HealthGatePolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_HealthGatePolicy_failureThreshold,
+		func(ctx context.Context) (any, error) {
+			return obj.FailureThreshold, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_HealthGatePolicy_failureThreshold(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HealthGatePolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HealthGatePolicy_openDurationSeconds(ctx context.Context, field graphql.CollectedField, obj *biz.HealthGatePolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_HealthGatePolicy_openDurationSeconds,
+		func(ctx context.Context) (any, error) {
+			return obj.OpenDurationSeconds, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_HealthGatePolicy_openDurationSeconds(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HealthGatePolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HealthGatePolicy_maxOpenDurationSeconds(ctx context.Context, field graphql.CollectedField, obj *biz.HealthGatePolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_HealthGatePolicy_maxOpenDurationSeconds,
+		func(ctx context.Context) (any, error) {
+			return obj.MaxOpenDurationSeconds, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_HealthGatePolicy_maxOpenDurationSeconds(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HealthGatePolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HealthGatePolicy_probeSuccessThreshold(ctx context.Context, field graphql.CollectedField, obj *biz.HealthGatePolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_HealthGatePolicy_probeSuccessThreshold,
+		func(ctx context.Context) (any, error) {
+			return obj.ProbeSuccessThreshold, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_HealthGatePolicy_probeSuccessThreshold(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HealthGatePolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HealthGatePolicy_unstableWindowSeconds(ctx context.Context, field graphql.CollectedField, obj *biz.HealthGatePolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_HealthGatePolicy_unstableWindowSeconds,
+		func(ctx context.Context) (any, error) {
+			return obj.UnstableWindowSeconds, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_HealthGatePolicy_unstableWindowSeconds(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HealthGatePolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _HourlyRequestStats_hour(ctx context.Context, field graphql.CollectedField, obj *HourlyRequestStats) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -32262,6 +33155,8 @@ func (ec *executionContext) fieldContext_ModelChannelConnection_channel(_ contex
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -33644,6 +34539,8 @@ func (ec *executionContext) fieldContext_Mutation_createChannel(ctx context.Cont
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -33749,6 +34646,8 @@ func (ec *executionContext) fieldContext_Mutation_duplicateChannel(ctx context.C
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -33854,6 +34753,8 @@ func (ec *executionContext) fieldContext_Mutation_bulkCreateChannels(ctx context
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -33959,6 +34860,8 @@ func (ec *executionContext) fieldContext_Mutation_updateChannel(ctx context.Cont
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -34064,6 +34967,8 @@ func (ec *executionContext) fieldContext_Mutation_saveChannelEndpoints(ctx conte
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -34169,6 +35074,8 @@ func (ec *executionContext) fieldContext_Mutation_updateChannelStatus(ctx contex
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -39267,6 +40174,47 @@ func (ec *executionContext) fieldContext_Mutation_triggerAutoBackup(_ context.Co
 			}
 			return nil, fmt.Errorf("no field named %q was found under type TriggerBackupPayload", field.Name)
 		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_resetChannelHealthGate(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_resetChannelHealthGate,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().ResetChannelHealthGate(ctx, fc.Args["channelID"].(objects.GUID), fc.Args["actualModel"].(*string))
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_resetChannelHealthGate(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_resetChannelHealthGate_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
 	}
 	return fc, nil
 }
@@ -45012,6 +45960,8 @@ func (ec *executionContext) fieldContext_ProviderQuotaStatus_channel(_ context.C
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -46398,6 +47348,8 @@ func (ec *executionContext) fieldContext_Query_allChannelSummarys(ctx context.Co
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -48092,6 +49044,8 @@ func (ec *executionContext) fieldContext_Query_retryPolicy(_ context.Context, fi
 				return ec.fieldContext_RetryPolicy_emptyResponseDetection(ctx, field)
 			case "upstreamErrorPolicy":
 				return ec.fieldContext_RetryPolicy_upstreamErrorPolicy(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_RetryPolicy_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type RetryPolicy", field.Name)
 		},
@@ -50893,6 +51847,8 @@ func (ec *executionContext) fieldContext_Request_channel(_ context.Context, fiel
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -52061,6 +53017,8 @@ func (ec *executionContext) fieldContext_RequestExecution_channel(_ context.Cont
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -53186,6 +54144,47 @@ func (ec *executionContext) fieldContext_RetryPolicy_upstreamErrorPolicy(_ conte
 				return ec.fieldContext_UpstreamErrorPolicy_customMessage(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type UpstreamErrorPolicy", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RetryPolicy_healthGate(ctx context.Context, field graphql.CollectedField, obj *biz.RetryPolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RetryPolicy_healthGate,
+		func(ctx context.Context) (any, error) {
+			return obj.HealthGate, nil
+		},
+		nil,
+		ec.marshalOHealthGatePolicy2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋbizᚐHealthGatePolicy,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_RetryPolicy_healthGate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RetryPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "failureThreshold":
+				return ec.fieldContext_HealthGatePolicy_failureThreshold(ctx, field)
+			case "openDurationSeconds":
+				return ec.fieldContext_HealthGatePolicy_openDurationSeconds(ctx, field)
+			case "maxOpenDurationSeconds":
+				return ec.fieldContext_HealthGatePolicy_maxOpenDurationSeconds(ctx, field)
+			case "probeSuccessThreshold":
+				return ec.fieldContext_HealthGatePolicy_probeSuccessThreshold(ctx, field)
+			case "unstableWindowSeconds":
+				return ec.fieldContext_HealthGatePolicy_unstableWindowSeconds(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type HealthGatePolicy", field.Name)
 		},
 	}
 	return fc, nil
@@ -59604,6 +60603,8 @@ func (ec *executionContext) fieldContext_UnassociatedChannel_channel(_ context.C
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -60712,6 +61713,8 @@ func (ec *executionContext) fieldContext_UsageLog_channel(_ context.Context, fie
 				return ec.fieldContext_Channel_disabledAPIKeys(ctx, field)
 			case "liveLimiterStats":
 				return ec.fieldContext_Channel_liveLimiterStats(ctx, field)
+			case "healthGate":
+				return ec.fieldContext_Channel_healthGate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Channel", field.Name)
 		},
@@ -70354,7 +71357,7 @@ func (ec *executionContext) unmarshalInputChannelSettingsInput(ctx context.Conte
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"extraModelPrefix", "modelMappings", "autoTrimedModelPrefixes", "hideOriginalModels", "hideMappedModels", "lowercaseModelId", "proxy", "transformOptions", "headerOverrideOperations", "bodyOverrideOperations", "passThroughUserAgent", "passThroughBody", "rateLimit", "retryableStatusCodes", "retryableErrorPatterns", "modelProtocols", "providerQuota", "primaryApiFormat"}
+	fieldsInOrder := [...]string{"extraModelPrefix", "modelMappings", "autoTrimedModelPrefixes", "hideOriginalModels", "hideMappedModels", "lowercaseModelId", "proxy", "transformOptions", "headerOverrideOperations", "bodyOverrideOperations", "passThroughUserAgent", "passThroughBody", "rateLimit", "retryableStatusCodes", "retryableErrorPatterns", "modelProtocols", "providerQuota", "primaryApiFormat", "healthGateFailureThreshold"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -70487,6 +71490,13 @@ func (ec *executionContext) unmarshalInputChannelSettingsInput(ctx context.Conte
 				return it, err
 			}
 			it.PrimaryAPIFormat = data
+		case "healthGateFailureThreshold":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("healthGateFailureThreshold"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.HealthGateFailureThreshold = data
 		}
 	}
 
@@ -74368,6 +75378,61 @@ func (ec *executionContext) unmarshalInputHeaderEntryInput(ctx context.Context, 
 				return it, err
 			}
 			it.Value = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputHealthGatePolicyInput(ctx context.Context, obj any) (biz.HealthGatePolicy, error) {
+	var it biz.HealthGatePolicy
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"failureThreshold", "openDurationSeconds", "maxOpenDurationSeconds", "probeSuccessThreshold", "unstableWindowSeconds"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "failureThreshold":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("failureThreshold"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.FailureThreshold = data
+		case "openDurationSeconds":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("openDurationSeconds"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OpenDurationSeconds = data
+		case "maxOpenDurationSeconds":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("maxOpenDurationSeconds"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MaxOpenDurationSeconds = data
+		case "probeSuccessThreshold":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("probeSuccessThreshold"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ProbeSuccessThreshold = data
+		case "unstableWindowSeconds":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("unstableWindowSeconds"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.UnstableWindowSeconds = data
 		}
 	}
 
@@ -80158,7 +81223,7 @@ func (ec *executionContext) unmarshalInputQueryChannelInput(ctx context.Context,
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"after", "first", "before", "last", "orderBy", "where", "hasTag", "model", "primaryApiFormat", "excludePrimaryApiFormat"}
+	fieldsInOrder := [...]string{"after", "first", "before", "last", "orderBy", "where", "hasTag", "model", "primaryApiFormat", "excludePrimaryApiFormat", "healthGateAbnormal"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -80235,6 +81300,13 @@ func (ec *executionContext) unmarshalInputQueryChannelInput(ctx context.Context,
 				return it, err
 			}
 			it.ExcludePrimaryAPIFormat = data
+		case "healthGateAbnormal":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("healthGateAbnormal"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.HealthGateAbnormal = data
 		}
 	}
 
@@ -87732,7 +88804,7 @@ func (ec *executionContext) unmarshalInputUpdateRetryPolicyInput(ctx context.Con
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"maxChannelRetries", "maxSingleChannelRetries", "retryDelayMs", "streamFirstEventTimeoutSeconds", "nonStreamResponseTimeoutSeconds", "loadBalancerStrategy", "traceStickyMode", "enabled", "autoDisableChannel", "emptyResponseDetection", "upstreamErrorPolicy"}
+	fieldsInOrder := [...]string{"maxChannelRetries", "maxSingleChannelRetries", "retryDelayMs", "streamFirstEventTimeoutSeconds", "nonStreamResponseTimeoutSeconds", "loadBalancerStrategy", "traceStickyMode", "enabled", "autoDisableChannel", "emptyResponseDetection", "upstreamErrorPolicy", "healthGate"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -87816,6 +88888,13 @@ func (ec *executionContext) unmarshalInputUpdateRetryPolicyInput(ctx context.Con
 				return it, err
 			}
 			it.UpstreamErrorPolicy = data
+		case "healthGate":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("healthGate"))
+			data, err := ec.unmarshalOHealthGatePolicyInput2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋbizᚐHealthGatePolicy(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.HealthGate = data
 		}
 	}
 
@@ -95197,6 +96276,39 @@ func (ec *executionContext) _Channel(ctx context.Context, sel ast.SelectionSet, 
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "healthGate":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Channel_healthGate(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -95371,6 +96483,137 @@ func (ec *executionContext) _ChannelEndpoint(ctx context.Context, sel ast.Select
 			out.Values[i] = ec._ChannelEndpoint_baseURL(ctx, field, obj)
 		case "transport":
 			out.Values[i] = ec._ChannelEndpoint_transport(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var channelHealthGateModelImplementors = []string{"ChannelHealthGateModel"}
+
+func (ec *executionContext) _ChannelHealthGateModel(ctx context.Context, sel ast.SelectionSet, obj *ChannelHealthGateModel) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, channelHealthGateModelImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ChannelHealthGateModel")
+		case "actualModel":
+			out.Values[i] = ec._ChannelHealthGateModel_actualModel(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "state":
+			out.Values[i] = ec._ChannelHealthGateModel_state(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "consecutiveFailures":
+			out.Values[i] = ec._ChannelHealthGateModel_consecutiveFailures(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "probeSuccesses":
+			out.Values[i] = ec._ChannelHealthGateModel_probeSuccesses(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "backoffLevel":
+			out.Values[i] = ec._ChannelHealthGateModel_backoffLevel(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lastError":
+			out.Values[i] = ec._ChannelHealthGateModel_lastError(ctx, field, obj)
+		case "lastStatusCode":
+			out.Values[i] = ec._ChannelHealthGateModel_lastStatusCode(ctx, field, obj)
+		case "lastErrorAt":
+			out.Values[i] = ec._ChannelHealthGateModel_lastErrorAt(ctx, field, obj)
+		case "openUntil":
+			out.Values[i] = ec._ChannelHealthGateModel_openUntil(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var channelHealthGateStatusImplementors = []string{"ChannelHealthGateStatus"}
+
+func (ec *executionContext) _ChannelHealthGateStatus(ctx context.Context, sel ast.SelectionSet, obj *ChannelHealthGateStatus) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, channelHealthGateStatusImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ChannelHealthGateStatus")
+		case "disabled":
+			out.Values[i] = ec._ChannelHealthGateStatus_disabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "failureThreshold":
+			out.Values[i] = ec._ChannelHealthGateStatus_failureThreshold(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "probeSuccessThreshold":
+			out.Values[i] = ec._ChannelHealthGateStatus_probeSuccessThreshold(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "openCount":
+			out.Values[i] = ec._ChannelHealthGateStatus_openCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "unstableCount":
+			out.Values[i] = ec._ChannelHealthGateStatus_unstableCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "models":
+			out.Values[i] = ec._ChannelHealthGateStatus_models(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -97155,6 +98398,8 @@ func (ec *executionContext) _ChannelSettings(ctx context.Context, sel ast.Select
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "primaryApiFormat":
 			out.Values[i] = ec._ChannelSettings_primaryApiFormat(ctx, field, obj)
+		case "healthGateFailureThreshold":
+			out.Values[i] = ec._ChannelSettings_healthGateFailureThreshold(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -98883,6 +100128,65 @@ func (ec *executionContext) _HeaderEntry(ctx context.Context, sel ast.SelectionS
 			}
 		case "value":
 			out.Values[i] = ec._HeaderEntry_value(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var healthGatePolicyImplementors = []string{"HealthGatePolicy"}
+
+func (ec *executionContext) _HealthGatePolicy(ctx context.Context, sel ast.SelectionSet, obj *biz.HealthGatePolicy) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, healthGatePolicyImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("HealthGatePolicy")
+		case "failureThreshold":
+			out.Values[i] = ec._HealthGatePolicy_failureThreshold(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "openDurationSeconds":
+			out.Values[i] = ec._HealthGatePolicy_openDurationSeconds(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "maxOpenDurationSeconds":
+			out.Values[i] = ec._HealthGatePolicy_maxOpenDurationSeconds(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "probeSuccessThreshold":
+			out.Values[i] = ec._HealthGatePolicy_probeSuccessThreshold(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "unstableWindowSeconds":
+			out.Values[i] = ec._HealthGatePolicy_unstableWindowSeconds(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -100950,6 +102254,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "triggerAutoBackup":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_triggerAutoBackup(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "resetChannelHealthGate":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_resetChannelHealthGate(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -107426,6 +108737,8 @@ func (ec *executionContext) _RetryPolicy(ctx context.Context, sel ast.SelectionS
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "healthGate":
+			out.Values[i] = ec._RetryPolicy_healthGate(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -114418,6 +115731,60 @@ func (ec *executionContext) unmarshalNChannelEndpointInput2ᚕgithubᚗcomᚋloo
 	return res, nil
 }
 
+func (ec *executionContext) marshalNChannelHealthGateModel2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐChannelHealthGateModelᚄ(ctx context.Context, sel ast.SelectionSet, v []*ChannelHealthGateModel) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNChannelHealthGateModel2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐChannelHealthGateModel(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNChannelHealthGateModel2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐChannelHealthGateModel(ctx context.Context, sel ast.SelectionSet, v *ChannelHealthGateModel) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ChannelHealthGateModel(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNChannelModelAutoSyncSetting2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋbizᚐChannelModelAutoSyncSetting(ctx context.Context, sel ast.SelectionSet, v biz.ChannelModelAutoSyncSetting) graphql.Marshaler {
 	return ec._ChannelModelAutoSyncSetting(ctx, sel, &v)
 }
@@ -120860,6 +122227,13 @@ func (ec *executionContext) unmarshalOChannelEndpointInput2ᚕgithubᚗcomᚋloo
 	return res, nil
 }
 
+func (ec *executionContext) marshalOChannelHealthGateStatus2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐChannelHealthGateStatus(ctx context.Context, sel ast.SelectionSet, v *ChannelHealthGateStatus) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._ChannelHealthGateStatus(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalOChannelLimiterStats2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐChannelLimiterStats(ctx context.Context, sel ast.SelectionSet, v *ChannelLimiterStats) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
@@ -122518,6 +123892,21 @@ func (ec *executionContext) unmarshalOHeaderEntryInput2ᚕgithubᚗcomᚋlooplj�
 		}
 	}
 	return res, nil
+}
+
+func (ec *executionContext) marshalOHealthGatePolicy2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋbizᚐHealthGatePolicy(ctx context.Context, sel ast.SelectionSet, v *biz.HealthGatePolicy) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._HealthGatePolicy(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOHealthGatePolicyInput2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋbizᚐHealthGatePolicy(ctx context.Context, v any) (*biz.HealthGatePolicy, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputHealthGatePolicyInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalOID2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐGUIDᚄ(ctx context.Context, v any) ([]*objects.GUID, error) {
