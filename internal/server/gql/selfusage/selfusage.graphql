@@ -1,0 +1,72 @@
+scalar Time
+
+type Query {
+  selfUsageMeta: SelfUsageMeta!
+  selfUsageStats(start: String!, end: String!): SelfUsageStats!
+  selfUsageRequests(
+    start: String!, end: String!, model: String, status: SelfUsageRequestStatus,
+    page: Int = 1, pageSize: Int = 20
+  ): SelfUsageRequestPage!
+}
+
+type SelfUsageMeta {
+  apiKeyName: String!
+  apiKeyType: String!        # "user" | "personal"
+  currencyCode: String!
+  timezone: String!
+  maxRangeDays: Int!         # 90
+}
+
+"用量汇总；cost 在 usageRecords=0 时为 0，全部未定价时为 null，否则为已知费用之和"
+type SelfUsageSummary {
+  successRequests: Int!
+  failedRequests: Int!
+  inputTokens: Int!
+  outputTokens: Int!
+  cacheReadTokens: Int!
+  cacheWriteTokens: Int!
+  reasoningTokens: Int!
+  totalTokens: Int!
+  cost: Float
+  usageRecords: Int!
+  unpricedRecords: Int!
+}
+
+type SelfUsageModelStat { model: String!, usage: SelfUsageSummary! }
+type SelfUsageDailyStat { date: String!, usage: SelfUsageSummary! }   # date = YYYY-MM-DD（系统时区）
+
+type SelfUsageStats {
+  start: String!
+  end: String!
+  totals: SelfUsageSummary!
+  models: [SelfUsageModelStat!]!   # 费用降序（null 视为最小），再按请求数降序
+  daily: [SelfUsageDailyStat!]!    # 覆盖 start..end 每一天
+}
+
+enum SelfUsageRequestStatus { SUCCESS FAILED PROCESSING }
+
+type SelfUsageRequest {
+  id: Int!                         # 数字请求 ID，仅作列表 key
+  createdAt: Time!
+  model: String!
+  status: SelfUsageRequestStatus!
+  stream: Boolean!
+  latencyMs: Int
+  firstTokenLatencyMs: Int
+  inputTokens: Int!
+  outputTokens: Int!
+  cacheReadTokens: Int!
+  cacheWriteTokens: Int!
+  reasoningTokens: Int!
+  totalTokens: Int!
+  cost: Float
+  usageRecords: Int!
+  unpricedRecords: Int!
+}
+
+type SelfUsageRequestPage {
+  items: [SelfUsageRequest!]!
+  page: Int!
+  pageSize: Int!
+  total: Int!
+}

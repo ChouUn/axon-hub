@@ -16,7 +16,14 @@ export default function SignIn() {
       <TwoColumnAuth
         title={t('auth.signIn.title')}
         description={t('auth.signIn.subtitle')}
-        rightFooter={<p className='text-xs leading-relaxed text-slate-500 sm:text-sm'>{t('auth.signIn.footer.agreement')}</p>}
+        rightFooter={
+          <div className='space-y-2 text-xs leading-relaxed text-slate-500 sm:text-sm'>
+            <p>{t('auth.signIn.footer.agreement')}</p>
+            <a href='/self-usage' className='hover:text-foreground inline-block underline underline-offset-2'>
+              {t('auth.signIn.footer.selfUsage')}
+            </a>
+          </div>
+        }
       >
         <UserAuthForm />
       </TwoColumnAuth>

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SelfUsageRouteImport } from './routes/self-usage'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedPermissionRouteImport } from './routes/_authenticated/permission'
@@ -58,6 +59,11 @@ import { Route as AuthenticatedProjectTracesTraceIdRouteImport } from './routes/
 import { Route as AuthenticatedProjectThreadsThreadIdRouteImport } from './routes/_authenticated/project/threads/$threadId'
 import { Route as AuthenticatedProjectRequestsRequestIdRouteImport } from './routes/_authenticated/project/requests/$requestId'
 
+const SelfUsageRoute = SelfUsageRouteImport.update({
+  id: '/self-usage',
+  path: '/self-usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
@@ -332,6 +338,7 @@ const AuthenticatedProjectRequestsRequestIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
+  '/self-usage': typeof SelfUsageRoute
   '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/forgot-password': typeof authForgotPasswordRoute
   '/initialization': typeof authInitializationRoute
@@ -380,6 +387,7 @@ export interface FileRoutesByFullPath {
   '/project/users/': typeof AuthenticatedProjectUsersIndexRoute
 }
 export interface FileRoutesByTo {
+  '/self-usage': typeof SelfUsageRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/initialization': typeof authInitializationRoute
   '/sign-in': typeof authSignInRoute
@@ -430,6 +438,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/self-usage': typeof SelfUsageRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/(auth)/forgot-password': typeof authForgotPasswordRoute
   '/(auth)/initialization': typeof authInitializationRoute
@@ -482,6 +491,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/self-usage'
     | '/settings'
     | '/forgot-password'
     | '/initialization'
@@ -530,6 +540,7 @@ export interface FileRouteTypes {
     | '/project/users/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/self-usage'
     | '/forgot-password'
     | '/initialization'
     | '/sign-in'
@@ -579,6 +590,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authenticated'
+    | '/self-usage'
     | '/_authenticated/settings'
     | '/(auth)/forgot-password'
     | '/(auth)/initialization'
@@ -630,6 +642,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  SelfUsageRoute: typeof SelfUsageRoute
   authForgotPasswordRoute: typeof authForgotPasswordRoute
   authInitializationRoute: typeof authInitializationRoute
   authSignInRoute: typeof authSignInRoute
@@ -644,6 +657,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/self-usage': {
+      id: '/self-usage'
+      path: '/self-usage'
+      fullPath: '/self-usage'
+      preLoaderRoute: typeof SelfUsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated': {
       id: '/_authenticated'
       path: ''
@@ -1089,6 +1109,7 @@ const AuthenticatedRouteRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  SelfUsageRoute: SelfUsageRoute,
   authForgotPasswordRoute: authForgotPasswordRoute,
   authInitializationRoute: authInitializationRoute,
   authSignInRoute: authSignInRoute,

@@ -18,6 +18,7 @@ Welcome to the AxonHub documentation center! This index will help you quickly fi
 | [Channel Management](guides/channel-management.md) | Configure and manage AI provider channels |
 | [Model Management](guides/model-management.md) | Model mapping, associations, and priority configuration |
 | [API Key Profiles](guides/api-key-profiles.md) | Create and manage API key profiles |
+| [API Key Self Usage](guides/self-usage.md) | View requests, tokens, and costs for your own API Key |
 | [Permissions](guides/permissions.md) | Enterprise RBAC access control configuration |
 | [Load Balancing](guides/load-balance.md) | Smart routing and failover settings |
 | [Cost Tracking](guides/cost-tracking.md) | Real-time monitoring and usage analytics |

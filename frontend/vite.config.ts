@@ -37,6 +37,10 @@ export default defineConfig({
         target: process.env.VITE_API_URL || 'http://localhost:8090',
         changeOrigin: true,
       },
+      '/self-service': {
+        target: process.env.VITE_API_URL || 'http://localhost:8090',
+        changeOrigin: true,
+      },
       '/oauth': {
         target: process.env.VITE_API_URL || 'http://localhost:8090',
         changeOrigin: true,

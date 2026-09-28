@@ -11,6 +11,7 @@ import (
 	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/internal/server/gql"
 	"github.com/looplj/axonhub/internal/server/gql/openapi"
+	"github.com/looplj/axonhub/internal/server/gql/selfusage"
 	"github.com/looplj/axonhub/internal/server/middleware"
 	"github.com/looplj/axonhub/internal/server/static"
 )
@@ -18,26 +19,27 @@ import (
 type Handlers struct {
 	fx.In
 
-	Graphql        *gql.GraphqlHandler
-	OpenAPIGraphql *openapi.GraphqlHandler
-	OpenAI         *api.OpenAIHandlers
-	Doubao         *api.DoubaoHandlers
-	Anthropic      *api.AnthropicHandlers
-	Gemini         *api.GeminiHandlers
-	AiSDK          *api.AiSDKHandlers
-	Playground     *api.PlaygroundHandlers
-	System         *api.SystemHandlers
-	Auth           *api.AuthHandlers
-	Invitation     *api.InvitationHandlers
-	Jina           *api.JinaHandlers
-	Codex          *api.CodexHandlers
-	XAI            *api.XAIHandlers
-	ClaudeCode     *api.ClaudeCodeHandlers
-	Antigravity    *api.AntigravityHandlers
-	Copilot        *api.CopilotHandlers
-	RequestContent *api.RequestContentHandlers
-	OIDC           *api.OIDCHandlers
-	RequestPreview *api.RequestPreviewHandlers
+	Graphql          *gql.GraphqlHandler
+	OpenAPIGraphql   *openapi.GraphqlHandler
+	SelfUsageGraphql *selfusage.GraphqlHandler
+	OpenAI           *api.OpenAIHandlers
+	Doubao           *api.DoubaoHandlers
+	Anthropic        *api.AnthropicHandlers
+	Gemini           *api.GeminiHandlers
+	AiSDK            *api.AiSDKHandlers
+	Playground       *api.PlaygroundHandlers
+	System           *api.SystemHandlers
+	Auth             *api.AuthHandlers
+	Invitation       *api.InvitationHandlers
+	Jina             *api.JinaHandlers
+	Codex            *api.CodexHandlers
+	XAI              *api.XAIHandlers
+	ClaudeCode       *api.ClaudeCodeHandlers
+	Antigravity      *api.AntigravityHandlers
+	Copilot          *api.CopilotHandlers
+	RequestContent   *api.RequestContentHandlers
+	OIDC             *api.OIDCHandlers
+	RequestPreview   *api.RequestPreviewHandlers
 }
 
 type Services struct {
@@ -166,6 +168,18 @@ func SetupRoutes(server *Server, handlers Handlers, client *ent.Client, services
 
 		openAPIGroup.POST("/webhook/echo", handlers.System.WebhookEcho)
 	}
+
+	selfServiceGroup := server.Group(
+		"/self-service",
+		middleware.WithIPBlocklist(services.SystemService),
+		middleware.WithSelfServiceAuthRateLimit(),
+		middleware.WithSelfServiceAPIKeyAuth(services.AuthService),
+		middleware.WithSelfServiceQueryRateLimit(),
+		middleware.WithTimeout(server.Config.RequestTimeout),
+	)
+	selfServiceGroup.POST("/v1/graphql", func(c *gin.Context) {
+		handlers.SelfUsageGraphql.Graphql.ServeHTTP(c.Writer, c.Request)
+	})
 
 	apiMiddlewares := []gin.HandlerFunc{
 		middleware.WithIPBlocklist(services.SystemService),

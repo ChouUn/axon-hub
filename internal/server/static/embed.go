@@ -24,6 +24,7 @@ var apiPrefixes = []string{
 	"/gemini",
 	"/jina",
 	"/openapi",
+	"/self-service",
 	"/v1",
 	"/v1beta",
 }

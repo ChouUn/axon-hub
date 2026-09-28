@@ -37,7 +37,7 @@ func TestHandler_ReturnsJSON404ForUnknownAPIPaths(t *testing.T) {
 	router := gin.New()
 	router.NoRoute(Handler())
 
-	for _, path := range []string{"/v1/not-found", "/anthropic/not-found", "/admin/not-found"} {
+	for _, path := range []string{"/v1/not-found", "/anthropic/not-found", "/admin/not-found", "/self-service/not-found"} {
 		t.Run(path, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -63,14 +63,16 @@ func TestHandler_ServesSPAIndexForFrontendRoutes(t *testing.T) {
 	router := gin.New()
 	router.NoRoute(Handler())
 
-	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/settings/profile", nil)
-
-	router.ServeHTTP(recorder, req)
-
-	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Contains(t, recorder.Header().Get("Content-Type"), "text/html")
-	require.Equal(t, "no-cache, no-store, must-revalidate", recorder.Header().Get("Cache-Control"))
+	for _, path := range []string{"/settings/profile", "/self-usage"} {
+		t.Run(path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			router.ServeHTTP(recorder, req)
+			require.Equal(t, http.StatusOK, recorder.Code)
+			require.Contains(t, recorder.Header().Get("Content-Type"), "text/html")
+			require.Equal(t, "no-cache, no-store, must-revalidate", recorder.Header().Get("Cache-Control"))
+		})
+	}
 }
 
 func TestHandler_DoesNotFallbackMissingStaticAssetToSPAIndex(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 	"github.com/looplj/axonhub/internal/server/gc"
 	"github.com/looplj/axonhub/internal/server/gql"
 	"github.com/looplj/axonhub/internal/server/gql/openapi"
+	"github.com/looplj/axonhub/internal/server/gql/selfusage"
 	"github.com/looplj/axonhub/internal/server/middleware"
 	"github.com/looplj/axonhub/internal/server/orchestrator"
 	"github.com/looplj/axonhub/internal/server/scheduler"
@@ -88,6 +89,7 @@ func (srv *Server) Shutdown(ctx context.Context) error {
 func Run(opts ...fx.Option) {
 	constructors := []any{
 		openapi.NewGraphqlHandlers,
+		selfusage.NewGraphqlHandlers,
 		gql.NewGraphqlHandlers,
 		gc.NewWorker,
 		New,

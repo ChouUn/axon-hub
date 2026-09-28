@@ -1,0 +1,25 @@
+schema:
+  - selfusage.graphql
+
+omit_gqlgen_version_in_file_notice: true
+
+exec:
+  filename: generated.go
+  package: selfusage
+
+model:
+  filename: models_gen.go
+  package: selfusage
+
+resolver:
+  layout: follow-schema
+  dir: .
+  package: selfusage
+
+autobind:
+  - github.com/99designs/gqlgen/graphql/introspection
+
+models:
+  Time:
+    model:
+      - github.com/99designs/gqlgen/graphql.Time

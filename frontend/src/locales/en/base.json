@@ -369,6 +369,7 @@
   "auth.signIn.validation.passwordPattern": "Password must contain uppercase, lowercase, and numbers",
   "auth.signIn.links.forgotPassword": "Forgot password?",
   "auth.signIn.footer.agreement": "By signing in, you agree to our Terms of Service and Privacy Policy",
+  "auth.signIn.footer.selfUsage": "View usage with an API Key",
   "settings.nav.appearance": "Appearance",
   "settings.nav.display": "Display",
   "settings.nav.notifications": "Notifications"
