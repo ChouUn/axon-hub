@@ -70,7 +70,7 @@ fork 改动，由用户决定。
   `read_channels`。已创建视频任务的查询、删除仍使用任务记录中的渠道，不重新选择推理模型。
 - 同步上游注意：保留注册准入及映射目标校验，不能恢复按渠道支持模型直接选路；升级前
   核对未注册的渠道模型及映射目标，先补齐所需模型与关联，不自动注册或放宽准入。
-- 提交：尚未提交。
+- 提交：`569152cc`（`feat(models): 强制注册模型准入并按关联分发渠道`）。
 - 代码：`internal/server/orchestrator/candidates.go`、`internal/server/orchestrator/model_mapper.go`、
   `internal/objects/apikey.go`、`internal/server/biz/model.go`、`internal/server/api/`、
   `internal/server/gql/model.resolvers.go`、`internal/server/gql/system.graphql`、
@@ -84,7 +84,8 @@ fork 改动，由用户决定。
 
 ### 健康门控路由策略
 
-- 状态：阶段一已实现。提交：`6298a0cb`（`feat(routing): 新增健康门控路由策略`）。
+- 状态：已实现。提交：`6298a0cb`（`feat(routing): 新增健康门控路由策略`）。会话归属与决策记录见
+  「健康门控会话归属迟滞与决策记录」。
 - 动机：管理端无法直观看到哪个渠道×模型坏了。现有 `(渠道, 模型)` 熔断器只挂在
   `circuit-breaker` 策略下，阈值写死，查询与重置方法无调用方
   （`internal/server/biz/model_circuit_breaker.go:144-149,359-435`）；默认 `adaptive`
@@ -353,7 +354,7 @@ fork 改动，由用户决定。
 
 ### API Key 自助用量页
 
-- 状态：需求已确认，尚未实现。
+- 状态：已实现。提交：`58f73057`（`feat(self-usage): 新增 API Key 自助用量页`）。
 - 动机：只持有 API Key 的使用者无法查看自己的用量。普通推理 Key 可达的路由只有推理与模型列表
   （`internal/server/routes.go:170-259`）；上游 beta10 的 `apiKeyQuotaUsages` 只接受
   service_account 类型的 Key，需要 `read_api_keys`，可查同项目内隐私规则允许的非 personal Key，
@@ -383,6 +384,14 @@ fork 改动，由用户决定。
     与上游实际消耗一致）。
   - D7 时间范围：预设今天、昨天、近 7 天、近 30 天、本月，另可自定义起止日期，跨度最长
     90 天；自然日边界使用系统设置中的时区。
+  - D8 查询接口为独立 GraphQL 入口 `POST /self-service/v1/graphql`（独立 gqlgen 包，不改管理端与
+    OpenAPI 的 schema），只注册 POST，不开 playground。
+  - D9 页面地址 `/self-usage`，管理端登录页追加一行指向该页的链接。
+  - D10 限流：同一 IP 每分钟认证失败 20 次后，该 IP 在窗口剩余时间内提交错误 Key 一律 429；正确 Key
+    不受该计数影响，认证失败计数表已满时也照常放行（用户确认：避免伪造转发头锁死他人，轮换 IP 的爆破
+    由 Key 长度抵御）。认证成功后每个 Key 每分钟最多 60 次查询，查询计数表另计。两张计数表各上限 10000，
+    进程内计数，多实例不共享。
+  - D11 只统计 `source=api` 的请求，不含 Playground 与测试请求。
 - 规则：
   - R1 认证：只接受启用状态、所属项目为 active 的 `user` / `personal` Key；`service_account`、
     `noauth`、禁用或归档的 Key 拒绝，不回退到系统 noauth Key（现有 `WithAPIKeyConfig` 会回退，
@@ -417,17 +426,32 @@ fork 改动，由用户决定。
     清除旧查询缓存。
   - R8 元数据：页面查询接口随结果提供系统币种与时区，不要求 `read_settings`，不暴露其他系统设置
     （管理端 `useGeneralSettings` 需要 `read_settings`，`frontend/src/features/system/data/system.ts:1128-1149`）。
-  - R9 查询开销：时间跨度由后端校验（不超过 90 天）；过滤条件为 Key ID 等值加 UTC 半开时间范围，
-    时区换算只用于分桶；请求查询须命中 `requests_by_api_key_id_created_at`，用量经 `request_id`
-    关联（`usage_logs_by_request_id`）。是否另设查询限流在实现方案中确认。
-- 提交：尚未提交。
-- 代码（预计）：专用认证入口与自助查询路由组、查询服务、独立前端页面及中英文词条；实现方案确定后
-  补具体路径。
-- 文档：实现时同步新增中英文使用说明（`docs/{zh,en}/guides/`），覆盖入口、可用 Key 类型、登录与登出、
-  时间范围与统计口径、未定价显示及隐私范围，不列内部查询接口。
-- 迁移：预计无 schema migration、data migration 与缓存键变化。
-- 测试与 fixture：尚无；实现时覆盖 Key 隔离、拒绝 noauth 与 service_account、禁用及归档 Key、
-  跨日归属、多条用量与失败请求用量、全部与部分未定价、分页上限、90 天跨度校验。
+  - R9 查询开销：时间跨度由后端校验（不超过 90 天）；过滤条件为 Key ID、项目 ID 与 `source=api`
+    等值加 UTC 半开时间范围，时区换算只用于分桶；请求查询须命中 `requests_by_api_key_id_created_at`，
+    用量经 `request_id` 关联（`usage_logs_by_request_id`）。
+- 代码：新逻辑放在新文件：`internal/server/middleware/self_service_auth.go`（严格 Bearer、仅 user/personal、
+  无 noauth 回退、IP 白名单）、`internal/server/middleware/self_service_rate_limit.go`（D10，进程内固定窗口，
+  计数表上限 10000）、`internal/server/biz/self_usage.go`（按 Key、项目与 `source=api` 过滤后窄 bypass 查询；
+  UTC 15 分钟桶按系统时区归日并补零）、`internal/server/gql/selfusage/`（独立 gqlgen 包，仅 POST）；
+  前端 `frontend/src/routes/self-usage.tsx`、`frontend/src/features/self-usage/`（独立 fetch、sessionStorage、
+  页面内 QueryClient）、`frontend/src/locales/{en,zh-CN}/selfUsage.json`。
+  上游文件只做追加：`internal/server/server.go`（handler 构造器）、`internal/server/routes.go`（`/self-service`
+  路由组，`Handlers` 字段因 gofmt 对齐整体缩进）、`internal/server/biz/fx_module.go`、`internal/server/static/embed.go`
+  （API 前缀）、`frontend/src/routes/__root.tsx`（`/self-usage` 跳过标题同步、初始化守卫与命令菜单）、
+  `frontend/src/features/auth/sign-in/index.tsx` 与 `frontend/src/locales/{en,zh-CN}/base.json`（登录页链接）、
+  `frontend/vite.config.ts`（开发代理）、`frontend/src/routeTree.gen.ts`（Vite 插件生成）。
+- 文档：`docs/{zh,en}/guides/self-usage.md`，并在 `docs/{zh,en}/index.md` 指南表格追加链接；不列内部查询接口。
+- 迁移：无 schema migration、data migration 与缓存键变化；已生成 `internal/server/gql/selfusage/` 的 gqlgen 代码。
+- 测试与 fixture：`internal/server/middleware/self_service_auth_test.go`（认证矩阵：缺失、非 Bearer、伪造、
+  AllowNoAuth 开启、service_account、禁用 Key、归档项目、IP 白名单；失败超限后错误 Key 429 而正确 Key 放行，
+  伪造转发头与失败计数表已满均不影响正确 Key）、`internal/server/middleware/self_service_rate_limit_test.go`
+  （失败计数、Key 查询上限、窗口重置、计数表上限）、`internal/server/biz/self_usage_test.go`（隔离、多条用量、
+  失败与取消用量、进行中请求、跨日归属、费用空值与部分未定价、补零、Asia/Kolkata 与 America/Los_Angeles 夏令时、
+  参数校验、日志分页不加载请求与响应正文等大字段）、`internal/server/gql/selfusage/graphql_test.go`（经真实中间件链的
+  401/403/429、GET 拒绝、BAD_USER_INPUT、alias 与 fragment 重复根字段在执行前拒绝）、
+  `internal/server/static/embed_test.go`（`/self-service` 未知路径返回 JSON 404）、
+  `frontend/src/features/self-usage/{date-range,cost}.test.mjs`（时区与夏令时的日期预设、费用展示）；无新增 fixture。
+  MySQL 与 PostgreSQL 的分桶表达式未在真实数据库上运行验证。
 - 同步上游注意：与上游 OpenAPI `apiKeyQuotaUsages` 功能不重叠，不修改其权限；新路由组在
   `internal/server/routes.go` 追加。上游 PR #2510 重做管理端分析页，本页不复用管理端分析组件，
   避免交叉冲突。
