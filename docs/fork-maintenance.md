@@ -354,7 +354,8 @@ fork 改动，由用户决定。
 
 ### API Key 自助用量页
 
-- 状态：已实现。提交：`58f73057`（`feat(self-usage): 新增 API Key 自助用量页`）。
+- 状态：已实现。提交：`58f73057`（`feat(self-usage): 新增 API Key 自助用量页`）；D12、D13 为 2026-09-28
+  修订，提交：`1c5509ae`（`feat(requests): 请求成本明细悬浮并对齐自助页请求日志`）。
 - 动机：只持有 API Key 的使用者无法查看自己的用量。普通推理 Key 可达的路由只有推理与模型列表
   （`internal/server/routes.go:170-259`）；上游 beta10 的 `apiKeyQuotaUsages` 只接受
   service_account 类型的 Key，需要 `read_api_keys`，可查同项目内隐私规则允许的非 personal Key，
@@ -392,6 +393,14 @@ fork 改动，由用户决定。
     由 Key 长度抵御）。认证成功后每个 Key 每分钟最多 60 次查询，查询计数表另计。两张计数表各上限 10000，
     进程内计数，多实例不共享。
   - D11 只统计 `source=api` 的请求，不含 Playground 与测试请求。
+  - D12 请求日志与管理端对齐（2026-09-28 用户确认）：请求日志复用管理端请求列表的共享单元格组件，
+    列依次为 ID（`#编号` + 请求原始状态徽章 + 流式 / 非流式徽章）、模型、Token（总计 / 输入 | 输出 /
+    推理）、读缓存（数量与命中率）、写缓存（数量与写入率）、成本（悬浮明细见「请求成本明细悬浮」）、
+    耗时（仅已完成请求；流式显示首字与总耗时，非流式显示总耗时）、创建时间；不再设单独的状态列与流式列。
+    管理端专有列（渠道、客户端 IP、调用方、API 格式、透传与协议标记、详情入口）不出现。管理端请求列表
+    对应列改用同一组件，显示不变。
+  - D13 措辞：本页金额统一称「成本」（汇总卡、趋势、按模型统计、请求日志），与管理端请求列表一致；
+    不改管理端与分析页文案。
 - 规则：
   - R1 认证：只接受启用状态、所属项目为 active 的 `user` / `personal` Key；`service_account`、
     `noauth`、禁用或归档的 Key 拒绝，不回退到系统 noauth Key（现有 `WithAPIKeyConfig` 会回退，
@@ -411,13 +420,14 @@ fork 改动，由用户决定。
     - 模型统一使用 `requests.model_id`，即 API Key 模型映射后的请求模型，不是客户端原始别名；
       不使用 `usage_logs.model_id`（上游实际模型）展示、分组或筛选。
   - R4 趋势：后端按系统时区的自然日分桶并补零，返回日历日期；前端不按浏览器时区重新分桶。
-    展示请求数（成功、失败）、Token 与费用。
-  - R5 日志：按请求创建时间倒序、同时间按 ID 倒序分页，默认每页 20 条，后端上限 100 条；列为
-    时间、模型名、状态、是否流式、Token、费用、耗时与首字时间；时间按系统时区显示并标注时区；
-    可按时间范围、模型与状态筛选。不展示渠道、上游实际模型、请求与响应正文、错误详情。
-  - R6 费用：按系统设置的币种格式显示。单条用量未定价为「—」，不按 0 计入；汇总（日志行、
-    每日、每模型、总计）无用量为 0，有用量但全部未定价为「—」，部分未定价时显示已知费用并
-    标注未定价记录数；真实零价显示为 0。
+    展示请求数（成功、失败）、Token 与成本。
+  - R5 日志：按请求创建时间倒序、同时间按 ID 倒序分页，默认每页 20 条，后端上限 100 条；列见 D12；
+    时间按系统时区显示并标注时区；可按时间范围、模型与状态筛选（筛选仍为成功、失败、进行中三类，
+    行内徽章显示请求原始状态）。不展示渠道、上游实际模型、请求与响应正文、错误详情。
+  - R6 成本：按系统设置的币种格式显示。单条用量未定价不按 0 计入；汇总（每日、每模型、总计）无用量为 0，
+    有用量但全部未定价为「—」，部分未定价时显示已知成本并标注未定价记录数；真实零价显示为 0。日志行按 D12
+    与管理端一致：无用量记录时 Token、缓存与成本列为「-」，全部未定价时成本为「-」，部分未定价时显示已知成本，
+    未定价记录数在成本悬浮中标注。
   - R7 页面：独立公开路由，不经管理端登录；提供登出；中英文界面。页面使用独立的 Key 认证状态、
     请求与错误处理：不附加管理端 JWT 与项目上下文，不清除或改写管理端登录（现有全局 401 处理会
     清除管理登录并跳转 `/sign-in`，`frontend/src/main.tsx:59-64`、`frontend/src/gql/graphql.ts:96-101,139-143`）；
@@ -455,6 +465,66 @@ fork 改动，由用户决定。
 - 同步上游注意：与上游 OpenAPI `apiKeyQuotaUsages` 功能不重叠，不修改其权限；新路由组在
   `internal/server/routes.go` 追加。上游 PR #2510 重做管理端分析页，本页不复用管理端分析组件，
   避免交叉冲突。
+
+### 请求成本明细悬浮
+
+- 状态：已实现。提交：`1c5509ae`（`feat(requests): 请求成本明细悬浮并对齐自助页请求日志`）。
+- 动机：管理端请求列表「成本」列与自助用量页请求日志只显示合计
+  （`frontend/src/features/requests/components/requests-columns.tsx:521-542`、
+  `frontend/src/features/self-usage/index.tsx:464-466`），看不出由哪几项、按什么单价、是否乘了倍率构成；
+  分项只在请求详情页展示，且不含单价与倍率
+  （`frontend/src/features/requests/components/request-detail-content.tsx:465-569`）。
+- 参考：CCH 请求日志「成本」列悬浮「计费详情」：输入、输出、缓存写（5m / 1h）、缓存读逐项列出落库金额，
+  每项下方按「金额 × 1,000,000 ÷ Token 数」折算每百万 Token 单价；倍率不为 1 时先列基础合计与各倍率，
+  再以删除线基础合计对比最终合计
+  （`src/app/[locale]/dashboard/logs/_components/virtualized-logs-table.tsx:318-425,564-649`）。
+  CCH `/my-usage` 复用同一表格，但后端置空分项与倍率，悬浮只剩合计（`src/actions/my-usage.ts:87-109,781-813`）；
+  本 topic 按用户决定对 Key 持有者展示与管理端相同的内容。
+- 已确认决策：
+  - D1 范围：管理端请求列表与自助用量页请求日志的「成本」列，两处使用同一悬浮组件。请求详情页、
+    用量日志页、自助页汇总卡、趋势与按模型统计不在本 topic。
+  - D2 管理端内容：分项、折算单价、阶梯与倍率。
+  - D3 自助页内容：与管理端完全一致，含基础合计与倍率（用户确认，不采用 CCH 的隐藏做法）。
+- 规则：
+  - R1 分项来源：只读已落库的 `usage_logs.cost_items`，不按当前价格重算。顺序为输入、输出、读缓存、
+    写缓存（有 5m / 1h 变体时分行标注）、其他项（显示项目代码原名）；只列数量或金额大于 0 的项。
+  - R2 每项显示 Token 数、金额（系统币种，6 位小数）与折算单价（金额 × 1,000,000 ÷ 数量，每百万 Token，
+    保留 2 至 6 位小数，使 0.0028 这类低单价不被舍为 0；数量为 0 时不显示单价）；`tierBreakdown` 多于一段时
+    逐段列出区间上限、数量与金额。
+  - R3 倍率：取用量记录 `cost_price_reference_id` 对应价格版本（`channel_model_price_versions.reference_id`）
+    的 `price.multiplier`，缺省按 1。倍率不为 1 时，先列基础合计（合计 ÷ 倍率）与倍率，再以删除线基础合计
+    对比最终合计；各项金额为已含倍率的落库金额。倍率为 0 时只列倍率与合计，不列基础合计。无价格引用或
+    价格版本已不存在时不列倍率行。
+  - R4 合计：悬浮末行合计与单元格数值一致。合计为空（未定价）的单元格显示「-」且无悬浮；自助页部分
+    未定价时悬浮末尾标注未定价记录数。
+  - R5 多条用量记录：管理端列表沿用上游只取第一条用量记录（`usageLogs(first: 1)`）；自助页一行汇总该请求
+    全部用量记录，分项按项目代码与变体合并数量和金额，各记录倍率一致时列倍率，不一致时不列倍率与基础合计。
+  - R6 可见性：管理端倍率随用量记录一并返回，可见成本即可见倍率，不额外要求渠道读取权限；自助页沿用
+    「API Key 自助用量页」R2 的 Key 隔离。
+- 代码：
+  - 前端共享组件：`frontend/src/components/request-usage-cells.tsx`（ID、Token、读写缓存、成本悬浮、耗时单元格）、
+    `frontend/src/components/request-usage-cost-breakdown.ts`（悬浮行构建）。
+  - 管理端：`frontend/src/features/requests/components/requests-columns.tsx`（对应列的 cell 改用共享组件，列定义不变）、
+    `frontend/src/features/requests/data/{requests.ts,usage-logs-schema.ts}`（列表与详情查询追加 `costItems`、
+    `costPriceMultiplier`）、`frontend/src/locales/{en,zh-CN}/requests.json`（`requests.costBreakdown.*`）。
+  - 管理端 GraphQL：`internal/server/gql/cost.graphql`（`CostItem.promptWriteCacheVariantCode`）、
+    `internal/server/gql/cost.resolvers.go`、新增 `internal/server/gql/usage_cost.graphql` 与 `usage_cost.resolvers.go`
+    （`UsageLog.costPriceMultiplier`）、`internal/server/gql/usage_price_loader.go`（单次 GraphQL 操作内按 reference_id
+    批量查价格版本；共享查询使用操作上下文，单个字段的上下文只约束自身等待，查询失败不缓存）、
+    `internal/server/biz/usage_price_multiplier.go`（窄 bypass 查询价格版本）；上游文件追加：
+    `internal/server/gql/gqlgen.yml`（schema 列表）、`internal/server/gql/graphql.go`（`AroundOperations` 注入 loader）。
+  - 自助页：`internal/server/biz/self_usage_cost.go`（本页请求的分项合并与倍率判定）、`internal/server/biz/self_usage.go`、
+    `internal/server/gql/selfusage/{selfusage.graphql,resolver.go}`、`frontend/src/features/self-usage/{api.ts,index.tsx}`、
+    `frontend/src/locales/{en,zh-CN}/selfUsage.json`、`docs/{zh,en}/guides/self-usage.md`。
+- 迁移：无 schema migration、data migration 与缓存键变化；已重新生成 `internal/server/gql` 与
+  `internal/server/gql/selfusage` 的 gqlgen 代码。
+- 测试：`internal/server/biz/self_usage_test.go`（多条用量记录分项合并、倍率一致 / 不一致 / 版本缺失、
+  未定价记录不参与倍率判定、其他 Key 的用量不出现）、`internal/server/gql/usage_cost_test.go`（历史价格版本倍率、
+  无引用返回 null、同批多行只发一次版本查询且同操作内不重复查询、一个字段取消不影响同批其他字段、未设变体返回 null；
+  批次窗口由测试手动关闭，不依赖调度时机）、
+  `frontend/src/components/request-usage-cost-breakdown.test.mjs`（排序与零值跳过、折算单价、倍率 null / 1 / 2 / 0、阶梯）。
+- 同步上游注意：上游若调整请求列表的 Token、缓存、成本、耗时列或 `CostItem` 类型，需同步到共享组件与
+  `cost.graphql`；`graphql.go` 的 `AroundOperations` 注入与上游已有的操作钩子并列。
 
 ### 模型详情分析
 
