@@ -529,6 +529,7 @@ fork 改动，由用户决定。
 ### Anthropic 目录导入补 1 小时写缓存价
 
 - 状态：已实现。提交：`bf37dae1`（`feat(models): Anthropic 目录导入补 1 小时写缓存价`）。
+- 关联：「渠道强制 1 小时提示缓存」开启后写缓存 Token 集中落在 1 小时档，依赖本 topic 补的价格。
 - 动机：Anthropic 写缓存按输入价计费倍数：5 分钟 1.25×、1 小时 2×
   （[官方 Pricing](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#pricing)）。
   上游目录 PublicProviderConf 的 `cost` 只有一个 `cache_write`，Anthropic 来源填的是 5 分钟价
@@ -552,6 +553,38 @@ fork 改动，由用户决定。
 - 测试：`frontend/src/features/models/pricing.test.mjs`（Anthropic 来源补 2× 输入价、阶梯按各自输入价、
   其他来源不补、缺写缓存价不补）。
 - 同步上游注意：上游若改 `priceFromCatalog`，或目录开始提供 1 小时写缓存价，应改为直接读取目录值并移除本推算。
+
+### 渠道强制 1 小时提示缓存
+
+- 状态：需求已确认，未实现。
+- 依赖：计费正确依赖「Anthropic 目录导入补 1 小时写缓存价」（或手动配置的 `one_hour` 变体）；未配置时 1 小时写入
+  按写缓存基础价计费。
+- 动机：人与 agent 协作时，多个会话等待用户回复、或用户离开片刻，请求间隔常超过 5 分钟，5 分钟缓存过期后需按
+  1.25× 重写全量前缀；1 小时缓存可命中并按 0.1× 计费。按当前用法，与用户对接的是 Claude 系模型，连续运行的
+  子代理是 GPT，前者更容易遇到。AxonHub 目前原样转发客户端 TTL，自己补的断点不带 TTL（即 5 分钟，
+  `llm/transformer/anthropic/ensure_cache_control.go:130-133`），没有任何强制 TTL 的配置。
+- 参考：CCH 在 Key 与供应商上配置 `cacheTtlPreference`（`inherit` / `5m` / `1h`，Key 优先），只改写客户端已有的
+  `system[]` 与 `messages[].content[]` 顶层 `ephemeral` 断点，不改 `tools`、顶层 `cache_control` 与 `tool_result`
+  内嵌断点（`src/app/v1/_lib/proxy/forwarder.ts:774-850,3527-3538`）；1h 时补 `extended-cache-ttl-2025-04-11`
+  beta 头（`forwarder.ts:852-863,8828-8833`）。响应只有写入总数、没有 5m / 1h 分档时，按请求偏好把总数计为 1h
+  （`src/app/v1/_lib/proxy/response-handler.ts:6468-6485`），另有供应商级计费互换开关 `swapCacheTtlBilling`
+  （`response-handler.ts:6444-6451`）。本 topic 不照搬后两者。
+- 已确认决策：
+  - D1 配置位置：只在渠道上配置，按上游是否支持 1 小时缓存开启；不在 API Key 上配置。
+  - D2 强制方式：开关式，开启后全部断点改为 1h，只延长不降级；不提供「强制 5m」。
+  - D3 AxonHub 自己补的断点在开启时同样为 1h。
+  - D4 不补 `anthropic-beta` 头（官方文档已不要求）；中转站需要时用渠道已有的请求头覆盖自行添加。
+  - D5 计费只按上游响应中的真实字段决定，不按请求的 TTL 推断，也不比较请求与响应的 TTL、不告警。
+  - D6 不做计费互换。
+- 规则：
+  - R1 生效条件：渠道开启本开关，且请求以 Anthropic Messages 格式发往该渠道，包括由其他入站格式转换而来的请求
+    与原样透传的请求体；其他出站格式不改。未开启的渠道行为不变。
+  - R2 改写范围：请求中所有 `type` 为 `ephemeral` 的 `cache_control` 均设为 `ttl: "1h"`，覆盖 `tools`、`system`、
+    `messages` 内容块（含 `tool_result` 内嵌内容）与顶层 `cache_control`（自动缓存）。只改已有断点的 TTL，
+    不为此新增断点；客户端未使用提示缓存的请求不变。全部断点统一为 1h，满足「长 TTL 必须排在短 TTL 之前」。
+  - R3 计费：写缓存 Token 按响应中的 5m / 1h 分档分别计价；响应只有写入总数、没有分档时，沿用现有逻辑按写缓存
+    基础价计价（`internal/server/biz/cost_calc.go:211-241`），不因渠道开启本开关而改按 1h 计。
+- 代码、迁移、测试：待实现后补充。
 
 ### 模型详情分析
 
