@@ -556,7 +556,8 @@ fork 改动，由用户决定。
 
 ### 渠道强制 1 小时提示缓存
 
-- 状态：已实现。提交：`bb25b45a`（`feat(channels): 渠道强制 1 小时提示缓存`）。
+- 状态：已实现。提交：`bb25b45a`（`feat(channels): 渠道强制 1 小时提示缓存`）、`6c9c764d`
+  （`fix(requests): 1 小时缓存标志改为以计费为准`）。
 - 依赖：计费正确依赖「Anthropic 目录导入补 1 小时写缓存价」（或手动配置的 `one_hour` 变体）；未配置时 1 小时写入
   按写缓存基础价计费。
 - 动机：人与 agent 协作时，多个会话等待用户回复、或用户离开片刻，请求间隔常超过 5 分钟，5 分钟缓存过期后需按
@@ -577,7 +578,7 @@ fork 改动，由用户决定。
   - D5 计费只按上游响应中的真实字段决定，不按请求的 TTL 推断，也不比较请求与响应的 TTL、不告警。
   - D6 不做计费互换。
   - D7 请求日志标记：在请求列表模型列「出站协议」「透传」图标之后加「1 小时缓存」图标，始终显示、否时灰色；请求
-    详情的执行卡片在「透传」徽章旁加「1 小时缓存」徽章，仅为是时显示。标记反映出站请求的实际情况，与渠道开关无关。
+    详情的「用量」卡片标题旁加「1 小时缓存」徽章，仅为是时显示。标记与计费同源，与渠道开关无关。
 - 规则：
   - R1 生效条件：渠道开启本开关，且请求以 Anthropic Messages 格式发往该渠道，包括由其他入站格式转换而来的请求
     与原样透传的请求体；其他出站格式不改。未开启的渠道行为不变。
@@ -586,32 +587,27 @@ fork 改动，由用户决定。
     不为此新增断点；客户端未使用提示缓存的请求不变。全部断点统一为 1h，满足「长 TTL 必须排在短 TTL 之前」。
   - R3 计费：写缓存 Token 按响应中的 5m / 1h 分档分别计价；响应只有写入总数、没有分档时，沿用现有逻辑按写缓存
     基础价计价（`internal/server/biz/cost_calc.go:211-241`），不因渠道开启本开关而改按 1h 计。
-  - R4 标记判定：每次执行按最终发往上游的请求体判定（经过透传、本开关与渠道请求体覆盖之后），出站格式为
-    Anthropic Messages 且 R2 所列位置中至少有一个 `ephemeral` 断点的 `ttl` 为 `1h` 时为是；客户端自带的 1h 同样
-    为是。列表中任一执行为是即点亮。存为 `request_executions` 新布尔列，默认否；历史数据视为否，不回填。
+  - R4 标记判定：该请求任一条用量记录的 1 小时写缓存 Token（`prompt_write_cached_tokens_1h`）大于 0 为是，否则为否，
+    与计费使用同一个字段，不另存标记。一个请求可能有多条用量记录（非流式响应先写用量、再做空响应检测与入站转换，
+    失败后重试，`llm/pipeline/non_streaming.go:47-59`），用量记录不带执行 ID，无法归属到具体执行卡片，因此详情按
+    请求显示一次。历史请求按已有用量记录直接显示，无需回填。只读 1 小时缓存、没有新写入的请求为否（上游读缓存不分 TTL）。
 - 代码：`internal/objects/channel.go`（`ChannelSettings.ForceOneHourPromptCache`，JSON `forceOneHourPromptCache`）、
   `internal/server/gql/axonhub.graphql`（`ChannelSettings` 与 `ChannelSettingsInput` 追加字段，已重新生成）、
-  新增 `internal/server/biz/prompt_cache_ttl.go`（`WalkAnthropicCacheControls` 按 gjson 遍历 R2 所列断点位置，改写与
-  标记共用；`hasOneHourPromptCache` 实现 R4）、新增 `internal/server/orchestrator/prompt_cache_ttl.go`（出站原始请求
-  中间件：只用 sjson 改写 `ttl`，其余字节不变；先复制请求体，不改动重试共享的底层数组）、
-  `internal/server/orchestrator/orchestrator.go`（中间件插在请求体透传之后、渠道请求体覆盖之前，覆盖操作仍最终生效）、
-  `internal/ent/schema/request_execution.go`（`one_hour_prompt_cache` 布尔字段，GraphQL `oneHourPromptCache`，已重新
-  生成）、`internal/server/biz/request.go`（`CreateRequestExecution` 按最终请求体写入标记）；前端
+  新增 `internal/server/orchestrator/prompt_cache_ttl.go`（出站原始请求中间件：按 gjson 定位 R2 所列断点，只用 sjson
+  改写 `ttl`，其余字节不变；先复制请求体，不改动重试共享的底层数组）、
+  `internal/server/orchestrator/orchestrator.go`（中间件插在请求体透传之后、渠道请求体覆盖之前，覆盖操作仍最终生效）；前端
   `frontend/src/features/channels/{data/schema.ts,data/channels.ts,utils/merge.ts,components/channels-action-dialog.tsx}`
   （渠道编辑对话框「透传」下方的复选框）、`frontend/src/locales/{en,zh-CN}/channels.json`、
-  `frontend/src/features/requests/{data/schema.ts,data/requests.ts,components/requests-columns.tsx,components/request-detail-content.tsx}`
-  （模型列第三个图标按 `oneHourPromptCache: true` 的执行计数判定，不受执行列表只取最近 10 条影响；执行卡片徽章）、
+  `frontend/src/features/requests/{data/requests.ts,data/schema.ts,components/requests-columns.tsx,components/request-detail-content.tsx}`
+  （列表与详情各加一个按 `promptWriteCachedTokens1hGT: 0` 过滤的用量计数查询；模型列第三个图标与用量卡片徽章）、
   `frontend/src/locales/{en,zh-CN}/requests.json`；
   `docs/{zh,en}/guides/channel-management.md`、`docs/{zh,en}/guides/cost-tracking.md`。
-- 迁移：`request_executions` 新增 `one_hour_prompt_cache`（布尔，默认否），由 Ent 自动迁移加列；无 data migration
-  与缓存键变化；渠道设置随 settings JSON 保存。
+- 迁移：无 data migration 与缓存键变化；渠道设置随 settings JSON 保存。`v1.0.0-beta10-fork.3` 曾发布
+  `request_executions.one_hour_prompt_cache` 列，现已从 schema 删除，Ent 自动迁移（`WithDropColumn(true)`）会删列。
 - 测试：`internal/server/orchestrator/prompt_cache_ttl_test.go`（各位置断点改为 1h 且其余字节不变、非 ephemeral 与
-  非断点位置不动、关闭 / 非 Anthropic 格式 / 无断点 / 字符串 system / 非法 JSON 原样返回、不改动重试共享的请求体）、
-  `internal/server/biz/prompt_cache_ttl_test.go`（R4 各位置与嵌套内容、只有 5m / 无 TTL、无断点、非 ephemeral、
-  非 Anthropic 格式、5m 与 1h 混合；经 Ent 创建执行记录后标记正确落库）。
+  非断点位置不动、关闭 / 非 Anthropic 格式 / 无断点 / 字符串 system / 非法 JSON 原样返回、不改动重试共享的请求体）。
 - 同步上游注意：上游若调整出站中间件顺序或 Anthropic 缓存断点处理（`ensure_cache_control.go`），需确认本中间件仍在
-  请求体透传之后、覆盖之前执行。上游若改 `request_executions` schema 或 `CreateRequestExecution`，合并后保留
-  `one_hour_prompt_cache` 字段与写入行，并重新生成 Ent / GraphQL 代码，不要手工合并生成文件。
+  请求体透传之后、覆盖之前执行。上游若改用量记录的 1 小时写缓存字段，需同步请求日志标记的判定。
 
 ### 模型详情分析
 
