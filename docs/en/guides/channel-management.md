@@ -274,6 +274,16 @@ Configure `{from, to}` entries in the channel **Transform Options**; the first m
 - OpenAI chat / responses: `reasoning_effort` / `reasoning.effort` pass through unchanged.
 - If the upstream rejects a level, its original error is forwarded to the client; incompatible levels can be remapped via the channel mapping.
 
+## Force 1-Hour Prompt Cache
+
+Anthropic prompt caches expire after 5 minutes by default. In human-agent collaboration, gaps between requests often exceed 5 minutes while waiting for a reply or stepping away, and the whole prefix must then be written again. With **Force 1-Hour Prompt Cache** checked in the channel edit dialog, every existing cache breakpoint in Anthropic Messages requests sent to that channel (`tools`, `system`, message content including `tool_result` content, and the top-level `cache_control`) is set to `ttl: "1h"`, including breakpoints added by AxonHub and pass-through request bodies.
+
+- Only the TTL of existing breakpoints changes; no breakpoints are added, and requests without prompt caching are unchanged.
+- Only requests sent in Anthropic Messages format are affected; other outbound formats are not.
+- No `anthropic-beta` header is added; add one with a header override if the upstream requires it.
+- Whether the upstream actually caches for 1 hour is up to the upstream. Billing follows the 5-minute / 1-hour cache write split reported in the upstream response, not the request; responses reporting only a total are billed at the base cache write price. See [Cost Tracking](cost-tracking.md#cache-write-variants-anthropic) for 1-hour write pricing.
+- In request logs, the model column shows a 1-hour cache icon after the outbound protocol and pass-through icons. It lights up when the final request sent upstream contains a 1-hour cache breakpoint and stays gray otherwise. It reflects only the request actually sent, so a client that sends 1-hour breakpoints itself lights it up even without this switch. In that case the execution card in request details also shows a "1h cache" badge.
+
 ## FAQ
 
 ### Q: Connection test failed?

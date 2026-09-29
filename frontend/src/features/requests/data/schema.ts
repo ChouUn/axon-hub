@@ -40,6 +40,7 @@ export const requestExecutionSchema = z.object({
   metricsReasoningDurationMs: z.number().nullable().optional(),
   requestURL: z.string().nullable().optional(),
   passThroughApplied: z.boolean().optional(),
+  oneHourPromptCache: z.boolean().optional(),
 });
 export type RequestExecution = z.infer<typeof requestExecutionSchema>;
 
@@ -105,6 +106,7 @@ export const requestSchema = z.object({
       totalCount: z.number(),
     })
     .optional(),
+  oneHourPromptCacheExecutions: z.object({ totalCount: z.number() }).optional(),
   usageLogs: z
     .object({
       edges: z

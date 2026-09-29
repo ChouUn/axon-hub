@@ -4653,6 +4653,10 @@ type RequestExecution implements Node {
   Whether pass-through was active for this execution attempt
   """
   passThroughApplied: Boolean!
+  """
+  Whether the final Anthropic request used a one-hour prompt cache breakpoint
+  """
+  oneHourPromptCache: Boolean!
   request: Request!
   channel: Channel @goField(forceResolver: true)
   dataStorage: DataStorage
@@ -4967,6 +4971,11 @@ input RequestExecutionWhereInput {
   """
   passThroughApplied: Boolean
   passThroughAppliedNEQ: Boolean
+  """
+  one_hour_prompt_cache field predicates
+  """
+  oneHourPromptCache: Boolean
+  oneHourPromptCacheNEQ: Boolean
   """
   request edge predicates
   """

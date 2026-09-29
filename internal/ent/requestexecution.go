@@ -68,6 +68,8 @@ type RequestExecution struct {
 	RequestURL string `json:"request_url,omitempty"`
 	// Whether pass-through was active for this execution attempt
 	PassThroughApplied bool `json:"pass_through_applied,omitempty"`
+	// Whether the final Anthropic request used a one-hour prompt cache breakpoint
+	OneHourPromptCache bool `json:"one_hour_prompt_cache,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the RequestExecutionQuery when eager-loading is set.
 	Edges        RequestExecutionEdges `json:"edges"`
@@ -129,7 +131,7 @@ func (*RequestExecution) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case requestexecution.FieldRequestBody, requestexecution.FieldResponseBody, requestexecution.FieldResponseChunks, requestexecution.FieldRequestHeaders:
 			values[i] = new([]byte)
-		case requestexecution.FieldStream, requestexecution.FieldPassThroughApplied:
+		case requestexecution.FieldStream, requestexecution.FieldPassThroughApplied, requestexecution.FieldOneHourPromptCache:
 			values[i] = new(sql.NullBool)
 		case requestexecution.FieldID, requestexecution.FieldProjectID, requestexecution.FieldRequestID, requestexecution.FieldChannelID, requestexecution.FieldDataStorageID, requestexecution.FieldResponseStatusCode, requestexecution.FieldMetricsLatencyMs, requestexecution.FieldMetricsFirstTokenLatencyMs, requestexecution.FieldMetricsReasoningDurationMs:
 			values[i] = new(sql.NullInt64)
@@ -309,6 +311,12 @@ func (_m *RequestExecution) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.PassThroughApplied = value.Bool
 			}
+		case requestexecution.FieldOneHourPromptCache:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field one_hour_prompt_cache", values[i])
+			} else if value.Valid {
+				_m.OneHourPromptCache = value.Bool
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -438,6 +446,9 @@ func (_m *RequestExecution) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("pass_through_applied=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PassThroughApplied))
+	builder.WriteString(", ")
+	builder.WriteString("one_hour_prompt_cache=")
+	builder.WriteString(fmt.Sprintf("%v", _m.OneHourPromptCache))
 	builder.WriteByte(')')
 	return builder.String()
 }

@@ -145,6 +145,11 @@ func PassThroughApplied(v bool) predicate.RequestExecution {
 	return predicate.RequestExecution(sql.FieldEQ(FieldPassThroughApplied, v))
 }
 
+// OneHourPromptCache applies equality check predicate on the "one_hour_prompt_cache" field. It's identical to OneHourPromptCacheEQ.
+func OneHourPromptCache(v bool) predicate.RequestExecution {
+	return predicate.RequestExecution(sql.FieldEQ(FieldOneHourPromptCache, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.RequestExecution {
 	return predicate.RequestExecution(sql.FieldEQ(FieldCreatedAt, v))
@@ -1043,6 +1048,16 @@ func PassThroughAppliedEQ(v bool) predicate.RequestExecution {
 // PassThroughAppliedNEQ applies the NEQ predicate on the "pass_through_applied" field.
 func PassThroughAppliedNEQ(v bool) predicate.RequestExecution {
 	return predicate.RequestExecution(sql.FieldNEQ(FieldPassThroughApplied, v))
+}
+
+// OneHourPromptCacheEQ applies the EQ predicate on the "one_hour_prompt_cache" field.
+func OneHourPromptCacheEQ(v bool) predicate.RequestExecution {
+	return predicate.RequestExecution(sql.FieldEQ(FieldOneHourPromptCache, v))
+}
+
+// OneHourPromptCacheNEQ applies the NEQ predicate on the "one_hour_prompt_cache" field.
+func OneHourPromptCacheNEQ(v bool) predicate.RequestExecution {
+	return predicate.RequestExecution(sql.FieldNEQ(FieldOneHourPromptCache, v))
 }
 
 // HasRequest applies the HasEdge predicate on the "request" edge.

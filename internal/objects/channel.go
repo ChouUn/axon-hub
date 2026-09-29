@@ -228,6 +228,10 @@ type ChannelSettings struct {
 	// When set to true/false, it overrides the global setting.
 	PassThroughBody *bool `json:"passThroughBody,omitempty"`
 
+	// ForceOneHourPromptCache sets every existing ephemeral Anthropic Messages cache breakpoint
+	// sent to this channel to ttl "1h"; false preserves client TTLs.
+	ForceOneHourPromptCache bool `json:"forceOneHourPromptCache,omitempty"`
+
 	// RateLimit configures the upstream rate limit for the channel.
 	// When configured, the load balancer will skip channels that have exceeded their rate limits.
 	RateLimit *ChannelRateLimit `json:"rateLimit,omitempty"`

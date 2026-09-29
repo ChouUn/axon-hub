@@ -107,6 +107,8 @@ For Anthropic models, you can configure TTL variants for cache writes:
 
 The model catalog provides only the 5-minute cache write price. When you import a price by selecting a model from the catalog's official Anthropic source, a `one_hour` cache write variant is added automatically at twice the input price (Anthropic's 1-hour cache write multiplier); other sources do not get it. Without a `one_hour` variant, 1-hour writes are billed at the base cache write price.
 
+With [Force 1-Hour Prompt Cache](channel-management.md#force-1-hour-prompt-cache) enabled on a channel, cache writes mostly land in the 1-hour tier, so make sure the price includes a `one_hour` variant.
+
 ### Cost Calculation Logic
 
 1. **Input Token Calculation**: `PromptTokens - CachedTokens - WriteCachedTokens`

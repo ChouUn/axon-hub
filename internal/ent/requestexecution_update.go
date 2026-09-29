@@ -287,6 +287,20 @@ func (_u *RequestExecutionUpdate) SetNillablePassThroughApplied(v *bool) *Reques
 	return _u
 }
 
+// SetOneHourPromptCache sets the "one_hour_prompt_cache" field.
+func (_u *RequestExecutionUpdate) SetOneHourPromptCache(v bool) *RequestExecutionUpdate {
+	_u.mutation.SetOneHourPromptCache(v)
+	return _u
+}
+
+// SetNillableOneHourPromptCache sets the "one_hour_prompt_cache" field if the given value is not nil.
+func (_u *RequestExecutionUpdate) SetNillableOneHourPromptCache(v *bool) *RequestExecutionUpdate {
+	if v != nil {
+		_u.SetOneHourPromptCache(*v)
+	}
+	return _u
+}
+
 // Mutation returns the RequestExecutionMutation object of the builder.
 func (_u *RequestExecutionUpdate) Mutation() *RequestExecutionMutation {
 	return _u.mutation
@@ -462,6 +476,9 @@ func (_u *RequestExecutionUpdate) sqlSave(ctx context.Context) (_node int, err e
 	}
 	if value, ok := _u.mutation.PassThroughApplied(); ok {
 		_spec.SetField(requestexecution.FieldPassThroughApplied, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.OneHourPromptCache(); ok {
+		_spec.SetField(requestexecution.FieldOneHourPromptCache, field.TypeBool, value)
 	}
 	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
@@ -741,6 +758,20 @@ func (_u *RequestExecutionUpdateOne) SetNillablePassThroughApplied(v *bool) *Req
 	return _u
 }
 
+// SetOneHourPromptCache sets the "one_hour_prompt_cache" field.
+func (_u *RequestExecutionUpdateOne) SetOneHourPromptCache(v bool) *RequestExecutionUpdateOne {
+	_u.mutation.SetOneHourPromptCache(v)
+	return _u
+}
+
+// SetNillableOneHourPromptCache sets the "one_hour_prompt_cache" field if the given value is not nil.
+func (_u *RequestExecutionUpdateOne) SetNillableOneHourPromptCache(v *bool) *RequestExecutionUpdateOne {
+	if v != nil {
+		_u.SetOneHourPromptCache(*v)
+	}
+	return _u
+}
+
 // Mutation returns the RequestExecutionMutation object of the builder.
 func (_u *RequestExecutionUpdateOne) Mutation() *RequestExecutionMutation {
 	return _u.mutation
@@ -946,6 +977,9 @@ func (_u *RequestExecutionUpdateOne) sqlSave(ctx context.Context) (_node *Reques
 	}
 	if value, ok := _u.mutation.PassThroughApplied(); ok {
 		_spec.SetField(requestexecution.FieldPassThroughApplied, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.OneHourPromptCache(); ok {
+		_spec.SetField(requestexecution.FieldOneHourPromptCache, field.TypeBool, value)
 	}
 	_spec.AddModifiers(_u.modifiers...)
 	_node = &RequestExecution{config: _u.config}

@@ -459,6 +459,7 @@ var schemaGraph = func() *sqlgraph.Schema {
 			requestexecution.FieldRequestHeaders:             {Type: field.TypeJSON, Column: requestexecution.FieldRequestHeaders},
 			requestexecution.FieldRequestURL:                 {Type: field.TypeString, Column: requestexecution.FieldRequestURL},
 			requestexecution.FieldPassThroughApplied:         {Type: field.TypeBool, Column: requestexecution.FieldPassThroughApplied},
+			requestexecution.FieldOneHourPromptCache:         {Type: field.TypeBool, Column: requestexecution.FieldOneHourPromptCache},
 		},
 	}
 	graph.Nodes[17] = &sqlgraph.Node{
@@ -3640,6 +3641,11 @@ func (f *RequestExecutionFilter) WhereRequestURL(p entql.StringP) {
 // WherePassThroughApplied applies the entql bool predicate on the pass_through_applied field.
 func (f *RequestExecutionFilter) WherePassThroughApplied(p entql.BoolP) {
 	f.Where(p.Field(requestexecution.FieldPassThroughApplied))
+}
+
+// WhereOneHourPromptCache applies the entql bool predicate on the one_hour_prompt_cache field.
+func (f *RequestExecutionFilter) WhereOneHourPromptCache(p entql.BoolP) {
+	f.Where(p.Field(requestexecution.FieldOneHourPromptCache))
 }
 
 // WhereHasRequest applies a predicate to check if query has an edge request.

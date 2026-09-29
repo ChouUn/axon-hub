@@ -283,6 +283,8 @@ func (processor *ChatCompletionOrchestrator) Process(ctx context.Context, reques
 		// Codex Responses metadata must travel with a pass-through body so compatible
 		// upstreams preserve the client's protocol behavior.
 		applyPassThroughRequestHeaders(outbound),
+		// Set Anthropic cache TTLs after pass-through and before channel body overrides.
+		applyForceOneHourPromptCache(outbound),
 		applyOverrideRequestBody(outbound),
 		// applyUserAgentPassThrough runs before header overrides to set the initial
 		// User-Agent value (either from client pass-through or default "axonhub/1.0").

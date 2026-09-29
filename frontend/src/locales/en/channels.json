@@ -775,6 +775,8 @@
   "channels.dialogs.bodyPassThrough.enabled": "Enabled",
   "channels.dialogs.bodyPassThrough.disabled": "Disabled",
   "channels.dialogs.bodyPassThrough.warning": "When enabled, both the request and response will be passed through only when the client request format matches the channel format. Prompt injection and prompt protection will not take effect.",
+  "channels.dialogs.forceOneHourPromptCache.label": "Force 1-Hour Prompt Cache",
+  "channels.dialogs.forceOneHourPromptCache.description": "Set all existing cache breakpoints in Anthropic Messages requests sent to this channel to 1 hour; no breakpoints are added. Cache writes are billed at the upstream response's 5-minute / 1-hour rates, so model pricing must include a 1-hour cache-write variant.",
   "channels.dialogs.retryableStatusCodes.label": "Retry Status Codes",
   "channels.dialogs.retryableStatusCodes.placeholder": "400, 401, 403",
   "channels.dialogs.retryableStatusCodes.description": "Add HTTP error status codes that should trigger same-channel retry for this channel. Separate multiple codes with commas, spaces, or new lines. These are added to the default 429 and 5xx retry behavior.",

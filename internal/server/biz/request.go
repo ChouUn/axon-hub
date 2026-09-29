@@ -379,7 +379,8 @@ func (s *RequestService) CreateRequestExecution(
 		SetStatus(requestexecution.StatusProcessing).
 		SetStream(request.Stream).
 		SetRequestHeaders(requestHeadersBytes).
-		SetPassThroughApplied(passThroughApplied)
+		SetPassThroughApplied(passThroughApplied).
+		SetOneHourPromptCache(hasOneHourPromptCache(channelRequest, format))
 
 	if reasoningEffort := extractOutboundReasoningEffort(channelRequest, format); reasoningEffort != nil {
 		mut = mut.SetReasoningEffort(*reasoningEffort)

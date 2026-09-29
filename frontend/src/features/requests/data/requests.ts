@@ -89,6 +89,9 @@ function buildRequestsQuery(permissions: { canViewApiKeys: boolean; canViewChann
               }
               totalCount
             }
+            oneHourPromptCacheExecutions: executions(first: 1, where: { oneHourPromptCache: true }) {
+              totalCount
+            }
             usageLogs(first: 1) {
               edges {
                 node {
@@ -286,6 +289,7 @@ function buildRequestExecutionsQuery(permissions: { canViewChannels: boolean }) 
                 stream
                 requestURL
                 passThroughApplied
+                oneHourPromptCache
                 metricsFirstTokenLatencyMs
                 metricsReasoningDurationMs
               }

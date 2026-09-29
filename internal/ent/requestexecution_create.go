@@ -292,6 +292,20 @@ func (_c *RequestExecutionCreate) SetNillablePassThroughApplied(v *bool) *Reques
 	return _c
 }
 
+// SetOneHourPromptCache sets the "one_hour_prompt_cache" field.
+func (_c *RequestExecutionCreate) SetOneHourPromptCache(v bool) *RequestExecutionCreate {
+	_c.mutation.SetOneHourPromptCache(v)
+	return _c
+}
+
+// SetNillableOneHourPromptCache sets the "one_hour_prompt_cache" field if the given value is not nil.
+func (_c *RequestExecutionCreate) SetNillableOneHourPromptCache(v *bool) *RequestExecutionCreate {
+	if v != nil {
+		_c.SetOneHourPromptCache(*v)
+	}
+	return _c
+}
+
 // SetRequest sets the "request" edge to the Request entity.
 func (_c *RequestExecutionCreate) SetRequest(v *Request) *RequestExecutionCreate {
 	return _c.SetRequestID(v.ID)
@@ -366,6 +380,10 @@ func (_c *RequestExecutionCreate) defaults() {
 		v := requestexecution.DefaultPassThroughApplied
 		_c.mutation.SetPassThroughApplied(v)
 	}
+	if _, ok := _c.mutation.OneHourPromptCache(); !ok {
+		v := requestexecution.DefaultOneHourPromptCache
+		_c.mutation.SetOneHourPromptCache(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -403,6 +421,9 @@ func (_c *RequestExecutionCreate) check() error {
 	}
 	if _, ok := _c.mutation.PassThroughApplied(); !ok {
 		return &ValidationError{Name: "pass_through_applied", err: errors.New(`ent: missing required field "RequestExecution.pass_through_applied"`)}
+	}
+	if _, ok := _c.mutation.OneHourPromptCache(); !ok {
+		return &ValidationError{Name: "one_hour_prompt_cache", err: errors.New(`ent: missing required field "RequestExecution.one_hour_prompt_cache"`)}
 	}
 	if len(_c.mutation.RequestIDs()) == 0 {
 		return &ValidationError{Name: "request", err: errors.New(`ent: missing required edge "RequestExecution.request"`)}
@@ -513,6 +534,10 @@ func (_c *RequestExecutionCreate) createSpec() (*RequestExecution, *sqlgraph.Cre
 	if value, ok := _c.mutation.PassThroughApplied(); ok {
 		_spec.SetField(requestexecution.FieldPassThroughApplied, field.TypeBool, value)
 		_node.PassThroughApplied = value
+	}
+	if value, ok := _c.mutation.OneHourPromptCache(); ok {
+		_spec.SetField(requestexecution.FieldOneHourPromptCache, field.TypeBool, value)
+		_node.OneHourPromptCache = value
 	}
 	if nodes := _c.mutation.RequestIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -854,6 +879,18 @@ func (u *RequestExecutionUpsert) SetPassThroughApplied(v bool) *RequestExecution
 // UpdatePassThroughApplied sets the "pass_through_applied" field to the value that was provided on create.
 func (u *RequestExecutionUpsert) UpdatePassThroughApplied() *RequestExecutionUpsert {
 	u.SetExcluded(requestexecution.FieldPassThroughApplied)
+	return u
+}
+
+// SetOneHourPromptCache sets the "one_hour_prompt_cache" field.
+func (u *RequestExecutionUpsert) SetOneHourPromptCache(v bool) *RequestExecutionUpsert {
+	u.Set(requestexecution.FieldOneHourPromptCache, v)
+	return u
+}
+
+// UpdateOneHourPromptCache sets the "one_hour_prompt_cache" field to the value that was provided on create.
+func (u *RequestExecutionUpsert) UpdateOneHourPromptCache() *RequestExecutionUpsert {
+	u.SetExcluded(requestexecution.FieldOneHourPromptCache)
 	return u
 }
 
@@ -1206,6 +1243,20 @@ func (u *RequestExecutionUpsertOne) SetPassThroughApplied(v bool) *RequestExecut
 func (u *RequestExecutionUpsertOne) UpdatePassThroughApplied() *RequestExecutionUpsertOne {
 	return u.Update(func(s *RequestExecutionUpsert) {
 		s.UpdatePassThroughApplied()
+	})
+}
+
+// SetOneHourPromptCache sets the "one_hour_prompt_cache" field.
+func (u *RequestExecutionUpsertOne) SetOneHourPromptCache(v bool) *RequestExecutionUpsertOne {
+	return u.Update(func(s *RequestExecutionUpsert) {
+		s.SetOneHourPromptCache(v)
+	})
+}
+
+// UpdateOneHourPromptCache sets the "one_hour_prompt_cache" field to the value that was provided on create.
+func (u *RequestExecutionUpsertOne) UpdateOneHourPromptCache() *RequestExecutionUpsertOne {
+	return u.Update(func(s *RequestExecutionUpsert) {
+		s.UpdateOneHourPromptCache()
 	})
 }
 
@@ -1724,6 +1775,20 @@ func (u *RequestExecutionUpsertBulk) SetPassThroughApplied(v bool) *RequestExecu
 func (u *RequestExecutionUpsertBulk) UpdatePassThroughApplied() *RequestExecutionUpsertBulk {
 	return u.Update(func(s *RequestExecutionUpsert) {
 		s.UpdatePassThroughApplied()
+	})
+}
+
+// SetOneHourPromptCache sets the "one_hour_prompt_cache" field.
+func (u *RequestExecutionUpsertBulk) SetOneHourPromptCache(v bool) *RequestExecutionUpsertBulk {
+	return u.Update(func(s *RequestExecutionUpsert) {
+		s.SetOneHourPromptCache(v)
+	})
+}
+
+// UpdateOneHourPromptCache sets the "one_hour_prompt_cache" field to the value that was provided on create.
+func (u *RequestExecutionUpsertBulk) UpdateOneHourPromptCache() *RequestExecutionUpsertBulk {
+	return u.Update(func(s *RequestExecutionUpsert) {
+		s.UpdateOneHourPromptCache()
 	})
 }
 

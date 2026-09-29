@@ -850,6 +850,11 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
                                 {t('requests.passThrough.applied')}
                               </Badge>
                             )}
+                            {execution.oneHourPromptCache && (
+                              <Badge className='border-violet-200 bg-violet-100 text-violet-800 dark:border-violet-800 dark:bg-violet-900/20 dark:text-violet-300'>
+                                {t('requests.oneHourPromptCache.applied')}
+                              </Badge>
+                            )}
                           </div>
                         </CardHeader>
                         <CardContent className='space-y-6'>

@@ -1360,6 +1360,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
           healthGateFailureThreshold: values.settings?.healthGateFailureThreshold ?? null,
           passThroughUserAgent,
           passThroughBody,
+          forceOneHourPromptCache: values.settings?.forceOneHourPromptCache,
           retryableStatusCodes,
           retryableErrorPatterns,
           primaryApiFormat: selectedApiFormat === OPENAI_IMAGE_GENERATION ? OPENAI_IMAGE_GENERATION : '',
@@ -1426,6 +1427,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
           proxy: proxyConfig,
           passThroughUserAgent,
           passThroughBody,
+          forceOneHourPromptCache: values.settings?.forceOneHourPromptCache,
           retryableStatusCodes,
           retryableErrorPatterns,
           primaryApiFormat: selectedApiFormat === OPENAI_IMAGE_GENERATION ? OPENAI_IMAGE_GENERATION : '',
@@ -2897,6 +2899,25 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
                           )}
                         </div>
                       </FormItem>
+
+                      <FormField
+                        control={form.control}
+                        name='settings.forceOneHourPromptCache'
+                        render={({ field }) => (
+                          <FormItem className='grid grid-cols-1 items-start gap-x-6 gap-y-2 md:grid-cols-8'>
+                            <FormLabel className='pt-2 font-medium md:col-span-2 md:text-right'>
+                              {t('channels.dialogs.forceOneHourPromptCache.label')}
+                            </FormLabel>
+                            <div className='space-y-1 md:col-span-6'>
+                              <FormControl>
+                                <Checkbox checked={field.value ?? false} onCheckedChange={(checked) => field.onChange(checked === true)} />
+                              </FormControl>
+                              <FormDescription>{t('channels.dialogs.forceOneHourPromptCache.description')}</FormDescription>
+                              <FormMessage />
+                            </div>
+                          </FormItem>
+                        )}
+                      />
 
                       <FormField
                         control={form.control}

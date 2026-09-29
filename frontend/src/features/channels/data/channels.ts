@@ -119,6 +119,7 @@ const CREATE_CHANNEL_MUTATION = `
         }
         passThroughUserAgent
         passThroughBody
+        forceOneHourPromptCache
         retryableStatusCodes
         retryableErrorPatterns {
           pattern
@@ -200,6 +201,7 @@ const DUPLICATE_CHANNEL_MUTATION = `
         }
         passThroughUserAgent
         passThroughBody
+        forceOneHourPromptCache
         retryableStatusCodes
         retryableErrorPatterns {
           pattern
@@ -281,6 +283,7 @@ const BULK_CREATE_CHANNELS_MUTATION = `
         }
         passThroughUserAgent
         passThroughBody
+        forceOneHourPromptCache
         retryableStatusCodes
         retryableErrorPatterns {
           pattern
@@ -362,6 +365,7 @@ const UPDATE_CHANNEL_MUTATION = `
         }
         passThroughUserAgent
         passThroughBody
+        forceOneHourPromptCache
         retryableStatusCodes
         retryableErrorPatterns {
           pattern
@@ -558,6 +562,7 @@ const BULK_IMPORT_CHANNELS_MUTATION = `
           }
           passThroughUserAgent
           passThroughBody
+          forceOneHourPromptCache
           retryableStatusCodes
           retryableErrorPatterns {
             pattern
@@ -785,6 +790,7 @@ const BULK_UPDATE_CHANNEL_ORDERING_MUTATION = `
           }
           passThroughUserAgent
           passThroughBody
+          forceOneHourPromptCache
           retryableStatusCodes
           retryableErrorPatterns {
             pattern
@@ -947,6 +953,7 @@ const CHANNEL_QUERY_FULL_NODE_SELECTION = `
             }
             passThroughUserAgent
             passThroughBody
+            forceOneHourPromptCache
             rateLimit {
               rpm
               tpm
@@ -1021,6 +1028,7 @@ const CHANNEL_QUERY_LIST_NODE_BASE_SELECTION = `
           errorMessage
           settings {
             healthGateFailureThreshold
+            forceOneHourPromptCache
             primaryApiFormat
           }
           disabledAPIKeys {

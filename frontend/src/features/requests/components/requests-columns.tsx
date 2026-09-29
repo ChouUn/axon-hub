@@ -2,7 +2,7 @@
 
 import { format } from 'date-fns';
 import { ColumnDef } from '@tanstack/react-table';
-import { IconArrowsExchange, IconArrowsJoin2, IconRoute } from '@tabler/icons-react';
+import { IconArrowsExchange, IconArrowsJoin2, IconClockHour1, IconRoute } from '@tabler/icons-react';
 import { Ban, FileText } from 'lucide-react';
 import { zhCN, enUS } from 'date-fns/locale';
 import { useTranslation } from 'react-i18next';
@@ -121,6 +121,7 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
         const inboundFormat = request.format;
         const outboundFormat = executions[0]?.format;
         const passThroughApplied = executions.some((execution) => execution.passThroughApplied);
+        const oneHourPromptCache = (request.oneHourPromptCacheExecutions?.totalCount ?? 0) > 0;
         // Orange is reserved for a confirmed mismatch: a missing format on either
         // side is "unknown" and stays muted.
         const formatsComparable = Boolean(inboundFormat && outboundFormat);
@@ -198,6 +199,21 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>{t(passThroughApplied ? 'requests.tooltips.passThroughApplied' : 'requests.tooltips.passThroughNotApplied')}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className={`inline-flex h-5 w-5 items-center justify-center ${
+                      oneHourPromptCache ? 'text-violet-700 dark:text-violet-300' : 'text-muted-foreground/45'
+                    }`}
+                    tabIndex={0}
+                    role='img'
+                    aria-label={t(oneHourPromptCache ? 'requests.tooltips.oneHourPromptCacheApplied' : 'requests.tooltips.oneHourPromptCacheNotApplied')}
+                  >
+                    <IconClockHour1 className='h-3.5 w-3.5' />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{t(oneHourPromptCache ? 'requests.tooltips.oneHourPromptCacheApplied' : 'requests.tooltips.oneHourPromptCacheNotApplied')}</TooltipContent>
               </Tooltip>
             </div>
           </div>

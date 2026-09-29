@@ -185,6 +185,7 @@ type ChannelSettings {
   providerQuota: ChannelProviderQuotaSettings @goField(forceResolver: true)
   primaryApiFormat: String
   healthGateFailureThreshold: Int
+  forceOneHourPromptCache: Boolean
 }
 
 enum CapabilityPolicy {
@@ -255,6 +256,7 @@ input ChannelSettingsInput {
   providerQuota: ChannelProviderQuotaSettingsInput
   primaryApiFormat: String
   healthGateFailureThreshold: Int
+  forceOneHourPromptCache: Boolean
 }
 
 input ChannelRateLimitInput {

@@ -18982,6 +18982,7 @@ type RequestExecutionMutation struct {
 	appendrequest_headers             objects.JSONRawMessage
 	request_url                       *string
 	pass_through_applied              *bool
+	one_hour_prompt_cache             *bool
 	clearedFields                     map[string]struct{}
 	request                           *int
 	clearedrequest                    bool
@@ -20256,6 +20257,42 @@ func (m *RequestExecutionMutation) ResetPassThroughApplied() {
 	m.pass_through_applied = nil
 }
 
+// SetOneHourPromptCache sets the "one_hour_prompt_cache" field.
+func (m *RequestExecutionMutation) SetOneHourPromptCache(b bool) {
+	m.one_hour_prompt_cache = &b
+}
+
+// OneHourPromptCache returns the value of the "one_hour_prompt_cache" field in the mutation.
+func (m *RequestExecutionMutation) OneHourPromptCache() (r bool, exists bool) {
+	v := m.one_hour_prompt_cache
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOneHourPromptCache returns the old "one_hour_prompt_cache" field's value of the RequestExecution entity.
+// If the RequestExecution object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RequestExecutionMutation) OldOneHourPromptCache(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOneHourPromptCache is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOneHourPromptCache requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOneHourPromptCache: %w", err)
+	}
+	return oldValue.OneHourPromptCache, nil
+}
+
+// ResetOneHourPromptCache resets all changes to the "one_hour_prompt_cache" field.
+func (m *RequestExecutionMutation) ResetOneHourPromptCache() {
+	m.one_hour_prompt_cache = nil
+}
+
 // ClearRequest clears the "request" edge to the Request entity.
 func (m *RequestExecutionMutation) ClearRequest() {
 	m.clearedrequest = true
@@ -20371,7 +20408,7 @@ func (m *RequestExecutionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RequestExecutionMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 24)
 	if m.created_at != nil {
 		fields = append(fields, requestexecution.FieldCreatedAt)
 	}
@@ -20441,6 +20478,9 @@ func (m *RequestExecutionMutation) Fields() []string {
 	if m.pass_through_applied != nil {
 		fields = append(fields, requestexecution.FieldPassThroughApplied)
 	}
+	if m.one_hour_prompt_cache != nil {
+		fields = append(fields, requestexecution.FieldOneHourPromptCache)
+	}
 	return fields
 }
 
@@ -20495,6 +20535,8 @@ func (m *RequestExecutionMutation) Field(name string) (ent.Value, bool) {
 		return m.RequestURL()
 	case requestexecution.FieldPassThroughApplied:
 		return m.PassThroughApplied()
+	case requestexecution.FieldOneHourPromptCache:
+		return m.OneHourPromptCache()
 	}
 	return nil, false
 }
@@ -20550,6 +20592,8 @@ func (m *RequestExecutionMutation) OldField(ctx context.Context, name string) (e
 		return m.OldRequestURL(ctx)
 	case requestexecution.FieldPassThroughApplied:
 		return m.OldPassThroughApplied(ctx)
+	case requestexecution.FieldOneHourPromptCache:
+		return m.OldOneHourPromptCache(ctx)
 	}
 	return nil, fmt.Errorf("unknown RequestExecution field %s", name)
 }
@@ -20719,6 +20763,13 @@ func (m *RequestExecutionMutation) SetField(name string, value ent.Value) error 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPassThroughApplied(v)
+		return nil
+	case requestexecution.FieldOneHourPromptCache:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOneHourPromptCache(v)
 		return nil
 	}
 	return fmt.Errorf("unknown RequestExecution field %s", name)
@@ -20981,6 +21032,9 @@ func (m *RequestExecutionMutation) ResetField(name string) error {
 		return nil
 	case requestexecution.FieldPassThroughApplied:
 		m.ResetPassThroughApplied()
+		return nil
+	case requestexecution.FieldOneHourPromptCache:
+		m.ResetOneHourPromptCache()
 		return nil
 	}
 	return fmt.Errorf("unknown RequestExecution field %s", name)
