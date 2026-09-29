@@ -526,6 +526,33 @@ fork 改动，由用户决定。
 - 同步上游注意：上游若调整请求列表的 Token、缓存、成本、耗时列或 `CostItem` 类型，需同步到共享组件与
   `cost.graphql`；`graphql.go` 的 `AroundOperations` 注入与上游已有的操作钩子并列。
 
+### Anthropic 目录导入补 1 小时写缓存价
+
+- 状态：已实现。提交：`bf37dae1`（`feat(models): Anthropic 目录导入补 1 小时写缓存价`）。
+- 动机：Anthropic 写缓存按输入价计费倍数：5 分钟 1.25×、1 小时 2×
+  （[官方 Pricing](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#pricing)）。
+  上游目录 PublicProviderConf 的 `cost` 只有一个 `cache_write`，Anthropic 来源填的是 5 分钟价
+  （如 `claude-sonnet-4-6` 为 3.75）；2026-09-29 扫描线上目录全部 8289 个模型，没有任何 1 小时写缓存字段。
+  导入后价格没有 `one_hour` 变体，`FindPromptWriteCacheVariantPricing`（`internal/objects/price.go:399-403`）
+  让 1 小时写入退回按写缓存基础价（即 5 分钟价）计费，少计 37.5%。
+- 已确认决策：
+  - D1 范围：只在从目录 provider `anthropic`（Anthropic 官方来源）导入时补；从 Bedrock、Vertex、
+    转售商等来源导入的 Claude 不补。
+  - D2 已导入的模型价格不回填，无 data migration；需要时手动添加 `one_hour` 变体或重新从目录选模导入。
+- 规则：
+  - R1 目录价格同时有输入价与写缓存价时，给写缓存项追加 `one_hour` 变体，单价 = 输入价 × 2（十进制精确乘法）；
+    缺任一项不补。不追加 `five_min` 变体，5 分钟写入仍用写缓存基础价。
+  - R2 全量阶梯：是否补由基础价格决定；补时每个阶梯按该阶梯自己的输入价同样追加，保证基础价与各阶梯
+    的变体集合一致（价格校验要求一致）。
+  - R3 只影响目录选模时生成的价格；导入后可在价格编辑器照常修改或删除该变体。
+- 代码：`frontend/src/features/models/data/pricing.ts`（`priceFromCatalog` 按来源补变体）、
+  `frontend/src/features/models/components/{models-action-dialog.tsx,models-batch-create-dialog.tsx}`（传入来源 provider）、
+  `docs/{zh,en}/guides/cost-tracking.md`。
+- 迁移：无 schema migration、data migration 与缓存键变化。
+- 测试：`frontend/src/features/models/pricing.test.mjs`（Anthropic 来源补 2× 输入价、阶梯按各自输入价、
+  其他来源不补、缺写缓存价不补）。
+- 同步上游注意：上游若改 `priceFromCatalog`，或目录开始提供 1 小时写缓存价，应改为直接读取目录值并移除本推算。
+
 ### 模型详情分析
 
 - 行为：仪表盘以模型为汇总项，以实际请求渠道为明细项，按费用排名且默认全部收起；
