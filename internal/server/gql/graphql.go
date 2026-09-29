@@ -151,6 +151,9 @@ func NewGraphqlHandlers(deps Dependencies) *GraphqlHandler {
 		Cache: lru.New[string](1024),
 	})
 	gqlSrv.Use(&loggingTracer{})
+	gqlSrv.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
+		return next(withUsagePriceLoader(ctx, deps.Ent))
+	})
 	gqlSrv.Use(entgql.Transactioner{
 		TxOpener:   deps.Ent,
 		SkipTxFunc: skipMutationTransaction,

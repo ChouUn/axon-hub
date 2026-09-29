@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+type SelfUsageCostItem struct {
+	ItemCode                    string               `json:"itemCode"`
+	PromptWriteCacheVariantCode *string              `json:"promptWriteCacheVariantCode,omitempty"`
+	Quantity                    int                  `json:"quantity"`
+	Subtotal                    float64              `json:"subtotal"`
+	TierBreakdown               []*SelfUsageTierCost `json:"tierBreakdown"`
+}
+
 type SelfUsageDailyStat struct {
 	Date  string            `json:"date"`
 	Usage *SelfUsageSummary `json:"usage"`
@@ -33,6 +41,7 @@ type SelfUsageRequest struct {
 	CreatedAt           time.Time              `json:"createdAt"`
 	Model               string                 `json:"model"`
 	Status              SelfUsageRequestStatus `json:"status"`
+	RequestStatus       string                 `json:"requestStatus"`
 	Stream              bool                   `json:"stream"`
 	LatencyMs           *int                   `json:"latencyMs,omitempty"`
 	FirstTokenLatencyMs *int                   `json:"firstTokenLatencyMs,omitempty"`
@@ -43,6 +52,8 @@ type SelfUsageRequest struct {
 	ReasoningTokens     int                    `json:"reasoningTokens"`
 	TotalTokens         int                    `json:"totalTokens"`
 	Cost                *float64               `json:"cost,omitempty"`
+	CostItems           []*SelfUsageCostItem   `json:"costItems"`
+	CostMultiplier      *float64               `json:"costMultiplier,omitempty"`
 	UsageRecords        int                    `json:"usageRecords"`
 	UnpricedRecords     int                    `json:"unpricedRecords"`
 }
@@ -75,6 +86,12 @@ type SelfUsageSummary struct {
 	Cost             *float64 `json:"cost,omitempty"`
 	UsageRecords     int      `json:"usageRecords"`
 	UnpricedRecords  int      `json:"unpricedRecords"`
+}
+
+type SelfUsageTierCost struct {
+	UpTo     *int    `json:"upTo,omitempty"`
+	Units    int     `json:"units"`
+	Subtotal float64 `json:"subtotal"`
 }
 
 type SelfUsageRequestStatus string

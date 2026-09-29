@@ -8,8 +8,10 @@ export type UsageLogSource = z.infer<typeof usageLogSourceSchema>;
 
 export const costItemSchema = z.object({
   itemCode: z.string(),
+  promptWriteCacheVariantCode: z.string().nullable().optional(),
   quantity: z.number(),
   subtotal: z.number(),
+  tierBreakdown: z.array(z.object({ upTo: z.number().nullable(), units: z.number(), subtotal: z.number() })).nullable().optional(),
 });
 
 // Usage Log schema based on backend entity structure
@@ -34,6 +36,7 @@ export const usageLogSchema = z.object({
   format: z.string(),
   totalCost: z.number().nullable().optional(),
   costItems: z.array(costItemSchema).nullable().optional(),
+  costPriceMultiplier: z.number().nullable().optional(),
 });
 export type UsageLog = z.infer<typeof usageLogSchema>;
 

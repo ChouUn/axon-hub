@@ -50,6 +50,7 @@ type SelfUsageRequest {
   createdAt: Time!
   model: String!
   status: SelfUsageRequestStatus!
+  requestStatus: String!
   stream: Boolean!
   latencyMs: Int
   firstTokenLatencyMs: Int
@@ -60,8 +61,24 @@ type SelfUsageRequest {
   reasoningTokens: Int!
   totalTokens: Int!
   cost: Float
+  costItems: [SelfUsageCostItem!]!
+  costMultiplier: Float
   usageRecords: Int!
   unpricedRecords: Int!
+}
+
+type SelfUsageCostItem {
+  itemCode: String!
+  promptWriteCacheVariantCode: String
+  quantity: Int!
+  subtotal: Float!
+  tierBreakdown: [SelfUsageTierCost!]!
+}
+
+type SelfUsageTierCost {
+  upTo: Int
+  units: Int!
+  subtotal: Float!
 }
 
 type SelfUsageRequestPage {

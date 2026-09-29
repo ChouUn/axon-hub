@@ -1,0 +1,3 @@
+extend type UsageLog {
+  costPriceMultiplier: Decimal
+}

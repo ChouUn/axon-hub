@@ -72,6 +72,7 @@ type SelfUsageRequest struct {
 	CreatedAt           time.Time
 	Model               string
 	Status              string
+	RequestStatus       string
 	Stream              bool
 	LatencyMs           *int
 	FirstTokenLatencyMs *int
@@ -82,6 +83,8 @@ type SelfUsageRequest struct {
 	ReasoningTokens     int
 	TotalTokens         int
 	Cost                *float64
+	CostItems           []SelfUsageCostItem
+	CostMultiplier      *float64
 	UsageRecords        int
 	UnpricedRecords     int
 }
@@ -403,6 +406,10 @@ func (s *SelfUsageService) Requests(ctx context.Context, start, end string, mode
 		for _, req := range requests {
 			ids = append(ids, req.ID)
 		}
+		costs, err := s.loadRequestCosts(ctx, scope, ids)
+		if err != nil {
+			return nil, err
+		}
 		var amounts []selfUsageAmounts
 		err = s.client.UsageLog.Query().Where(usagelog.RequestIDIn(ids...)).Modify(func(q *sql.Selector) {
 			scope.join(q)
@@ -431,6 +438,9 @@ func (s *SelfUsageService) Requests(ctx context.Context, start, end string, mode
 				ReasoningTokens: usage.ReasoningTokens, TotalTokens: usage.TotalTokens,
 				Cost: usage.Cost, UsageRecords: usage.UsageRecords, UnpricedRecords: usage.UnpricedRecords,
 			}
+			row.RequestStatus = string(req.Status)
+			row.CostItems = costs[req.ID].items
+			row.CostMultiplier = costs[req.ID].multiplier
 			switch req.Status {
 			case request.StatusCompleted:
 				row.Status = "SUCCESS"

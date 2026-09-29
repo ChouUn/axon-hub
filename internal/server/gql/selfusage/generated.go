@@ -52,6 +52,14 @@ type ComplexityRoot struct {
 		SelfUsageStats    func(childComplexity int, start string, end string) int
 	}
 
+	SelfUsageCostItem struct {
+		ItemCode                    func(childComplexity int) int
+		PromptWriteCacheVariantCode func(childComplexity int) int
+		Quantity                    func(childComplexity int) int
+		Subtotal                    func(childComplexity int) int
+		TierBreakdown               func(childComplexity int) int
+	}
+
 	SelfUsageDailyStat struct {
 		Date  func(childComplexity int) int
 		Usage func(childComplexity int) int
@@ -74,6 +82,8 @@ type ComplexityRoot struct {
 		CacheReadTokens     func(childComplexity int) int
 		CacheWriteTokens    func(childComplexity int) int
 		Cost                func(childComplexity int) int
+		CostItems           func(childComplexity int) int
+		CostMultiplier      func(childComplexity int) int
 		CreatedAt           func(childComplexity int) int
 		FirstTokenLatencyMs func(childComplexity int) int
 		ID                  func(childComplexity int) int
@@ -82,6 +92,7 @@ type ComplexityRoot struct {
 		Model               func(childComplexity int) int
 		OutputTokens        func(childComplexity int) int
 		ReasoningTokens     func(childComplexity int) int
+		RequestStatus       func(childComplexity int) int
 		Status              func(childComplexity int) int
 		Stream              func(childComplexity int) int
 		TotalTokens         func(childComplexity int) int
@@ -116,6 +127,12 @@ type ComplexityRoot struct {
 		TotalTokens      func(childComplexity int) int
 		UnpricedRecords  func(childComplexity int) int
 		UsageRecords     func(childComplexity int) int
+	}
+
+	SelfUsageTierCost struct {
+		Subtotal func(childComplexity int) int
+		Units    func(childComplexity int) int
+		UpTo     func(childComplexity int) int
 	}
 }
 
@@ -172,6 +189,37 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.SelfUsageStats(childComplexity, args["start"].(string), args["end"].(string)), true
+
+	case "SelfUsageCostItem.itemCode":
+		if e.complexity.SelfUsageCostItem.ItemCode == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageCostItem.ItemCode(childComplexity), true
+	case "SelfUsageCostItem.promptWriteCacheVariantCode":
+		if e.complexity.SelfUsageCostItem.PromptWriteCacheVariantCode == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageCostItem.PromptWriteCacheVariantCode(childComplexity), true
+	case "SelfUsageCostItem.quantity":
+		if e.complexity.SelfUsageCostItem.Quantity == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageCostItem.Quantity(childComplexity), true
+	case "SelfUsageCostItem.subtotal":
+		if e.complexity.SelfUsageCostItem.Subtotal == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageCostItem.Subtotal(childComplexity), true
+	case "SelfUsageCostItem.tierBreakdown":
+		if e.complexity.SelfUsageCostItem.TierBreakdown == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageCostItem.TierBreakdown(childComplexity), true
 
 	case "SelfUsageDailyStat.date":
 		if e.complexity.SelfUsageDailyStat.Date == nil {
@@ -248,6 +296,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SelfUsageRequest.Cost(childComplexity), true
+	case "SelfUsageRequest.costItems":
+		if e.complexity.SelfUsageRequest.CostItems == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageRequest.CostItems(childComplexity), true
+	case "SelfUsageRequest.costMultiplier":
+		if e.complexity.SelfUsageRequest.CostMultiplier == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageRequest.CostMultiplier(childComplexity), true
 	case "SelfUsageRequest.createdAt":
 		if e.complexity.SelfUsageRequest.CreatedAt == nil {
 			break
@@ -296,6 +356,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SelfUsageRequest.ReasoningTokens(childComplexity), true
+	case "SelfUsageRequest.requestStatus":
+		if e.complexity.SelfUsageRequest.RequestStatus == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageRequest.RequestStatus(childComplexity), true
 	case "SelfUsageRequest.status":
 		if e.complexity.SelfUsageRequest.Status == nil {
 			break
@@ -449,6 +515,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SelfUsageSummary.UsageRecords(childComplexity), true
+
+	case "SelfUsageTierCost.subtotal":
+		if e.complexity.SelfUsageTierCost.Subtotal == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageTierCost.Subtotal(childComplexity), true
+	case "SelfUsageTierCost.units":
+		if e.complexity.SelfUsageTierCost.Units == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageTierCost.Units(childComplexity), true
+	case "SelfUsageTierCost.upTo":
+		if e.complexity.SelfUsageTierCost.UpTo == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageTierCost.UpTo(childComplexity), true
 
 	}
 	return 0, false
@@ -926,6 +1011,159 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 	return fc, nil
 }
 
+func (ec *executionContext) _SelfUsageCostItem_itemCode(ctx context.Context, field graphql.CollectedField, obj *SelfUsageCostItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageCostItem_itemCode,
+		func(ctx context.Context) (any, error) {
+			return obj.ItemCode, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageCostItem_itemCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageCostItem",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SelfUsageCostItem_promptWriteCacheVariantCode(ctx context.Context, field graphql.CollectedField, obj *SelfUsageCostItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageCostItem_promptWriteCacheVariantCode,
+		func(ctx context.Context) (any, error) {
+			return obj.PromptWriteCacheVariantCode, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageCostItem_promptWriteCacheVariantCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageCostItem",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SelfUsageCostItem_quantity(ctx context.Context, field graphql.CollectedField, obj *SelfUsageCostItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageCostItem_quantity,
+		func(ctx context.Context) (any, error) {
+			return obj.Quantity, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageCostItem_quantity(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageCostItem",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SelfUsageCostItem_subtotal(ctx context.Context, field graphql.CollectedField, obj *SelfUsageCostItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageCostItem_subtotal,
+		func(ctx context.Context) (any, error) {
+			return obj.Subtotal, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageCostItem_subtotal(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageCostItem",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SelfUsageCostItem_tierBreakdown(ctx context.Context, field graphql.CollectedField, obj *SelfUsageCostItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageCostItem_tierBreakdown,
+		func(ctx context.Context) (any, error) {
+			return obj.TierBreakdown, nil
+		},
+		nil,
+		ec.marshalNSelfUsageTierCost2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚋselfusageᚐSelfUsageTierCostᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageCostItem_tierBreakdown(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageCostItem",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "upTo":
+				return ec.fieldContext_SelfUsageTierCost_upTo(ctx, field)
+			case "units":
+				return ec.fieldContext_SelfUsageTierCost_units(ctx, field)
+			case "subtotal":
+				return ec.fieldContext_SelfUsageTierCost_subtotal(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SelfUsageTierCost", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SelfUsageDailyStat_date(ctx context.Context, field graphql.CollectedField, obj *SelfUsageDailyStat) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -1351,6 +1589,35 @@ func (ec *executionContext) fieldContext_SelfUsageRequest_status(_ context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _SelfUsageRequest_requestStatus(ctx context.Context, field graphql.CollectedField, obj *SelfUsageRequest) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageRequest_requestStatus,
+		func(ctx context.Context) (any, error) {
+			return obj.RequestStatus, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageRequest_requestStatus(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageRequest",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SelfUsageRequest_stream(ctx context.Context, field graphql.CollectedField, obj *SelfUsageRequest) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -1641,6 +1908,76 @@ func (ec *executionContext) fieldContext_SelfUsageRequest_cost(_ context.Context
 	return fc, nil
 }
 
+func (ec *executionContext) _SelfUsageRequest_costItems(ctx context.Context, field graphql.CollectedField, obj *SelfUsageRequest) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageRequest_costItems,
+		func(ctx context.Context) (any, error) {
+			return obj.CostItems, nil
+		},
+		nil,
+		ec.marshalNSelfUsageCostItem2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚋselfusageᚐSelfUsageCostItemᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageRequest_costItems(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageRequest",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "itemCode":
+				return ec.fieldContext_SelfUsageCostItem_itemCode(ctx, field)
+			case "promptWriteCacheVariantCode":
+				return ec.fieldContext_SelfUsageCostItem_promptWriteCacheVariantCode(ctx, field)
+			case "quantity":
+				return ec.fieldContext_SelfUsageCostItem_quantity(ctx, field)
+			case "subtotal":
+				return ec.fieldContext_SelfUsageCostItem_subtotal(ctx, field)
+			case "tierBreakdown":
+				return ec.fieldContext_SelfUsageCostItem_tierBreakdown(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SelfUsageCostItem", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SelfUsageRequest_costMultiplier(ctx context.Context, field graphql.CollectedField, obj *SelfUsageRequest) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageRequest_costMultiplier,
+		func(ctx context.Context) (any, error) {
+			return obj.CostMultiplier, nil
+		},
+		nil,
+		ec.marshalOFloat2ᚖfloat64,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageRequest_costMultiplier(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageRequest",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SelfUsageRequest_usageRecords(ctx context.Context, field graphql.CollectedField, obj *SelfUsageRequest) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -1731,6 +2068,8 @@ func (ec *executionContext) fieldContext_SelfUsageRequestPage_items(_ context.Co
 				return ec.fieldContext_SelfUsageRequest_model(ctx, field)
 			case "status":
 				return ec.fieldContext_SelfUsageRequest_status(ctx, field)
+			case "requestStatus":
+				return ec.fieldContext_SelfUsageRequest_requestStatus(ctx, field)
 			case "stream":
 				return ec.fieldContext_SelfUsageRequest_stream(ctx, field)
 			case "latencyMs":
@@ -1751,6 +2090,10 @@ func (ec *executionContext) fieldContext_SelfUsageRequestPage_items(_ context.Co
 				return ec.fieldContext_SelfUsageRequest_totalTokens(ctx, field)
 			case "cost":
 				return ec.fieldContext_SelfUsageRequest_cost(ctx, field)
+			case "costItems":
+				return ec.fieldContext_SelfUsageRequest_costItems(ctx, field)
+			case "costMultiplier":
+				return ec.fieldContext_SelfUsageRequest_costMultiplier(ctx, field)
 			case "usageRecords":
 				return ec.fieldContext_SelfUsageRequest_usageRecords(ctx, field)
 			case "unpricedRecords":
@@ -2344,6 +2687,93 @@ func (ec *executionContext) fieldContext_SelfUsageSummary_unpricedRecords(_ cont
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SelfUsageTierCost_upTo(ctx context.Context, field graphql.CollectedField, obj *SelfUsageTierCost) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageTierCost_upTo,
+		func(ctx context.Context) (any, error) {
+			return obj.UpTo, nil
+		},
+		nil,
+		ec.marshalOInt2ᚖint,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageTierCost_upTo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageTierCost",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SelfUsageTierCost_units(ctx context.Context, field graphql.CollectedField, obj *SelfUsageTierCost) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageTierCost_units,
+		func(ctx context.Context) (any, error) {
+			return obj.Units, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageTierCost_units(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageTierCost",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SelfUsageTierCost_subtotal(ctx context.Context, field graphql.CollectedField, obj *SelfUsageTierCost) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageTierCost_subtotal,
+		func(ctx context.Context) (any, error) {
+			return obj.Subtotal, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageTierCost_subtotal(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageTierCost",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
 		},
 	}
 	return fc, nil
@@ -3919,6 +4349,62 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 	return out
 }
 
+var selfUsageCostItemImplementors = []string{"SelfUsageCostItem"}
+
+func (ec *executionContext) _SelfUsageCostItem(ctx context.Context, sel ast.SelectionSet, obj *SelfUsageCostItem) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, selfUsageCostItemImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SelfUsageCostItem")
+		case "itemCode":
+			out.Values[i] = ec._SelfUsageCostItem_itemCode(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "promptWriteCacheVariantCode":
+			out.Values[i] = ec._SelfUsageCostItem_promptWriteCacheVariantCode(ctx, field, obj)
+		case "quantity":
+			out.Values[i] = ec._SelfUsageCostItem_quantity(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "subtotal":
+			out.Values[i] = ec._SelfUsageCostItem_subtotal(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tierBreakdown":
+			out.Values[i] = ec._SelfUsageCostItem_tierBreakdown(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var selfUsageDailyStatImplementors = []string{"SelfUsageDailyStat"}
 
 func (ec *executionContext) _SelfUsageDailyStat(ctx context.Context, sel ast.SelectionSet, obj *SelfUsageDailyStat) graphql.Marshaler {
@@ -4097,6 +4583,11 @@ func (ec *executionContext) _SelfUsageRequest(ctx context.Context, sel ast.Selec
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "requestStatus":
+			out.Values[i] = ec._SelfUsageRequest_requestStatus(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "stream":
 			out.Values[i] = ec._SelfUsageRequest_stream(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -4138,6 +4629,13 @@ func (ec *executionContext) _SelfUsageRequest(ctx context.Context, sel ast.Selec
 			}
 		case "cost":
 			out.Values[i] = ec._SelfUsageRequest_cost(ctx, field, obj)
+		case "costItems":
+			out.Values[i] = ec._SelfUsageRequest_costItems(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "costMultiplier":
+			out.Values[i] = ec._SelfUsageRequest_costMultiplier(ctx, field, obj)
 		case "usageRecords":
 			out.Values[i] = ec._SelfUsageRequest_usageRecords(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -4344,6 +4842,52 @@ func (ec *executionContext) _SelfUsageSummary(ctx context.Context, sel ast.Selec
 			}
 		case "unpricedRecords":
 			out.Values[i] = ec._SelfUsageSummary_unpricedRecords(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var selfUsageTierCostImplementors = []string{"SelfUsageTierCost"}
+
+func (ec *executionContext) _SelfUsageTierCost(ctx context.Context, sel ast.SelectionSet, obj *SelfUsageTierCost) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, selfUsageTierCostImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SelfUsageTierCost")
+		case "upTo":
+			out.Values[i] = ec._SelfUsageTierCost_upTo(ctx, field, obj)
+		case "units":
+			out.Values[i] = ec._SelfUsageTierCost_units(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "subtotal":
+			out.Values[i] = ec._SelfUsageTierCost_subtotal(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -4721,6 +5265,22 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 	return res
 }
 
+func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {
+	res, err := graphql.UnmarshalFloatContext(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.SelectionSet, v float64) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalFloatContext(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return graphql.WrapContextMarshaler(ctx, res)
+}
+
 func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v any) (int, error) {
 	res, err := graphql.UnmarshalInt(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -4735,6 +5295,60 @@ func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.Selecti
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) marshalNSelfUsageCostItem2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚋselfusageᚐSelfUsageCostItemᚄ(ctx context.Context, sel ast.SelectionSet, v []*SelfUsageCostItem) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNSelfUsageCostItem2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚋselfusageᚐSelfUsageCostItem(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNSelfUsageCostItem2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚋselfusageᚐSelfUsageCostItem(ctx context.Context, sel ast.SelectionSet, v *SelfUsageCostItem) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SelfUsageCostItem(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNSelfUsageDailyStat2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚋselfusageᚐSelfUsageDailyStatᚄ(ctx context.Context, sel ast.SelectionSet, v []*SelfUsageDailyStat) graphql.Marshaler {
@@ -4959,6 +5573,60 @@ func (ec *executionContext) marshalNSelfUsageSummary2ᚖgithubᚗcomᚋloopljᚋ
 		return graphql.Null
 	}
 	return ec._SelfUsageSummary(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNSelfUsageTierCost2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚋselfusageᚐSelfUsageTierCostᚄ(ctx context.Context, sel ast.SelectionSet, v []*SelfUsageTierCost) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNSelfUsageTierCost2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚋselfusageᚐSelfUsageTierCost(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNSelfUsageTierCost2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚋselfusageᚐSelfUsageTierCost(ctx context.Context, sel ast.SelectionSet, v *SelfUsageTierCost) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SelfUsageTierCost(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {

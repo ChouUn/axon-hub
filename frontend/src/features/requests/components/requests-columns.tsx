@@ -7,14 +7,14 @@ import { Ban, FileText } from 'lucide-react';
 import { zhCN, enUS } from 'date-fns/locale';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { extractNumberID, formatUserName } from '@/lib/utils';
-import { formatDuration } from '@/utils/format-duration';
+import { formatUserName } from '@/lib/utils';
 import { usePaginationSearch } from '@/hooks/use-pagination-search';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { DataTableColumnHeader } from '@/components/data-table-column-header';
+import { RequestIdCell, TokensCell, ReadCacheCell, WriteCacheCell, CostCell, DurationCell } from '@/components/request-usage-cells';
 import { useGeneralSettings, useSecuritySettings, useUpdateSecuritySettings } from '@/features/system/data/system';
 import { useRequestPermissions } from '../../../hooks/useRequestPermissions';
 import { Request } from '../data/schema';
@@ -95,34 +95,7 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
       header: ({ column }) => <DataTableColumnHeader column={column} title={t('common.columns.id')} />,
       enableSorting: true,
       enableHiding: false,
-      cell: ({ row }) => {
-        const request = row.original;
-        const isStream = request.stream;
-
-        return (
-          <div className='flex min-w-[120px] flex-col gap-1.5'>
-            <button
-              type='button'
-              onClick={() => options?.onBodyClick?.(request.id, row.index)}
-              className='text-primary w-fit cursor-pointer font-mono text-xs hover:underline'
-            >
-              #{extractNumberID(request.id)}
-            </button>
-            <div className='flex flex-wrap items-center gap-1.5'>
-              <Badge className={`${getStatusColor(request.status)} w-fit`}>{t(`requests.status.${request.status}`)}</Badge>
-              <Badge
-                className={
-                  isStream
-                    ? 'border-green-200 bg-green-100 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300'
-                    : 'border-gray-200 bg-gray-100 text-gray-800 dark:border-gray-800 dark:bg-gray-900/20 dark:text-gray-300'
-                }
-              >
-                {isStream ? t('requests.stream.streaming') : t('requests.stream.nonStreaming')}
-              </Badge>
-            </div>
-          </div>
-        );
-      },
+      cell: ({ row }) => <RequestIdCell id={row.original.id} status={row.original.status} stream={!!row.original.stream} onClick={() => options?.onBodyClick?.(row.original.id, row.index)} />,
     },
     {
       id: 'status',
@@ -400,34 +373,8 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
       },
       header: ({ column }) => <DataTableColumnHeader column={column} title={t('requests.columns.tokens')} />,
       cell: ({ row }) => {
-        const usageLog = row.original.usageLogs?.edges?.[0]?.node;
-
-        if (!usageLog) {
-          return <div className='text-muted-foreground text-xs'>-</div>;
-        }
-
-        const promptTokens = usageLog.promptTokens || 0;
-        const completionTokens = usageLog.completionTokens || 0;
-        const reasoningTokens = usageLog.completionReasoningTokens || 0;
-        const totalTokens = promptTokens + completionTokens;
-
-        return (
-          <div className='space-y-0.5 text-xs'>
-            <div className='text-sm font-medium'>
-              {t('requests.columns.totalTokens')}
-              {(totalTokens || 0).toLocaleString()}
-            </div>
-            <div className='text-muted-foreground'>
-              {t('requests.columns.input')}: {promptTokens.toLocaleString()} | {t('requests.columns.output')}:{' '}
-              {completionTokens.toLocaleString()}
-            </div>
-            {reasoningTokens > 0 && (
-              <div className='text-muted-foreground'>
-                {t('requests.columns.reasoning')}: {reasoningTokens.toLocaleString()}
-              </div>
-            )}
-          </div>
-        );
+        const log = row.original.usageLogs?.edges?.[0]?.node;
+        return log ? <TokensCell prompt={log.promptTokens || 0} completion={log.completionTokens || 0} reasoning={log.completionReasoningTokens || 0} /> : <div className='text-muted-foreground text-xs'>-</div>;
       },
       enableSorting: true,
       enableHiding: true,
@@ -446,32 +393,8 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
       accessorFn: (row) => row.usageLogs?.edges?.[0]?.node?.promptCachedTokens || 0,
       header: ({ column }) => <DataTableColumnHeader column={column} title={t('requests.columns.readCache')} />,
       cell: ({ row }) => {
-        const usageLog = row.original.usageLogs?.edges?.[0]?.node;
-
-        if (!usageLog) {
-          return <div className='text-muted-foreground text-xs'>-</div>;
-        }
-
-        const cachedTokens = usageLog.promptCachedTokens || 0;
-        const promptTokens = usageLog.promptTokens || 0;
-
-        if (cachedTokens === 0) {
-          return <div className='text-muted-foreground text-xs'>-</div>;
-        }
-
-        const hitRate = promptTokens > 0 ? (cachedTokens / promptTokens) * 100 : 0;
-        const isLowHitRate = hitRate < 80 && promptTokens >= 40000;
-
-        return (
-          <div className='text-xs'>
-            <div className='text-sm font-medium'>{cachedTokens.toLocaleString()}</div>
-            <div className={isLowHitRate ? 'font-medium text-red-600 dark:text-red-400' : 'text-muted-foreground'}>
-              {t('requests.columns.cacheHitRate', {
-                rate: hitRate.toFixed(1),
-              })}
-            </div>
-          </div>
-        );
+        const log = row.original.usageLogs?.edges?.[0]?.node;
+        return log ? <ReadCacheCell cached={log.promptCachedTokens || 0} prompt={log.promptTokens || 0} /> : <div className='text-muted-foreground text-xs'>-</div>;
       },
       enableSorting: true,
       enableHiding: true,
@@ -486,29 +409,8 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
       accessorFn: (row) => row.usageLogs?.edges?.[0]?.node?.promptWriteCachedTokens || 0,
       header: ({ column }) => <DataTableColumnHeader column={column} title={t('requests.columns.writeCache')} />,
       cell: ({ row }) => {
-        const usageLog = row.original.usageLogs?.edges?.[0]?.node;
-
-        if (!usageLog) {
-          return <div className='text-muted-foreground text-xs'>-</div>;
-        }
-
-        const writeCachedTokens = usageLog.promptWriteCachedTokens || 0;
-        const promptTokens = usageLog.promptTokens || 0;
-
-        if (writeCachedTokens === 0) {
-          return <div className='text-muted-foreground text-xs'>-</div>;
-        }
-
-        return (
-          <div className='text-xs'>
-            <div className='text-sm font-medium'>{writeCachedTokens.toLocaleString()}</div>
-            <div className='text-muted-foreground'>
-              {t('requests.columns.writeCacheRate', {
-                rate: promptTokens > 0 ? ((writeCachedTokens / promptTokens) * 100).toFixed(1) : '0.0',
-              })}
-            </div>
-          </div>
-        );
+        const log = row.original.usageLogs?.edges?.[0]?.node;
+        return log ? <WriteCacheCell writeCached={log.promptWriteCachedTokens || 0} prompt={log.promptTokens || 0} /> : <div className='text-muted-foreground text-xs'>-</div>;
       },
       enableSorting: true,
       enableHiding: true,
@@ -525,19 +427,11 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
       enableSorting: false,
       enableHiding: true,
       cell: ({ row }) => {
-        const cost = row.original.usageLogs?.edges?.[0]?.node?.totalCost;
-        if (cost == null) return <span className='font-mono text-xs'>-</span>;
-
-        return (
-          <span className='font-mono text-xs font-medium'>
-            {t('currencies.format', {
-              val: cost,
-              currency: settings?.currencyCode ?? 'USD',
-              locale: i18n.language === 'zh' ? 'zh-CN' : 'en-US',
-              minimumFractionDigits: 6,
-            })}
-          </span>
-        );
+        const log = row.original.usageLogs?.edges?.[0]?.node;
+        return <CostCell total={log?.totalCost ?? null} currencyCode={settings?.currencyCode ?? 'USD'} breakdown={log ? {
+          items: (log.costItems ?? []).map((item) => ({ itemCode: item.itemCode, variant: item.promptWriteCacheVariantCode ?? null, quantity: item.quantity, subtotal: item.subtotal, tiers: item.tierBreakdown ?? [] })),
+          multiplier: log.costPriceMultiplier ?? null,
+        } : null} emptyLabel='-' />;
       },
     },
     {
@@ -546,23 +440,7 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
       header: ({ column }) => <DataTableColumnHeader column={column} title={t('requests.columns.duration')} />,
       enableSorting: true,
       enableHiding: true,
-      cell: ({ row }) => {
-        const request = row.original;
-        if (request.status !== 'completed' || request.metricsLatencyMs == null) {
-          return <span className='text-muted-foreground text-xs'>-</span>;
-        }
-
-        if (!request.stream) {
-          return <span className='font-mono text-xs'>{t('requests.duration.total', { duration: formatDuration(request.metricsLatencyMs) })}</span>;
-        }
-
-        return (
-          <div className='min-w-[128px] font-mono text-xs'>
-            {request.metricsFirstTokenLatencyMs != null && <div>{t('requests.duration.firstToken', { duration: formatDuration(request.metricsFirstTokenLatencyMs) })}</div>}
-            <div className='text-muted-foreground'>{t('requests.duration.total', { duration: formatDuration(request.metricsLatencyMs) })}</div>
-          </div>
-        );
-      },
+      cell: ({ row }) => <DurationCell status={row.original.status} stream={!!row.original.stream} latencyMs={row.original.metricsLatencyMs ?? null} firstTokenLatencyMs={row.original.metricsFirstTokenLatencyMs ?? null} />,
       sortingFn: (rowA, rowB) => (rowA.original.metricsLatencyMs ?? 0) - (rowB.original.metricsLatencyMs ?? 0),
     },
     {

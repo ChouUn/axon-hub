@@ -26,11 +26,21 @@ export type SelfUsageStats = {
   daily: { date: string; usage: Usage }[];
 };
 export type RequestStatus = 'SUCCESS' | 'FAILED' | 'PROCESSING';
+export type SelfUsageCostItem = {
+  itemCode: string;
+  promptWriteCacheVariantCode: string | null;
+  quantity: number;
+  subtotal: number;
+  tierBreakdown: { upTo: number | null; units: number; subtotal: number }[];
+};
 export type UsageRequest = Omit<Usage, 'successRequests' | 'failedRequests'> & {
   id: number;
   createdAt: string;
   model: string;
   status: RequestStatus;
+  requestStatus: string;
+  costItems: SelfUsageCostItem[];
+  costMultiplier: number | null;
   stream: boolean;
   latencyMs: number | null;
   firstTokenLatencyMs: number | null;
@@ -59,7 +69,7 @@ const statsQuery = `query SelfUsageStats($start: String!, $end: String!) {
 }`;
 const requestsQuery = `query SelfUsageRequests($start: String!, $end: String!, $model: String, $status: SelfUsageRequestStatus, $page: Int, $pageSize: Int) {
   selfUsageRequests(start: $start, end: $end, model: $model, status: $status, page: $page, pageSize: $pageSize) {
-    items { id createdAt model status stream latencyMs firstTokenLatencyMs inputTokens outputTokens cacheReadTokens cacheWriteTokens reasoningTokens totalTokens cost usageRecords unpricedRecords }
+    items { id createdAt model status requestStatus stream latencyMs firstTokenLatencyMs inputTokens outputTokens cacheReadTokens cacheWriteTokens reasoningTokens totalTokens cost usageRecords unpricedRecords costMultiplier costItems { itemCode promptWriteCacheVariantCode quantity subtotal tierBreakdown { upTo units subtotal } } }
     page pageSize total
   }
 }`;

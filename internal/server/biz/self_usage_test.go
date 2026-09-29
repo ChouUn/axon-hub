@@ -8,14 +8,19 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect"
+	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 
 	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/ent"
+	"github.com/looplj/axonhub/internal/ent/channel"
+	"github.com/looplj/axonhub/internal/ent/channelmodelpriceversion"
 	"github.com/looplj/axonhub/internal/ent/enttest"
 	"github.com/looplj/axonhub/internal/ent/project"
 	"github.com/looplj/axonhub/internal/ent/request"
+	"github.com/looplj/axonhub/internal/objects"
 )
 
 type selfUsageFixture struct {
@@ -260,4 +265,91 @@ func TestSelfUsageCalendarDSTAndValidation(t *testing.T) {
 		_, err := f.service.Requests(f.ctx, "2026-01-01", "2026-01-01", nil, "", pagination[0], pagination[1])
 		require.ErrorContains(t, err, "invalid_page")
 	}
+}
+
+func TestSelfUsageRequestCostMergeAndMultiplier(t *testing.T) {
+	f := newSelfUsageFixture(t, "UTC")
+	setupCtx := authz.WithTestBypass(f.ctx)
+	ch := f.client.Channel.Create().SetType(channel.TypeOpenai).SetName("self-usage-price").
+		SetCredentials(objects.ChannelCredentials{APIKey: "test"}).SetSupportedModels([]string{"model"}).
+		SetDefaultTestModel("model").SaveX(setupCtx)
+	price := f.client.ChannelModelPrice.Create().SetChannelID(ch.ID).SetModelID("model").
+		SetReferenceID("current").SetPrice(objects.ModelPrice{}).SaveX(setupCtx)
+	for _, tc := range []struct {
+		ref        string
+		multiplier *decimal.Decimal
+	}{
+		{ref: "double-a", multiplier: lo.ToPtr(decimal.NewFromInt(2))},
+		{ref: "double-b", multiplier: lo.ToPtr(decimal.NewFromInt(2))},
+		{ref: "triple", multiplier: lo.ToPtr(decimal.NewFromInt(3))},
+	} {
+		f.client.ChannelModelPriceVersion.Create().SetChannelID(ch.ID).SetChannelModelPriceID(price.ID).
+			SetModelID("model").SetReferenceID(tc.ref).SetEffectiveStartAt(time.Now()).
+			SetStatus(channelmodelpriceversion.StatusArchived).
+			SetPrice(objects.ModelPrice{Multiplier: tc.multiplier}).SaveX(setupCtx)
+	}
+	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	uniform := f.request(at, f.key.ID, f.project.ID, request.SourceAPI, request.StatusCompleted, "uniform")
+	different := f.request(at, f.key.ID, f.project.ID, request.SourceAPI, request.StatusFailed, "different")
+	missing := f.request(at, f.key.ID, f.project.ID, request.SourceAPI, request.StatusCanceled, "missing")
+	other := f.request(at, f.other.ID, f.project.ID, request.SourceAPI, request.StatusCompleted, "private")
+	cost := 1.0
+	unreferenced := f.request(at, f.key.ID, f.project.ID, request.SourceAPI, request.StatusCompleted, "unreferenced")
+	tierLimit := int64(100)
+	priced := func(req *ent.Request, ref string, items ...objects.CostItem) {
+		f.client.UsageLog.Create().SetRequestID(req.ID).SetAPIKeyID(f.other.ID).
+			SetProjectID(f.otherProject.ID).SetModelID("upstream").SetTotalCost(cost).
+			SetCostPriceReferenceID(ref).SetCostItems(items).SaveX(setupCtx)
+	}
+	write := func(variant objects.PromptWriteCacheVariantCode, quantity int64, subtotal string) objects.CostItem {
+		amount := decimal.RequireFromString(subtotal)
+		return objects.CostItem{ItemCode: objects.PriceItemCodeWriteCachedTokens,
+			PromptWriteCacheVariantCode: variant, Quantity: quantity, Subtotal: amount,
+			TierBreakdown: []objects.TierCost{{UpTo: &tierLimit, Units: quantity, Subtotal: amount}}}
+	}
+	priced(uniform, "double-a", write(objects.PromptWriteCacheVariantCode5Min, 10, "0.25"),
+		objects.CostItem{ItemCode: objects.PriceItemCodeCompletion, Quantity: 4, Subtotal: decimal.RequireFromString("0.4")})
+	priced(uniform, "double-b", write(objects.PromptWriteCacheVariantCode5Min, 20, "0.5"),
+		write(objects.PromptWriteCacheVariantCode1Hour, 3, "0.3"),
+		objects.CostItem{ItemCode: objects.PriceItemCodeUsage, Quantity: 5, Subtotal: decimal.RequireFromString("0.1")})
+	// An unpriced record cannot veto a multiplier resolved for all priced records.
+	f.client.UsageLog.Create().SetRequestID(uniform.ID).SetAPIKeyID(f.other.ID).
+		SetProjectID(f.otherProject.ID).SetModelID("upstream").
+		SetCostItems([]objects.CostItem{write("", 7, "0.07")}).SaveX(setupCtx)
+	priced(different, "double-a", write("", 1, "0.1"))
+	priced(different, "triple", write("", 2, "0.2"))
+	priced(missing, "double-a", write("", 1, "0.1"))
+	priced(missing, "missing-version", write("", 2, "0.2"))
+	f.client.UsageLog.Create().SetRequestID(unreferenced.ID).SetAPIKeyID(f.other.ID).
+		SetProjectID(f.otherProject.ID).SetModelID("upstream").SetTotalCost(cost).
+		SetCostItems([]objects.CostItem{write("", 1, "0.1")}).SaveX(setupCtx)
+	priced(other, "triple", write("", 1000, "100"))
+	page, err := f.service.Requests(f.ctx, "2026-01-01", "2026-01-01", nil, "", 1, 20)
+	require.NoError(t, err)
+	require.Equal(t, 4, page.Total)
+	rows := make(map[int]SelfUsageRequest, len(page.Items))
+	for _, row := range page.Items {
+		rows[row.ID] = row
+		require.NotEqual(t, "private", row.Model)
+	}
+	require.Equal(t, "completed", rows[uniform.ID].RequestStatus)
+	require.NotNil(t, rows[uniform.ID].CostMultiplier)
+	require.Equal(t, 2.0, *rows[uniform.ID].CostMultiplier)
+	require.Nil(t, rows[different.ID].CostMultiplier)
+	require.Nil(t, rows[missing.ID].CostMultiplier)
+	require.Nil(t, rows[unreferenced.ID].CostMultiplier)
+	items := rows[uniform.ID].CostItems
+	require.Len(t, items, 5)
+	require.Equal(t, []string{"prompt_tokens", "completion_tokens", "prompt_write_cached_tokens", "prompt_write_cached_tokens", "prompt_write_cached_tokens"},
+		[]string{items[0].ItemCode, items[1].ItemCode, items[2].ItemCode, items[3].ItemCode, items[4].ItemCode})
+	require.Equal(t, "five_min", *items[2].PromptWriteCacheVariantCode)
+	require.Equal(t, 30, items[2].Quantity)
+	require.InDelta(t, 0.75, items[2].Subtotal, 1e-9)
+	require.Len(t, items[2].TierBreakdown, 1)
+	require.Equal(t, 30, items[2].TierBreakdown[0].Units)
+	require.InDelta(t, 0.75, items[2].TierBreakdown[0].Subtotal, 1e-9)
+	require.Equal(t, "one_hour", *items[3].PromptWriteCacheVariantCode)
+	require.Nil(t, items[4].PromptWriteCacheVariantCode)
+	require.Equal(t, 7, items[4].Quantity)
+	require.NotContains(t, rows, other.ID)
 }

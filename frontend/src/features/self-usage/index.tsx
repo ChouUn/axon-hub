@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ThemeSwitch } from '@/components/theme-switch';
+import { RequestIdCell, TokensCell, ReadCacheCell, WriteCacheCell, CostCell, DurationCell } from '@/components/request-usage-cells';
 import { fetchMeta, fetchRequests, fetchStats, SelfUsageError, type RequestStatus, type SelfUsageMeta, type Usage } from './api';
 import { Cost } from './components/cost';
 import { PageError } from './components/page-error';
@@ -347,7 +348,7 @@ function RequestLog({
   models: string[];
   onUnauthorized: () => void;
 }) {
-  const { t, locale, number, money } = usePageLabels(meta);
+  const { t, locale } = usePageLabels(meta);
   const [model, setModel] = useState<string | null>(null);
   const [status, setStatus] = useState<RequestStatus | null>(null);
   const [page, setPage] = useState(1);
@@ -421,19 +422,42 @@ function RequestLog({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{t('selfUsage.requests.time', { timezone: meta.timezone })}</TableHead>
-                    <TableHead>{t('selfUsage.requests.model')}</TableHead>
-                    <TableHead>{t('selfUsage.requests.status')}</TableHead>
-                    <TableHead>{t('selfUsage.requests.stream')}</TableHead>
-                    <TableHead>{t('selfUsage.requests.tokens')}</TableHead>
-                    <TableHead>{t('selfUsage.summary.cost')}</TableHead>
-                    <TableHead>{t('selfUsage.requests.latency')}</TableHead>
-                    <TableHead>{t('selfUsage.requests.firstToken')}</TableHead>
+                    <TableHead>{t('common.columns.id')}</TableHead>
+                    <TableHead>{t('requests.columns.model')}</TableHead>
+                    <TableHead>{t('requests.columns.tokens')}</TableHead>
+                    <TableHead>{t('requests.columns.readCache')}</TableHead>
+                    <TableHead>{t('requests.columns.writeCache')}</TableHead>
+                    <TableHead>{t('requests.columns.cost')}</TableHead>
+                    <TableHead>{t('requests.columns.duration')}</TableHead>
+                    <TableHead>{t('selfUsage.requests.createdAt', { timezone: meta.timezone })}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.items.map((item) => (
                     <TableRow key={item.id}>
+                      <TableCell><RequestIdCell id={item.id} status={item.requestStatus} stream={item.stream} /></TableCell>
+                      <TableCell>{item.model}</TableCell>
+                      {item.usageRecords === 0 ? (
+                        <>
+                          {[0, 1, 2, 3].map((index) => (
+                            <TableCell key={index}>
+                              <div className='text-muted-foreground text-xs'>-</div>
+                            </TableCell>
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          <TableCell><TokensCell prompt={item.inputTokens} completion={item.outputTokens} reasoning={item.reasoningTokens} /></TableCell>
+                          <TableCell><ReadCacheCell cached={item.cacheReadTokens} prompt={item.inputTokens} /></TableCell>
+                          <TableCell><WriteCacheCell writeCached={item.cacheWriteTokens} prompt={item.inputTokens} /></TableCell>
+                          <TableCell><CostCell total={item.cost} currencyCode={meta.currencyCode} emptyLabel='-' breakdown={{
+                            items: item.costItems.map((costItem) => ({ itemCode: costItem.itemCode, variant: costItem.promptWriteCacheVariantCode, quantity: costItem.quantity, subtotal: costItem.subtotal, tiers: costItem.tierBreakdown })),
+                            multiplier: item.costMultiplier,
+                            unpricedRecords: item.unpricedRecords,
+                          }} /></TableCell>
+                        </>
+                      )}
+                      <TableCell><DurationCell status={item.requestStatus} stream={item.stream} latencyMs={item.latencyMs} firstTokenLatencyMs={item.firstTokenLatencyMs} /></TableCell>
                       <TableCell className='whitespace-nowrap'>
                         {new Intl.DateTimeFormat(locale, {
                           timeZone: meta.timezone,
@@ -445,32 +469,6 @@ function RequestLog({
                           second: '2-digit',
                           hourCycle: 'h23',
                         }).format(new Date(item.createdAt))}
-                      </TableCell>
-                      <TableCell>{item.model}</TableCell>
-                      <TableCell>{t(`selfUsage.requests.${item.status.toLowerCase()}`)}</TableCell>
-                      <TableCell>{t(item.stream ? 'selfUsage.requests.yes' : 'selfUsage.requests.no')}</TableCell>
-                      <TableCell className='whitespace-nowrap tabular-nums'>
-                        {[
-                          item.totalTokens,
-                          item.inputTokens,
-                          item.outputTokens,
-                          item.cacheReadTokens,
-                          item.cacheWriteTokens,
-                          item.reasoningTokens,
-                        ]
-                          .map((value) => number.format(value))
-                          .join(' / ')}
-                      </TableCell>
-                      <TableCell>
-                        <Cost value={item.cost} unpriced={item.unpricedRecords} money={money} />
-                      </TableCell>
-                      <TableCell>
-                        {item.latencyMs === null ? '—' : t('selfUsage.requests.ms', { value: number.format(item.latencyMs) })}
-                      </TableCell>
-                      <TableCell>
-                        {item.firstTokenLatencyMs === null
-                          ? '—'
-                          : t('selfUsage.requests.ms', { value: number.format(item.firstTokenLatencyMs) })}
                       </TableCell>
                     </TableRow>
                   ))}

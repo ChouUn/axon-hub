@@ -6,6 +6,7 @@ type TierCost {
 
 type CostItem {
   itemCode: PriceItemCode!
+  promptWriteCacheVariantCode: PromptWriteCacheVariantCode @goField(forceResolver: true)
   quantity: Int!
   tierBreakdown: [TierCost!]
   subtotal: Decimal!

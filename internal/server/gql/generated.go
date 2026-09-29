@@ -75,6 +75,7 @@ type ResolverRoot interface {
 	ChannelProbe() ChannelProbeResolver
 	ChannelProbeData() ChannelProbeDataResolver
 	ChannelSettings() ChannelSettingsResolver
+	CostItem() CostItemResolver
 	DataStorage() DataStorageResolver
 	Model() ModelResolver
 	Mutation() MutationResolver
@@ -707,10 +708,11 @@ type ComplexityRoot struct {
 	}
 
 	CostItem struct {
-		ItemCode      func(childComplexity int) int
-		Quantity      func(childComplexity int) int
-		Subtotal      func(childComplexity int) int
-		TierBreakdown func(childComplexity int) int
+		ItemCode                    func(childComplexity int) int
+		PromptWriteCacheVariantCode func(childComplexity int) int
+		Quantity                    func(childComplexity int) int
+		Subtotal                    func(childComplexity int) int
+		TierBreakdown               func(childComplexity int) int
 	}
 
 	CostStatsByAPIKey struct {
@@ -2094,6 +2096,7 @@ type ComplexityRoot struct {
 		CompletionRejectedPredictionTokens func(childComplexity int) int
 		CompletionTokens                   func(childComplexity int) int
 		CostItems                          func(childComplexity int) int
+		CostPriceMultiplier                func(childComplexity int) int
 		CostPriceReferenceID               func(childComplexity int) int
 		CreatedAt                          func(childComplexity int) int
 		Format                             func(childComplexity int) int
@@ -2327,6 +2330,9 @@ type ChannelSettingsResolver interface {
 	BodyOverrideOperations(ctx context.Context, obj *objects.ChannelSettings) ([]*objects.OverrideOperation, error)
 
 	ProviderQuota(ctx context.Context, obj *objects.ChannelSettings) (*objects.ChannelProviderQuotaSettings, error)
+}
+type CostItemResolver interface {
+	PromptWriteCacheVariantCode(ctx context.Context, obj *objects.CostItem) (*objects.PromptWriteCacheVariantCode, error)
 }
 type DataStorageResolver interface {
 	ID(ctx context.Context, obj *ent.DataStorage) (*objects.GUID, error)
@@ -2653,6 +2659,7 @@ type UsageLogResolver interface {
 	ChannelID(ctx context.Context, obj *ent.UsageLog) (*objects.GUID, error)
 
 	Channel(ctx context.Context, obj *ent.UsageLog) (*ent.Channel, error)
+	CostPriceMultiplier(ctx context.Context, obj *ent.UsageLog) (*decimal.Decimal, error)
 }
 type UserResolver interface {
 	ID(ctx context.Context, obj *ent.User) (*objects.GUID, error)
@@ -5040,6 +5047,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.CostItem.ItemCode(childComplexity), true
+	case "CostItem.promptWriteCacheVariantCode":
+		if e.complexity.CostItem.PromptWriteCacheVariantCode == nil {
+			break
+		}
+
+		return e.complexity.CostItem.PromptWriteCacheVariantCode(childComplexity), true
 	case "CostItem.quantity":
 		if e.complexity.CostItem.Quantity == nil {
 			break
@@ -11547,6 +11560,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.UsageLog.CostItems(childComplexity), true
+	case "UsageLog.costPriceMultiplier":
+		if e.complexity.UsageLog.CostPriceMultiplier == nil {
+			break
+		}
+
+		return e.complexity.UsageLog.CostPriceMultiplier(childComplexity), true
 	case "UsageLog.costPriceReferenceID":
 		if e.complexity.UsageLog.CostPriceReferenceID == nil {
 			break
@@ -12603,7 +12622,7 @@ func (ec *executionContext) introspectType(name string) (*introspection.Type, er
 	return introspection.WrapTypeFromDef(ec.Schema(), ec.Schema().Types[name]), nil
 }
 
-//go:embed "axonhub.graphql" "ent.graphql" "dashboard.graphql" "scopes.graphql" "me.graphql" "system.graphql" "filter.graphql" "model.graphql" "backup.graphql" "channel_probe.graphql" "channel_health_gate.graphql" "request_routing.graphql" "prompt.graphql" "prompt_protection_rule.graphql" "price.graphql" "cost.graphql" "analytics.graphql"
+//go:embed "axonhub.graphql" "ent.graphql" "dashboard.graphql" "scopes.graphql" "me.graphql" "system.graphql" "filter.graphql" "model.graphql" "backup.graphql" "channel_probe.graphql" "channel_health_gate.graphql" "request_routing.graphql" "prompt.graphql" "prompt_protection_rule.graphql" "price.graphql" "cost.graphql" "usage_cost.graphql" "analytics.graphql"
 var sourcesFS embed.FS
 
 func sourceData(filename string) string {
@@ -12631,6 +12650,7 @@ var sources = []*ast.Source{
 	{Name: "prompt_protection_rule.graphql", Input: sourceData("prompt_protection_rule.graphql"), BuiltIn: false},
 	{Name: "price.graphql", Input: sourceData("price.graphql"), BuiltIn: false},
 	{Name: "cost.graphql", Input: sourceData("cost.graphql"), BuiltIn: false},
+	{Name: "usage_cost.graphql", Input: sourceData("usage_cost.graphql"), BuiltIn: false},
 	{Name: "analytics.graphql", Input: sourceData("analytics.graphql"), BuiltIn: false},
 }
 var parsedSchema = gqlparser.MustLoadSchema(sources...)
@@ -28533,6 +28553,35 @@ func (ec *executionContext) fieldContext_CostItem_itemCode(_ context.Context, fi
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type PriceItemCode does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CostItem_promptWriteCacheVariantCode(ctx context.Context, field graphql.CollectedField, obj *objects.CostItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_CostItem_promptWriteCacheVariantCode,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.CostItem().PromptWriteCacheVariantCode(ctx, obj)
+		},
+		nil,
+		ec.marshalOPromptWriteCacheVariantCode2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐPromptWriteCacheVariantCode,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_CostItem_promptWriteCacheVariantCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CostItem",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type PromptWriteCacheVariantCode does not have child fields")
 		},
 	}
 	return fc, nil
@@ -62098,6 +62147,8 @@ func (ec *executionContext) fieldContext_UsageLog_costItems(_ context.Context, f
 			switch field.Name {
 			case "itemCode":
 				return ec.fieldContext_CostItem_itemCode(ctx, field)
+			case "promptWriteCacheVariantCode":
+				return ec.fieldContext_CostItem_promptWriteCacheVariantCode(ctx, field)
 			case "quantity":
 				return ec.fieldContext_CostItem_quantity(ctx, field)
 			case "tierBreakdown":
@@ -62401,6 +62452,35 @@ func (ec *executionContext) fieldContext_UsageLog_channel(_ context.Context, fie
 	return fc, nil
 }
 
+func (ec *executionContext) _UsageLog_costPriceMultiplier(ctx context.Context, field graphql.CollectedField, obj *ent.UsageLog) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UsageLog_costPriceMultiplier,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.UsageLog().CostPriceMultiplier(ctx, obj)
+		},
+		nil,
+		ec.marshalODecimal2ᚖgithubᚗcomᚋshopspringᚋdecimalᚐDecimal,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_UsageLog_costPriceMultiplier(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UsageLog",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Decimal does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _UsageLogConnection_edges(ctx context.Context, field graphql.CollectedField, obj *ent.UsageLogConnection) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -62584,6 +62664,8 @@ func (ec *executionContext) fieldContext_UsageLogEdge_node(_ context.Context, fi
 				return ec.fieldContext_UsageLog_project(ctx, field)
 			case "channel":
 				return ec.fieldContext_UsageLog_channel(ctx, field)
+			case "costPriceMultiplier":
+				return ec.fieldContext_UsageLog_costPriceMultiplier(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type UsageLog", field.Name)
 		},
@@ -99514,19 +99596,52 @@ func (ec *executionContext) _CostItem(ctx context.Context, sel ast.SelectionSet,
 		case "itemCode":
 			out.Values[i] = ec._CostItem_itemCode(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "promptWriteCacheVariantCode":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._CostItem_promptWriteCacheVariantCode(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "quantity":
 			out.Values[i] = ec._CostItem_quantity(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "tierBreakdown":
 			out.Values[i] = ec._CostItem_tierBreakdown(ctx, field, obj)
 		case "subtotal":
 			out.Values[i] = ec._CostItem_subtotal(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
@@ -113368,6 +113483,39 @@ func (ec *executionContext) _UsageLog(ctx context.Context, sel ast.SelectionSet,
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "costPriceMultiplier":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._UsageLog_costPriceMultiplier(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -126695,6 +126843,25 @@ func (ec *executionContext) marshalOPromptWriteCacheVariant2ᚕgithubᚗcomᚋlo
 	}
 
 	return ret
+}
+
+func (ec *executionContext) unmarshalOPromptWriteCacheVariantCode2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐPromptWriteCacheVariantCode(ctx context.Context, v any) (*objects.PromptWriteCacheVariantCode, error) {
+	if v == nil {
+		return nil, nil
+	}
+	tmp, err := graphql.UnmarshalString(v)
+	res := objects.PromptWriteCacheVariantCode(tmp)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOPromptWriteCacheVariantCode2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐPromptWriteCacheVariantCode(ctx context.Context, sel ast.SelectionSet, v *objects.PromptWriteCacheVariantCode) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	_ = sel
+	_ = ctx
+	res := graphql.MarshalString(string(*v))
+	return res
 }
 
 func (ec *executionContext) unmarshalOPromptWriteCacheVariantInput2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐPromptWriteCacheVariantᚄ(ctx context.Context, v any) ([]objects.PromptWriteCacheVariant, error) {

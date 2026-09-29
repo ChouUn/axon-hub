@@ -46,13 +46,25 @@ func toSummary(value biz.SelfUsageSummary) *SelfUsageSummary {
 }
 
 func toRequest(value biz.SelfUsageRequest) *SelfUsageRequest {
+	items := make([]*SelfUsageCostItem, 0, len(value.CostItems))
+	for _, cost := range value.CostItems {
+		tiers := make([]*SelfUsageTierCost, 0, len(cost.TierBreakdown))
+		for _, tier := range cost.TierBreakdown {
+			tiers = append(tiers, &SelfUsageTierCost{UpTo: tier.UpTo, Units: tier.Units, Subtotal: tier.Subtotal})
+		}
+		items = append(items, &SelfUsageCostItem{
+			ItemCode: cost.ItemCode, PromptWriteCacheVariantCode: cost.PromptWriteCacheVariantCode,
+			Quantity: cost.Quantity, Subtotal: cost.Subtotal, TierBreakdown: tiers,
+		})
+	}
 	return &SelfUsageRequest{
 		ID: value.ID, CreatedAt: value.CreatedAt, Model: value.Model,
-		Status: SelfUsageRequestStatus(value.Status), Stream: value.Stream,
+		Status: SelfUsageRequestStatus(value.Status), RequestStatus: value.RequestStatus, Stream: value.Stream,
 		LatencyMs: value.LatencyMs, FirstTokenLatencyMs: value.FirstTokenLatencyMs,
 		InputTokens: value.InputTokens, OutputTokens: value.OutputTokens,
 		CacheReadTokens: value.CacheReadTokens, CacheWriteTokens: value.CacheWriteTokens,
 		ReasoningTokens: value.ReasoningTokens, TotalTokens: value.TotalTokens,
-		Cost: value.Cost, UsageRecords: value.UsageRecords, UnpricedRecords: value.UnpricedRecords,
+		Cost: value.Cost, CostItems: items, CostMultiplier: value.CostMultiplier,
+		UsageRecords: value.UsageRecords, UnpricedRecords: value.UnpricedRecords,
 	}
 }
