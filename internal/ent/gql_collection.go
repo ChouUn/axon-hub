@@ -4111,11 +4111,6 @@ func (_q *RequestExecutionQuery) collectField(ctx context.Context, oneNode bool,
 				selectedFields = append(selectedFields, requestexecution.FieldPassThroughApplied)
 				fieldSeen[requestexecution.FieldPassThroughApplied] = struct{}{}
 			}
-		case "oneHourPromptCache":
-			if _, ok := fieldSeen[requestexecution.FieldOneHourPromptCache]; !ok {
-				selectedFields = append(selectedFields, requestexecution.FieldOneHourPromptCache)
-				fieldSeen[requestexecution.FieldOneHourPromptCache] = struct{}{}
-			}
 		case "id":
 		case "__typename":
 		default:

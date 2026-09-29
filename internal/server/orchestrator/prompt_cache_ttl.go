@@ -2,12 +2,12 @@ package orchestrator
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
 	"github.com/looplj/axonhub/internal/log"
-	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/pipeline"
@@ -30,11 +30,18 @@ func applyForceOneHourPromptCache(outbound *PersistentOutboundTransformer) pipel
 		}
 
 		var paths []string
-		biz.WalkAnthropicCacheControls(request.Body, func(path string, control gjson.Result) {
-			if control.Get("type").String() == "ephemeral" && control.Get("ttl").String() != "1h" {
-				paths = append(paths, path+".ttl")
-			}
-		})
+		collectOneHourCacheTTL(gjson.GetBytes(request.Body, "cache_control"), "cache_control", &paths)
+		collectOneHourCacheArray(gjson.GetBytes(request.Body, "tools"), "tools", &paths, false)
+		collectOneHourCacheArray(gjson.GetBytes(request.Body, "system"), "system", &paths, false)
+		messages := gjson.GetBytes(request.Body, "messages")
+		if messages.IsArray() {
+			index := 0
+			messages.ForEach(func(_, message gjson.Result) bool {
+				collectOneHourCacheArray(message.Get("content"), "messages."+strconv.Itoa(index)+".content", &paths, true)
+				index++
+				return true
+			})
+		}
 
 		if len(paths) == 0 {
 			return request, nil
@@ -54,6 +61,30 @@ func applyForceOneHourPromptCache(outbound *PersistentOutboundTransformer) pipel
 		}
 		request.Body = body
 		return request, nil
+	})
+}
+
+func collectOneHourCacheTTL(control gjson.Result, path string, paths *[]string) {
+	if control.IsObject() && control.Get("type").String() == "ephemeral" &&
+		control.Get("ttl").String() != "1h" {
+		*paths = append(*paths, path+".ttl")
+	}
+}
+
+// nestedContent walks only content arrays on content blocks, including tool results.
+func collectOneHourCacheArray(array gjson.Result, path string, paths *[]string, nestedContent bool) {
+	if !array.IsArray() {
+		return
+	}
+	index := 0
+	array.ForEach(func(_, entry gjson.Result) bool {
+		entryPath := path + "." + strconv.Itoa(index)
+		collectOneHourCacheTTL(entry.Get("cache_control"), entryPath+".cache_control", paths)
+		if nestedContent {
+			collectOneHourCacheArray(entry.Get("content"), entryPath+".content", paths, true)
+		}
+		index++
+		return true
 	})
 }
 

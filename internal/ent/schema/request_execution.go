@@ -95,9 +95,6 @@ func (RequestExecution) Fields() []ent.Field {
 		field.Bool("pass_through_applied").
 			Default(false).
 			Comment("Whether pass-through was active for this execution attempt"),
-		field.Bool("one_hour_prompt_cache").
-			Default(false).
-			Comment("Whether the final Anthropic request used a one-hour prompt cache breakpoint"),
 	}
 }
 

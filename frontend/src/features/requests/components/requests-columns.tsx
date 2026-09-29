@@ -121,7 +121,7 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
         const inboundFormat = request.format;
         const outboundFormat = executions[0]?.format;
         const passThroughApplied = executions.some((execution) => execution.passThroughApplied);
-        const oneHourPromptCache = (request.oneHourPromptCacheExecutions?.totalCount ?? 0) > 0;
+        const oneHourPromptCache = (request.oneHourPromptCacheUsageLogs?.totalCount ?? 0) > 0;
         // Orange is reserved for a confirmed mismatch: a missing format on either
         // side is "unknown" and stays muted.
         const formatsComparable = Boolean(inboundFormat && outboundFormat);

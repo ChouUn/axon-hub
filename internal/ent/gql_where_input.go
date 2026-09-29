@@ -7805,10 +7805,6 @@ type RequestExecutionWhereInput struct {
 	PassThroughApplied    *bool `json:"passThroughApplied,omitempty"`
 	PassThroughAppliedNEQ *bool `json:"passThroughAppliedNEQ,omitempty"`
 
-	// "one_hour_prompt_cache" field predicates.
-	OneHourPromptCache    *bool `json:"oneHourPromptCache,omitempty"`
-	OneHourPromptCacheNEQ *bool `json:"oneHourPromptCacheNEQ,omitempty"`
-
 	// "request" edge predicates.
 	HasRequest     *bool                `json:"hasRequest,omitempty"`
 	HasRequestWith []*RequestWhereInput `json:"hasRequestWith,omitempty"`
@@ -8438,12 +8434,6 @@ func (i *RequestExecutionWhereInput) P() (predicate.RequestExecution, error) {
 	}
 	if i.PassThroughAppliedNEQ != nil {
 		predicates = append(predicates, requestexecution.PassThroughAppliedNEQ(*i.PassThroughAppliedNEQ))
-	}
-	if i.OneHourPromptCache != nil {
-		predicates = append(predicates, requestexecution.OneHourPromptCacheEQ(*i.OneHourPromptCache))
-	}
-	if i.OneHourPromptCacheNEQ != nil {
-		predicates = append(predicates, requestexecution.OneHourPromptCacheNEQ(*i.OneHourPromptCacheNEQ))
 	}
 
 	if i.HasRequest != nil {

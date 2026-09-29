@@ -282,7 +282,7 @@ Anthropic prompt caches expire after 5 minutes by default. In human-agent collab
 - Only requests sent in Anthropic Messages format are affected; other outbound formats are not.
 - No `anthropic-beta` header is added; add one with a header override if the upstream requires it.
 - Whether the upstream actually caches for 1 hour is up to the upstream. Billing follows the 5-minute / 1-hour cache write split reported in the upstream response, not the request; responses reporting only a total are billed at the base cache write price. See [Cost Tracking](cost-tracking.md#cache-write-variants-anthropic) for 1-hour write pricing.
-- In request logs, the model column shows a 1-hour cache icon after the outbound protocol and pass-through icons. It lights up when the final request sent upstream contains a 1-hour cache breakpoint and stays gray otherwise. It reflects only the request actually sent, so a client that sends 1-hour breakpoints itself lights it up even without this switch. In that case the execution card in request details also shows a "1h cache" badge.
+- In request logs, the model column shows a 1-hour cache icon after the outbound protocol and pass-through icons. It lights up when the request's billing includes 1-hour cache writes and stays gray otherwise, so it always matches billing and does not depend on this switch. In that case the Usage card in request details also shows a "1h cache" badge. Requests that only read an existing 1-hour cache without writing do not light it up.
 
 ## FAQ
 

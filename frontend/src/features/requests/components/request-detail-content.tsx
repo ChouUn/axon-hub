@@ -87,6 +87,10 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
     },
     { projectId, enabled: true }
   );
+  const { data: oneHourPromptCacheUsageLogs } = useUsageLogs(
+    { first: 1, where: { requestID: requestId, promptWriteCachedTokens1hGT: 0 } },
+    { projectId, enabled: true }
+  );
 
   const parsedResponse = useMemo(() => {
     if (!request) return { content: '', reasoning: '', toolCalls: [] };
@@ -505,9 +509,16 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
                     </div>
                     <span className='text-base'>{t('requests.detail.tabs.usage')}</span>
                   </div>
-                  <Badge className='bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' variant='secondary'>
-                    {t(`usageLogs.source.${usage.source}`)}
-                  </Badge>
+                  <div className='flex items-center gap-2'>
+                    {(oneHourPromptCacheUsageLogs?.totalCount ?? 0) > 0 && (
+                      <Badge className='border-violet-200 bg-violet-100 text-violet-800 dark:border-violet-800 dark:bg-violet-900/20 dark:text-violet-300'>
+                        {t('requests.oneHourPromptCache.applied')}
+                      </Badge>
+                    )}
+                    <Badge className='bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' variant='secondary'>
+                      {t(`usageLogs.source.${usage.source}`)}
+                    </Badge>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -848,11 +859,6 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
                             {execution.passThroughApplied && (
                               <Badge className='border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'>
                                 {t('requests.passThrough.applied')}
-                              </Badge>
-                            )}
-                            {execution.oneHourPromptCache && (
-                              <Badge className='border-violet-200 bg-violet-100 text-violet-800 dark:border-violet-800 dark:bg-violet-900/20 dark:text-violet-300'>
-                                {t('requests.oneHourPromptCache.applied')}
                               </Badge>
                             )}
                           </div>

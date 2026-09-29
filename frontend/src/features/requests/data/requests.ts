@@ -89,7 +89,7 @@ function buildRequestsQuery(permissions: { canViewApiKeys: boolean; canViewChann
               }
               totalCount
             }
-            oneHourPromptCacheExecutions: executions(first: 1, where: { oneHourPromptCache: true }) {
+            oneHourPromptCacheUsageLogs: usageLogs(first: 1, where: { promptWriteCachedTokens1hGT: 0 }) {
               totalCount
             }
             usageLogs(first: 1) {
@@ -289,7 +289,6 @@ function buildRequestExecutionsQuery(permissions: { canViewChannels: boolean }) 
                 stream
                 requestURL
                 passThroughApplied
-                oneHourPromptCache
                 metricsFirstTokenLatencyMs
                 metricsReasoningDurationMs
               }

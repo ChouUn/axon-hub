@@ -1862,7 +1862,7 @@ func (_m *RequestExecution) Node(ctx context.Context) (node *Node, err error) {
 	node = &Node{
 		ID:     _m.ID,
 		Type:   "RequestExecution",
-		Fields: make([]*Field, 24),
+		Fields: make([]*Field, 23),
 		Edges:  make([]*Edge, 3),
 	}
 	var buf []byte
@@ -2048,14 +2048,6 @@ func (_m *RequestExecution) Node(ctx context.Context) (node *Node, err error) {
 	node.Fields[22] = &Field{
 		Type:  "bool",
 		Name:  "pass_through_applied",
-		Value: string(buf),
-	}
-	if buf, err = json.Marshal(_m.OneHourPromptCache); err != nil {
-		return nil, err
-	}
-	node.Fields[23] = &Field{
-		Type:  "bool",
-		Name:  "one_hour_prompt_cache",
 		Value: string(buf),
 	}
 	node.Edges[0] = &Edge{

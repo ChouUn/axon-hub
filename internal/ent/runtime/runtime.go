@@ -713,10 +713,6 @@ func init() {
 	requestexecutionDescPassThroughApplied := requestexecutionFields[20].Descriptor()
 	// requestexecution.DefaultPassThroughApplied holds the default value on creation for the pass_through_applied field.
 	requestexecution.DefaultPassThroughApplied = requestexecutionDescPassThroughApplied.Default.(bool)
-	// requestexecutionDescOneHourPromptCache is the schema descriptor for one_hour_prompt_cache field.
-	requestexecutionDescOneHourPromptCache := requestexecutionFields[21].Descriptor()
-	// requestexecution.DefaultOneHourPromptCache holds the default value on creation for the one_hour_prompt_cache field.
-	requestexecution.DefaultOneHourPromptCache = requestexecutionDescOneHourPromptCache.Default.(bool)
 	roleMixin := schema.Role{}.Mixin()
 	role.Policy = privacy.NewPolicies(schema.Role{})
 	role.Hooks[0] = func(next ent.Mutator) ent.Mutator {

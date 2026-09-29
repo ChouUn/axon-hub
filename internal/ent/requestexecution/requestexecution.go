@@ -63,8 +63,6 @@ const (
 	FieldRequestURL = "request_url"
 	// FieldPassThroughApplied holds the string denoting the pass_through_applied field in the database.
 	FieldPassThroughApplied = "pass_through_applied"
-	// FieldOneHourPromptCache holds the string denoting the one_hour_prompt_cache field in the database.
-	FieldOneHourPromptCache = "one_hour_prompt_cache"
 	// EdgeRequest holds the string denoting the request edge name in mutations.
 	EdgeRequest = "request"
 	// EdgeChannel holds the string denoting the channel edge name in mutations.
@@ -122,7 +120,6 @@ var Columns = []string{
 	FieldRequestHeaders,
 	FieldRequestURL,
 	FieldPassThroughApplied,
-	FieldOneHourPromptCache,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -152,8 +149,6 @@ var (
 	DefaultStream bool
 	// DefaultPassThroughApplied holds the default value on creation for the "pass_through_applied" field.
 	DefaultPassThroughApplied bool
-	// DefaultOneHourPromptCache holds the default value on creation for the "one_hour_prompt_cache" field.
-	DefaultOneHourPromptCache bool
 )
 
 // Status defines the type for the "status" enum field.
@@ -283,11 +278,6 @@ func ByRequestURL(opts ...sql.OrderTermOption) OrderOption {
 // ByPassThroughApplied orders the results by the pass_through_applied field.
 func ByPassThroughApplied(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPassThroughApplied, opts...).ToFunc()
-}
-
-// ByOneHourPromptCache orders the results by the one_hour_prompt_cache field.
-func ByOneHourPromptCache(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldOneHourPromptCache, opts...).ToFunc()
 }
 
 // ByRequestField orders the results by request field.
