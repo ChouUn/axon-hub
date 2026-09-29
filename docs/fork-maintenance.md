@@ -750,6 +750,23 @@ fork 改动，由用户决定。
 
 ## Bugfix Topics
 
+### 透传预读队列循环等待
+
+- 问题：启用流式透传与重试时，首个有效内容前的空 thinking 或被转换器跳过的事件可填满
+  64 槽原始队列；消费者等待预读结束，生产者等待消费者，导致请求卡到取消或总超时。
+- 来源：上游 [#2150](https://github.com/looplj/axonhub/issues/2150)、
+  [#2580](https://github.com/looplj/axonhub/pull/2580)。参考 #2580 的分阶段暂存方案，
+  fork 增加原始事件预算，不直接采用无界 backlog；保留重试前事件隔离及接入后的背压。
+- 行为：每次尝试在消费者接入前暂存最多 4096 个原始事件、64 MiB 的 data/type/id 字节，
+  超限返回不可重试的 `ErrPreCommitBufferExceeded`，不暴露失败尝试的内容；接入时有序交付，
+  重试重置释放旧暂存。合法的单个 32 MiB SSE 事件仍可通过原始字节预算。
+- 边界：未改变首个有效内容前不向客户端输出的语义；长思考仍可能触发客户端或代理的等待上限。
+- 代码：`internal/server/orchestrator/pass_through.go`、`state.go`、`outbound.go`。
+- 验证：真实 HTTP Anthropic 上游立即发送 200 个空 thinking delta，透传和重试开启时完整
+  接收 206 个事件及 `message_stop`；行为回归覆盖跳过事件、事件顺序及事件数/字节上限。
+- 迁移：无 schema、data migration 或持久缓存结构变化；无新增 fixture。
+- 同步上游：核对 #2580 合并后的实现，不能丢失原始事件资源预算和取消时错误读取的同步保障。
+
 ### 渠道测试受后台请求超时限制
 
 - 问题：渠道测试经 `/admin/graphql` 触发，该路由挂 `server.request_timeout`

@@ -345,8 +345,8 @@ func applyPassThroughResponse(outbound *PersistentOutboundTransformer, systemSer
 
 // captureRawProviderStream fans out raw provider stream events to both the pipeline
 // (for transforms and LLM middlewares like connection tracking, performance recording)
-// and a pass-through channel. The pipeline receives events via pipelineCh, while
-// raw events are stored on state.RawStreamCh for pass-through delivery.
+// and a pass-through consumer. Before that consumer attaches, raw events are
+// retained in a bounded per-attempt backlog instead of blocking pipeline pre-read.
 func captureRawProviderStream(outbound *PersistentOutboundTransformer, systemService *biz.SystemService) pipeline.Middleware {
 	return pipeline.OnRawStream("capture-raw-provider-stream", func(ctx context.Context, stream streams.Stream[*httpclient.StreamEvent]) (streams.Stream[*httpclient.StreamEvent], error) {
 		if !outbound.isPassThroughEnabled(ctx, systemService) {
@@ -358,6 +358,11 @@ func captureRawProviderStream(outbound *PersistentOutboundTransformer, systemSer
 		pipelineCh := make(chan *httpclient.StreamEvent, 64)
 		rawStreamCh := make(chan *httpclient.StreamEvent, 64)
 		outbound.state.RawStreamCh = rawStreamCh
+
+		backlog := &rawStreamBacklog{}
+		outbound.state.RawStreamBacklog = backlog
+		done := make(chan struct{})
+		outbound.state.RawStreamDone = done
 
 		// Per-attempt local error storage: each attempt writes to its own variable so
 		// concurrent defers from an abandoned goroutine and the new attempt's goroutine
@@ -387,10 +392,11 @@ func captureRawProviderStream(outbound *PersistentOutboundTransformer, systemSer
 						log.String("channel", channel.Name),
 					)
 					rawStreamErr = fmt.Errorf("passthrough stream panic: %v", r)
-				} else {
+				} else if rawStreamErr == nil {
 					rawStreamErr = stream.Err()
 				}
 
+				close(done)
 				close(pipelineCh)
 				close(rawStreamCh)
 			}()
@@ -413,6 +419,11 @@ func captureRawProviderStream(outbound *PersistentOutboundTransformer, systemSer
 				}
 
 				event := stream.Current()
+				held, err := backlog.hold(event)
+				if err != nil {
+					rawStreamErr = err
+					return
+				}
 				// Use blocking sends so events are not silently dropped when a
 				// consumer is slower than the upstream provider. Bail out on
 				// attempt cancellation (retry) or request cancellation to avoid
@@ -426,6 +437,10 @@ func captureRawProviderStream(outbound *PersistentOutboundTransformer, systemSer
 					return
 				}
 
+				if held {
+					continue
+				}
+
 				select {
 				case rawStreamCh <- event:
 				case <-attemptCtx.Done():
@@ -437,7 +452,7 @@ func captureRawProviderStream(outbound *PersistentOutboundTransformer, systemSer
 			}
 		}()
 
-		return &passThroughChannelStream{ctx: ctx, ch: pipelineCh, errRef: &rawStreamErr, cancel: closeStream}, nil
+		return &passThroughChannelStream{ctx: ctx, ch: pipelineCh, errRef: &rawStreamErr, done: done, cancel: closeStream}, nil
 	})
 }
 
@@ -459,6 +474,15 @@ func applyPassThroughStream(outbound *PersistentOutboundTransformer, systemServi
 		// state.RawStreamErrRef, this stream still reads from the correct variable.
 		errRef := outbound.state.RawStreamErrRef
 		cancel := outbound.state.RawStreamCancel
+		done := outbound.state.RawStreamDone
+		var held []*httpclient.StreamEvent
+		if backlog := outbound.state.RawStreamBacklog; backlog != nil {
+			var err error
+			held, err = backlog.attach()
+			if err != nil {
+				return nil, err
+			}
+		}
 
 		channel := outbound.GetCurrentChannel()
 
@@ -467,15 +491,69 @@ func applyPassThroughStream(outbound *PersistentOutboundTransformer, systemServi
 		)
 
 		go func() {
+			defer func() {
+				if cause := recover(); cause != nil {
+					log.Warn(ctx, "pass-through pipeline drain panicked", log.Any("cause", cause))
+				}
+			}()
+			defer stream.Close()
 			for stream.Next() {
 				_ = stream.Current()
 			}
-
-			stream.Close()
 		}()
 
-		return &passThroughChannelStream{ctx: ctx, ch: rawCh, errRef: errRef, cancel: cancel}, nil
+		rawStream := &passThroughChannelStream{ctx: ctx, ch: rawCh, errRef: errRef, done: done, cancel: cancel}
+		return streams.PrependStream(rawStream, held...), nil
 	})
+}
+
+// These raw budgets also cover events skipped by a transformer, which never
+// count toward the pipeline's transformed-event budget. Keep room for a legal
+// 32 MiB SSE event; after attachment the ordinary bounded channel applies.
+const (
+	maxRawPreReadEvents = 4096
+	maxRawPreReadBytes  = 64 * 1024 * 1024
+)
+
+type rawStreamBacklog struct {
+	mu       sync.Mutex
+	attached bool
+	bytes    int
+	events   []*httpclient.StreamEvent
+	err      error
+}
+
+func (b *rawStreamBacklog) hold(event *httpclient.StreamEvent) (bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.attached {
+		return false, nil
+	}
+	if b.err != nil {
+		return false, b.err
+	}
+	size := len(event.Data) + len(event.Type) + len(event.LastEventID)
+	if len(b.events) >= maxRawPreReadEvents || size > maxRawPreReadBytes-b.bytes {
+		b.err = fmt.Errorf("raw pass-through pre-read: %w", pipeline.ErrPreCommitBufferExceeded)
+		return false, b.err
+	}
+	b.events = append(b.events, event)
+	b.bytes += size
+	return true, nil
+}
+
+func (b *rawStreamBacklog) attach() ([]*httpclient.StreamEvent, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.err != nil {
+		b.events = nil
+		return nil, b.err
+	}
+	b.attached = true
+	events := b.events
+	b.events = nil
+	b.bytes = 0
+	return events, nil
 }
 
 // passThroughChannelStream wraps a channel as a Stream.
@@ -486,6 +564,7 @@ type passThroughChannelStream struct {
 	ch      <-chan *httpclient.StreamEvent
 	current *httpclient.StreamEvent
 	errRef  *error
+	done    <-chan struct{}
 	cancel  context.CancelFunc
 	once    sync.Once
 	ctxDone bool
@@ -555,6 +634,18 @@ func (s *passThroughChannelStream) nextBuffered() bool {
 func (s *passThroughChannelStream) Current() *httpclient.StreamEvent { return s.current }
 
 func (s *passThroughChannelStream) Err() error {
+	// Cancellation can end a consumer before the producer publishes its error.
+	// Only read the shared error once the producer's completion barrier is closed.
+	if s.done != nil {
+		select {
+		case <-s.done:
+		default:
+			if s.ctx != nil {
+				return s.ctx.Err()
+			}
+			return nil
+		}
+	}
 	if s.errRef != nil {
 		return *s.errRef
 	}

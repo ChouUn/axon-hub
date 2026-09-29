@@ -69,6 +69,10 @@ type PersistenceState struct {
 
 	// RawStreamCh receives raw provider stream events for stream response pass-through.
 	RawStreamCh chan *httpclient.StreamEvent
+	// RawStreamBacklog retains bounded pre-read events until the consumer attaches.
+	RawStreamBacklog *rawStreamBacklog
+	// RawStreamDone publishes the producer's final error without a cancellation race.
+	RawStreamDone <-chan struct{}
 
 	// RawStreamErrRef points to the current attempt's local error variable used by the
 	// captureRawProviderStream fan-out goroutine. Using a per-attempt pointer (instead of

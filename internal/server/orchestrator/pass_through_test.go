@@ -464,7 +464,8 @@ func TestCaptureRawProviderStream_NilLlmRequest(t *testing.T) {
 }
 
 func TestCaptureRawProviderStream_FansOut(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	channel := &biz.Channel{
 		Channel: &ent.Channel{
 			ID:   1,
@@ -494,10 +495,9 @@ func TestCaptureRawProviderStream_FansOut(t *testing.T) {
 		state:   state,
 	}
 
-	events := []*httpclient.StreamEvent{
-		{Data: json.RawMessage(`{"id":"evt1"}`)},
-		{Data: json.RawMessage(`{"id":"evt2"}`)},
-		{Data: json.RawMessage(`{"id":"evt3"}`)},
+	events := make([]*httpclient.StreamEvent, 200)
+	for i := range events {
+		events[i] = &httpclient.StreamEvent{Data: fmt.Appendf(nil, `{"id":"evt%d"}`, i)}
 	}
 	src := testHTTPStream(events)
 
@@ -507,34 +507,33 @@ func TestCaptureRawProviderStream_FansOut(t *testing.T) {
 	require.NotNil(t, result)
 	assert.NotNil(t, state.RawStreamCh)
 
-	var (
-		wg                sync.WaitGroup
-		pipelineEvents    []*httpclient.StreamEvent
-		passthroughEvents []*httpclient.StreamEvent
-	)
-
-	wg.Add(2)
-
+	// Pre-read beyond the old 64-event buffer before attaching the raw consumer.
+	var pipelineEvents []*httpclient.StreamEvent
+	for range 100 {
+		require.True(t, result.Next())
+		pipelineEvents = append(pipelineEvents, result.Current())
+	}
+	passthrough, err := applyPassThroughStream(outbound, nil).OnInboundRawStream(ctx, testHTTPStream(nil))
+	require.NoError(t, err)
+	defer passthrough.Close()
+	pipelineDone := make(chan struct{})
 	go func() {
-		defer wg.Done()
-
+		defer close(pipelineDone)
+		defer func() {
+			if cause := recover(); cause != nil {
+				t.Errorf("pipeline reader panicked: %v", cause)
+			}
+		}()
 		for result.Next() {
 			pipelineEvents = append(pipelineEvents, result.Current())
 		}
 	}()
-
-	go func() {
-		defer wg.Done()
-
-		for ev := range state.RawStreamCh {
-			passthroughEvents = append(passthroughEvents, ev)
-		}
-	}()
-
-	wg.Wait()
-
-	assert.Len(t, pipelineEvents, 3)
-	assert.Len(t, passthroughEvents, 3)
+	var passthroughEvents []*httpclient.StreamEvent
+	for passthrough.Next() {
+		passthroughEvents = append(passthroughEvents, passthrough.Current())
+	}
+	<-pipelineDone
+	require.NoError(t, ctx.Err())
 	assert.Equal(t, events, pipelineEvents)
 	assert.Equal(t, events, passthroughEvents)
 }
