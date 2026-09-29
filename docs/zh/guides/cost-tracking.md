@@ -105,6 +105,8 @@ AxonHub 支持三种定价模式：
 - **5分钟** (`five_min`): 短期缓存
 - **1小时** (`one_hour`): 长期缓存
 
+模型目录只提供 5 分钟写缓存价。从目录的 Anthropic 官方来源选模导入价格时，会自动为写缓存添加 `one_hour` 变体，单价为输入价的 2 倍（Anthropic 1 小时写缓存计费倍数）；其他来源不自动添加。未配置 `one_hour` 变体时，1 小时写入按写缓存基础价计费。
+
 ### 成本计算逻辑
 
 1. **输入 Token 计算**: `PromptTokens - CachedTokens - WriteCachedTokens`

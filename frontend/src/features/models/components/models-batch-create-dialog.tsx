@@ -160,7 +160,7 @@ export function ModelsBatchCreateDialog() {
                 output: selectedModel.modalities?.output || [],
               },
               vision: resolveVision(selectedModel),
-              price: priceFromCatalog(selectedModel),
+              price: priceFromCatalog(selectedModel, row.developer),
               limit: {
                 context: selectedModel.limit?.context || 0,
                 output: selectedModel.limit?.output || 0,

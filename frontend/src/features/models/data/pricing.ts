@@ -10,13 +10,21 @@ const costFields = [
   ['cache_write', 'prompt_write_cached_tokens'],
 ] as const;
 
-export function priceFromCatalog(model?: ProviderModel): ModelPrice | undefined {
+export function priceFromCatalog(model: ProviderModel | undefined, providerId: string): ModelPrice | undefined {
   const cost = model?.cost;
-  const itemsFor = (values: NonNullable<ProviderModel['cost']>): ModelPriceItem[] =>
-    costFields.flatMap(([field, itemCode]) =>
-      values[field] == null ? [] : [{ itemCode, pricing: { mode: 'usage_per_unit' as const, usagePerUnit: String(values[field]) } }]
-    );
   if (!cost) return undefined;
+  // The catalog carries only the 5m write price; Anthropic bills 1h writes at 2x input.
+  const addOneHourWrite = providerId === 'anthropic' && cost.input != null && cost.cache_write != null;
+  const itemsFor = (values: NonNullable<ProviderModel['cost']>): ModelPriceItem[] =>
+    costFields.flatMap(([field, itemCode]) => {
+      if (values[field] == null) return [];
+      const item: ModelPriceItem = { itemCode, pricing: { mode: 'usage_per_unit', usagePerUnit: String(values[field]) } };
+      if (addOneHourWrite && field === 'cache_write') {
+        const usagePerUnit = new Decimal(String(values.input)).mul(2).toFixed();
+        item.promptWriteCacheVariants = [{ variantCode: 'one_hour', pricing: { mode: 'usage_per_unit', usagePerUnit } }];
+      }
+      return [item];
+    });
   const volumeTiers = (cost.tiers ?? [])
     .filter((tier) => tier.tier.type === 'context' && Number.isSafeInteger(tier.tier.size) && tier.tier.size! >= 0)
     .map((tier) => ({ above: tier.tier.size!, items: itemsFor({ ...cost, ...tier }) }))

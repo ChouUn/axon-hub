@@ -253,7 +253,7 @@ export function ModelsActionDialog() {
             output: selectedModel.modalities?.output || [],
           },
           vision: resolveVision(selectedModel),
-          price: priceFromCatalog(selectedModel),
+          price: priceFromCatalog(selectedModel, selectedProvider),
           limit: {
             context: selectedModel.limit?.context || 0,
             output: selectedModel.limit?.output || 0,

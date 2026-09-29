@@ -16,7 +16,7 @@ function moduleURL(path, imports = {}) {
 
 const paginationURL = moduleURL('../../gql/pagination.ts');
 const schemaURL = moduleURL('../channels/data/schema.ts', { '@/gql/pagination': paginationURL });
-const { multiplyPriceItems, createPriceValidationSchema } = await import(
+const { multiplyPriceItems, createPriceValidationSchema, priceFromCatalog } = await import(
   moduleURL('./data/pricing.ts', { '@/features/channels/data/schema': schemaURL })
 );
 const priceSchema = createPriceValidationSchema((key) => key);
@@ -42,6 +42,23 @@ test('bulk tier filling preserves decimal prices and cache variants without muta
     multiplyPriceItems([item('prompt_tokens', '0.1')], '1.00000000000000000001')[0].pricing.usagePerUnit,
     '0.100000000000000000001'
   );
+});
+
+test('anthropic catalog imports bill one-hour cache writes at twice the input price', () => {
+  const oneHour = (items) =>
+    items.find((entry) => entry.itemCode === 'prompt_write_cached_tokens').promptWriteCacheVariants?.map(({ variantCode, pricing }) => [variantCode, pricing.usagePerUnit]);
+  const model = {
+    cost: { input: 0.3, output: 15, cache_read: 0.03, cache_write: 0.375, tiers: [{ input: 6, cache_write: 7.5, tier: { type: 'context', size: 200000 } }] },
+  };
+  const price = priceFromCatalog(model, 'anthropic');
+  assert.deepEqual(oneHour(price.items), [['one_hour', '0.6']]);
+  assert.equal(price.items.find((entry) => entry.itemCode === 'prompt_write_cached_tokens').pricing.usagePerUnit, '0.375');
+  assert.deepEqual(oneHour(price.volumeTiers[0].items), [['one_hour', '12']]);
+  assert.equal(priceSchema.safeParse(price).success, true);
+
+  assert.equal(oneHour(priceFromCatalog(model, 'amazon-bedrock').items), undefined);
+  const noWrite = priceFromCatalog({ cost: { input: 3, output: 15 } }, 'anthropic');
+  assert.equal(noWrite.items.some((entry) => entry.promptWriteCacheVariants), false);
 });
 
 test('an unconfigured price stays absent while an explicitly free price remains configured', () => {
