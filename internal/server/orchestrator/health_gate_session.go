@@ -2,10 +2,12 @@ package orchestrator
 
 import (
 	"context"
+	"time"
 
 	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/internal/pkg/xcontext"
 	"github.com/looplj/axonhub/internal/server/biz"
 )
 
@@ -124,7 +126,10 @@ func (d *healthGateRequestDecision) ownerGatedAtCompletion(ctx context.Context, 
 		cfg := currentHealthGateConfig(ctx, d.policy, d.channelSvc, candidate.Channel, d.fallback)
 		for _, model := range candidate.Models {
 			seen = true
-			view := gate.Inspect(biz.HealthGateKey{ChannelID: channelID, ActualModel: model.ActualModel}, cfg)
+			view, err := gate.Inspect(ctx, biz.HealthGateKey{ChannelID: channelID, ActualModel: model.ActualModel}, cfg)
+			if err != nil {
+				return false
+			}
 			if view.State == biz.HealthGateStateHealthy || view.State == biz.HealthGateStateUnstable ||
 				(view.State == biz.HealthGateStateProbing && d.probeEligible && !view.ProbeBusy) {
 				return false
@@ -142,12 +147,14 @@ func (m *healthGateAttemptTracker) finishSession(ctx context.Context, successful
 	if d == nil || m.outbound == nil || m.outbound.state == nil {
 		return
 	}
+	ctx, cancel := xcontext.DetachWithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	state := m.outbound.state
 	record := d.record
 	record.LastResort = m.lastResort || record.LastResort
 	if successful && m.channel != nil && d.sticky && state.RequestService != nil && (d.threadID != 0 || d.traceID != 0) {
 		success := healthGateCombo(state.CurrentCandidate, m.key.ActualModel, "")
-		state.RequestService.UpdateSessionOwner(context.WithoutCancel(ctx), d.threadID, d.traceID, func(current biz.SessionOwner, found bool) (biz.SessionOwner, bool) {
+		state.RequestService.UpdateSessionOwner(ctx, d.threadID, d.traceID, func(current biz.SessionOwner, found bool) (biz.SessionOwner, bool) {
 			if !found {
 				record.ConsecutiveFailovers = 0
 				return biz.SessionOwner{ChannelID: success.ChannelID}, true
@@ -190,7 +197,7 @@ func (m *healthGateAttemptTracker) finishSession(ctx context.Context, successful
 	if state.Request == nil || state.RequestService == nil {
 		return
 	}
-	if err := state.RequestService.SetRequestRoutingDecision(context.WithoutCancel(ctx), state.Request.ID, &record); err != nil {
+	if err := state.RequestService.SetRequestRoutingDecision(ctx, state.Request.ID, &record); err != nil {
 		log.Warn(ctx, "failed to persist health gate routing decision", log.Cause(err))
 	}
 }

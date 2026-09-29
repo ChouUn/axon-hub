@@ -31,23 +31,24 @@ func TestChannelHealthGateStatusCountsAndDisabled(t *testing.T) {
 
 	for _, name := range []string{"open", "probing"} {
 		key := biz.HealthGateKey{ChannelID: ch.ID, ActualModel: name}
-		ticket, ok := gate.Begin(key, healthGateResolver(cfg), false, false)
+		ticket, ok := healthGateBegin(t, gate, key, healthGateResolver(cfg), false, false)
 		if !ok {
 			t.Fatalf("initial attempt rejected for %s", name)
 		}
-		gate.Finish(ticket, healthGateResolver(cfg), biz.HealthGateOutcomeFailure, biz.HealthGateErrorInfo{Message: "upstream error", StatusCode: 503})
+		healthGateFinish(t, gate, ticket, healthGateResolver(cfg), biz.HealthGateOutcomeFailure, biz.HealthGateErrorInfo{Message: "upstream error", StatusCode: 503})
 	}
 	now = now.Add(11 * time.Second)
 	key := biz.HealthGateKey{ChannelID: ch.ID, ActualModel: "open"}
-	probe, ok := gate.Begin(key, healthGateResolver(cfg), true, false)
+	probe, ok := healthGateBegin(t, gate, key, healthGateResolver(cfg), true, false)
 	if !ok {
 		t.Fatal("failed to start probe")
 	}
-	gate.Finish(probe, healthGateResolver(cfg), biz.HealthGateOutcomeFailure, biz.HealthGateErrorInfo{})
+	healthGateFinish(t, gate, probe, healthGateResolver(cfg), biz.HealthGateOutcomeFailure, biz.HealthGateErrorInfo{})
 
-	status := channelHealthGateStatus(gate, policy, ch, func() (biz.HealthGateConfig, bool) {
+	status, err := channelHealthGateStatus(t.Context(), gate, policy, ch, func() (biz.HealthGateConfig, bool) {
 		return biz.ResolveHealthGateConfig(policy, &biz.Channel{Channel: ch}), true
 	})
+	require.NoError(t, err)
 	if status.OpenCount != 2 || status.UnstableCount != 0 || len(status.Models) != 2 || status.Models[0].State != "open" || status.Models[1].State != "probing" {
 		t.Fatalf("open/probing status mismatch: %+v", status)
 	}
@@ -60,9 +61,10 @@ func TestChannelHealthGateStatusCountsAndDisabled(t *testing.T) {
 
 	zero := 0
 	ch.Settings = &objects.ChannelSettings{HealthGateFailureThreshold: &zero}
-	status = channelHealthGateStatus(gate, policy, ch, func() (biz.HealthGateConfig, bool) {
+	status, err = channelHealthGateStatus(t.Context(), gate, policy, ch, func() (biz.HealthGateConfig, bool) {
 		return biz.ResolveHealthGateConfig(policy, &biz.Channel{Channel: ch}), true
 	})
+	require.NoError(t, err)
 	if !status.Disabled || status.FailureThreshold != 0 || status.OpenCount != 0 || status.UnstableCount != 0 || status.Models == nil || len(status.Models) != 0 {
 		t.Fatalf("disabled channel must have empty health models: %+v", status)
 	}

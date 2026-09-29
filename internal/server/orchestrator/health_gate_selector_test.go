@@ -53,9 +53,9 @@ func openHealthGateModel(t *testing.T, gate *biz.HealthGate, policy *biz.RetryPo
 	t.Helper()
 	key := biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: model}
 	cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), candidate.Channel)
-	ticket, ok := gate.Begin(key, healthGateResolver(cfg), true, false)
+	ticket, ok := healthGateBegin(t, gate, key, healthGateResolver(cfg), true, false)
 	require.True(t, ok)
-	gate.Finish(ticket, healthGateResolver(cfg), biz.HealthGateOutcomeFailure, biz.HealthGateErrorInfo{StatusCode: 500})
+	healthGateFinish(t, gate, ticket, healthGateResolver(cfg), biz.HealthGateOutcomeFailure, biz.HealthGateErrorInfo{StatusCode: 500})
 }
 
 func healthGateSelectorCandidate(channelID, priority int, models ...string) *ChannelModelsCandidate {
@@ -128,14 +128,14 @@ func TestHealthGateSelector_ProbeEligibilityAndBusyFallback(t *testing.T) {
 	previous.threadChannelIDs[20] = 0
 	cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), candidate.Channel)
 	key := biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: "broken"}
-	ticket, ok := gate.Begin(key, healthGateResolver(cfg), true, false)
+	ticket, ok := healthGateBegin(t, gate, key, healthGateResolver(cfg), true, false)
 	require.True(t, ok)
 	result, err = selector.Select(ctx, &llm.Request{Model: "alias"})
 	require.NoError(t, err)
 	require.True(t, result[0].healthGate.lastResort)
-	_, ok = gate.Begin(key, healthGateResolver(cfg), true, true)
+	_, ok = healthGateBegin(t, gate, key, healthGateResolver(cfg), true, true)
 	require.False(t, ok)
-	gate.Finish(ticket, healthGateResolver(cfg), biz.HealthGateOutcomeNeutral, biz.HealthGateErrorInfo{})
+	healthGateFinish(t, gate, ticket, healthGateResolver(cfg), biz.HealthGateOutcomeNeutral, biz.HealthGateErrorInfo{})
 }
 
 type healthGateUnavailableStickyCache struct{}
@@ -168,14 +168,14 @@ func TestHealthGateSelector_BusyProbeUsesHealthyCandidate(t *testing.T) {
 	openHealthGateModel(t, gate, policy, probing, "probing")
 	now = now.Add(11 * time.Second)
 	cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), probing.Channel)
-	ticket, ok := gate.Begin(biz.HealthGateKey{ChannelID: probing.Channel.ID, ActualModel: "probing"}, healthGateResolver(cfg), true, false)
+	ticket, ok := healthGateBegin(t, gate, biz.HealthGateKey{ChannelID: probing.Channel.ID, ActualModel: "probing"}, healthGateResolver(cfg), true, false)
 	require.True(t, ok)
 	result, err := selector.Select(context.Background(), &llm.Request{Model: "alias"})
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	require.Equal(t, healthy.Channel.ID, result[0].Channel.ID)
 	require.False(t, result[0].healthGate.lastResort)
-	gate.Finish(ticket, healthGateResolver(cfg), biz.HealthGateOutcomeNeutral, biz.HealthGateErrorInfo{})
+	healthGateFinish(t, gate, ticket, healthGateResolver(cfg), biz.HealthGateOutcomeNeutral, biz.HealthGateErrorInfo{})
 }
 
 func TestHealthGateSelector_LastResortPrefersProbingThenEarliestExpiry(t *testing.T) {
@@ -234,7 +234,7 @@ func TestHealthGateSelector_ProbeTakenAfterSelectionReturnsGeneric503(t *testing
 	require.ErrorAs(t, contender.finalize(ctx, fmt.Errorf("pipeline: %w", err), false), &unavailable)
 	require.Equal(t, 503, unavailable.StatusCode)
 	require.Equal(t, "service_unavailable", unavailable.Detail.Code)
-	view := gate.Inspect(biz.HealthGateKey{ChannelID: 1, ActualModel: "model"}, healthGateResolver(biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), candidate.Channel)))
+	view := healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: 1, ActualModel: "model"}, healthGateResolver(biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), candidate.Channel)))
 	require.True(t, view.ProbeBusy)
 	require.NoError(t, owner.finalize(ctx, nil, false))
 }
@@ -300,5 +300,5 @@ func TestHealthGateSelector_UsesCurrentChannelThreshold(t *testing.T) {
 	require.NoError(t, err)
 	tracker.OnOutboundRawError(ctx, healthGateServerError())
 	require.Error(t, tracker.finalize(ctx, healthGateServerError(), false))
-	require.Empty(t, gate.Snapshot(candidate.Channel.ID, healthGateResolver(biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), &biz.Channel{Channel: &updatedChannel}))))
+	require.Empty(t, healthGateSnapshot(t, gate, candidate.Channel.ID, healthGateResolver(biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), &biz.Channel{Channel: &updatedChannel}))))
 }

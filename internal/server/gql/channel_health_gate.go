@@ -31,15 +31,18 @@ func (r *Resolver) healthGateConfigResolver(ctx context.Context, channelID int) 
 	}
 }
 
-func channelHealthGateStatus(gate *biz.HealthGate, policy biz.HealthGatePolicy, ch *ent.Channel, resolve biz.HealthGateConfigResolver) *ChannelHealthGateStatus {
+func channelHealthGateStatus(ctx context.Context, gate *biz.HealthGate, policy biz.HealthGatePolicy, ch *ent.Channel, resolve biz.HealthGateConfigResolver) (*ChannelHealthGateStatus, error) {
 	cfg := biz.ResolveHealthGateConfig(policy, &biz.Channel{Channel: ch})
-	snapshots := gate.Snapshot(ch.ID, func() (biz.HealthGateConfig, bool) {
+	snapshots, err := gate.Snapshot(ctx, ch.ID, func() (biz.HealthGateConfig, bool) {
 		current, ok := resolve()
 		if ok {
 			cfg = current
 		}
 		return current, ok
 	})
+	if err != nil {
+		return nil, err
+	}
 	status := &ChannelHealthGateStatus{
 		Disabled:              cfg.Disabled(),
 		FailureThreshold:      cfg.FailureThreshold,
@@ -70,7 +73,7 @@ func channelHealthGateStatus(gate *biz.HealthGate, policy biz.HealthGatePolicy, 
 		}
 		status.Models = append(status.Models, model)
 	}
-	return status
+	return status, nil
 }
 
 func (r *mutationResolver) resetChannelHealthGate(ctx context.Context, channelID objects.GUID, actualModel *string) (bool, error) {
@@ -98,7 +101,11 @@ func (r *queryResolver) filterHealthGateAbnormal(ctx context.Context, input *biz
 		}
 		for _, ch := range channels {
 			resolve := r.healthGateConfigResolver(ctx, ch.ID)
-			for _, model := range gate.Snapshot(ch.ID, resolve) {
+			snapshots, err := gate.Snapshot(ctx, ch.ID, resolve)
+			if err != nil {
+				return err
+			}
+			for _, model := range snapshots {
 				if model.State == biz.HealthGateStateOpen || model.State == biz.HealthGateStateProbing || model.State == biz.HealthGateStateUnstable {
 					matching = append(matching, ch.ID)
 					break

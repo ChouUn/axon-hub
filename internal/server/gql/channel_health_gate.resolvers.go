@@ -17,7 +17,7 @@ func (r *channelResolver) HealthGate(ctx context.Context, obj *ent.Channel) (*Ch
 	if !canReadChannelHealthGate(ctx) {
 		return nil, nil
 	}
-	return channelHealthGateStatus(r.channelService.HealthGate(), r.healthGatePolicy(ctx), obj, r.healthGateConfigResolver(ctx, obj.ID)), nil
+	return channelHealthGateStatus(ctx, r.channelService.HealthGate(), r.healthGatePolicy(ctx), obj, r.healthGateConfigResolver(ctx, obj.ID))
 }
 
 // ResetChannelHealthGate is the resolver for the resetChannelHealthGate field.

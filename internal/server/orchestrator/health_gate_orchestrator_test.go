@@ -90,7 +90,7 @@ func TestHealthGateOrchestrator_OpensAndSkipsBrokenChannel(t *testing.T) {
 	}
 	require.Len(t, executor.requests, 5, "the opened first channel must be skipped on the third request")
 	cfg := biz.ResolveHealthGateConfig(orchestrator.SystemService.RetryPolicyOrDefault(processCtx).HealthGateOrDefault(), &biz.Channel{Channel: first})
-	view := gate.Inspect(biz.HealthGateKey{ChannelID: first.ID, ActualModel: "gpt-4"}, healthGateResolver(cfg))
+	view := healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: first.ID, ActualModel: "gpt-4"}, healthGateResolver(cfg))
 	require.Equal(t, biz.HealthGateStateOpen, view.State)
 }
 
@@ -115,7 +115,7 @@ func TestHealthGateOrchestrator_OwnerOpensDuringFailoverAndMigratesImmediately(t
 	require.NotNil(t, result.ChatCompletion)
 	require.Len(t, executor.requests, 2)
 	cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), &biz.Channel{Channel: primary})
-	require.Equal(t, biz.HealthGateStateOpen, gate.Inspect(biz.HealthGateKey{ChannelID: primary.ID, ActualModel: "gpt-4"}, healthGateResolver(cfg)).State)
+	require.Equal(t, biz.HealthGateStateOpen, healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: primary.ID, ActualModel: "gpt-4"}, healthGateResolver(cfg)).State)
 	owner, found, err := processor.RequestService.GetSessionOwner(processCtx, 20, 10)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -162,7 +162,7 @@ func TestHealthGateOrchestrator_NonStreamTimeoutCountsBeforeFailover(t *testing.
 	}
 	require.Len(t, executor.requests, 5, "after two timeouts the first channel must be gated")
 	cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), &biz.Channel{Channel: first})
-	require.Equal(t, biz.HealthGateStateOpen, gate.Inspect(biz.HealthGateKey{ChannelID: first.ID, ActualModel: "gpt-4"}, healthGateResolver(cfg)).State)
+	require.Equal(t, biz.HealthGateStateOpen, healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: first.ID, ActualModel: "gpt-4"}, healthGateResolver(cfg)).State)
 }
 
 func TestHealthGateOrchestrator_LastResortErrorContract(t *testing.T) {
@@ -204,7 +204,7 @@ func TestHealthGateOrchestrator_LastResortErrorContract(t *testing.T) {
 			if tc.expect503 {
 				expectedState = biz.HealthGateStateOpen
 			}
-			require.Equal(t, expectedState, gate.Inspect(biz.HealthGateKey{ChannelID: ch.ID, ActualModel: "gpt-4"}, healthGateResolver(cfg)).State)
+			require.Equal(t, expectedState, healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: ch.ID, ActualModel: "gpt-4"}, healthGateResolver(cfg)).State)
 		})
 	}
 }
@@ -227,7 +227,7 @@ func TestHealthGateOrchestrator_StreamAfterFirstTokenIsUnstable(t *testing.T) {
 	require.Error(t, result.ChatCompletionStream.Err())
 	require.NoError(t, result.ChatCompletionStream.Close())
 	cfg := biz.ResolveHealthGateConfig(processor.SystemService.RetryPolicyOrDefault(processCtx).HealthGateOrDefault(), &biz.Channel{Channel: ch})
-	snapshots := gate.Snapshot(ch.ID, healthGateResolver(cfg))
+	snapshots := healthGateSnapshot(t, gate, ch.ID, healthGateResolver(cfg))
 	require.Len(t, snapshots, 1)
 	require.Equal(t, 0, snapshots[0].ConsecutiveFailures)
 	require.Equal(t, biz.HealthGateStateUnstable, snapshots[0].State)
@@ -253,11 +253,11 @@ func TestHealthGateOrchestrator_BusyLastResortReturns503WithoutCounting(t *testi
 	cfg := biz.ResolveHealthGateConfig(processor.SystemService.RetryPolicyOrDefault(processCtx).HealthGateOrDefault(), &biz.Channel{Channel: ch})
 	key := biz.HealthGateKey{ChannelID: ch.ID, ActualModel: "gpt-4"}
 	for range 2 {
-		ticket, ok := gate.Begin(key, healthGateResolver(cfg), false, false)
+		ticket, ok := healthGateBegin(t, gate, key, healthGateResolver(cfg), false, false)
 		require.True(t, ok)
-		gate.Finish(ticket, healthGateResolver(cfg), biz.HealthGateOutcomeFailure, biz.HealthGateErrorInfo{StatusCode: 500})
+		healthGateFinish(t, gate, ticket, healthGateResolver(cfg), biz.HealthGateOutcomeFailure, biz.HealthGateErrorInfo{StatusCode: 500})
 	}
-	holder, ok := gate.Begin(key, healthGateResolver(cfg), false, true)
+	holder, ok := healthGateBegin(t, gate, key, healthGateResolver(cfg), false, true)
 	require.True(t, ok)
 	_, err := processor.Process(processCtx, buildTestRequest("gpt-4", "hello", false))
 	var responseErr *llm.ResponseError
@@ -265,8 +265,8 @@ func TestHealthGateOrchestrator_BusyLastResortReturns503WithoutCounting(t *testi
 	require.Equal(t, 503, responseErr.StatusCode)
 	require.Equal(t, "service_unavailable", responseErr.Detail.Code)
 	require.Empty(t, executor.requests)
-	require.Equal(t, 2, gate.Snapshot(ch.ID, healthGateResolver(cfg))[0].ConsecutiveFailures)
-	gate.Finish(holder, healthGateResolver(cfg), biz.HealthGateOutcomeNeutral, biz.HealthGateErrorInfo{})
+	require.Equal(t, 2, healthGateSnapshot(t, gate, ch.ID, healthGateResolver(cfg))[0].ConsecutiveFailures)
+	healthGateFinish(t, gate, holder, healthGateResolver(cfg), biz.HealthGateOutcomeNeutral, biz.HealthGateErrorInfo{})
 }
 
 func TestHealthGateOrchestrator_SameModelRetriesCountOnceAndModelSwitchFinishesPrevious(t *testing.T) {
@@ -288,8 +288,8 @@ func TestHealthGateOrchestrator_SameModelRetriesCountOnceAndModelSwitchFinishesP
 	require.NoError(t, tracker.finalize(ctx, nil, false))
 	cfg := biz.ResolveHealthGateConfig(policy, channel.Channel)
 	first := biz.HealthGateKey{ChannelID: channel.Channel.ID, ActualModel: "first"}
-	require.Equal(t, biz.HealthGateStateHealthy, gate.Inspect(first, healthGateResolver(cfg)).State)
-	require.Zero(t, gate.Snapshot(channel.Channel.ID, healthGateResolver(cfg))[0].ConsecutiveFailures)
+	require.Equal(t, biz.HealthGateStateHealthy, healthGateInspect(t, gate, first, healthGateResolver(cfg)).State)
+	require.Zero(t, healthGateSnapshot(t, gate, channel.Channel.ID, healthGateResolver(cfg))[0].ConsecutiveFailures)
 
 	tracker = withHealthGate(&PersistentOutboundTransformer{state: state}, gate, policy)
 	_, err = tracker.OnOutboundRawRequest(ctx, request)
@@ -299,7 +299,7 @@ func TestHealthGateOrchestrator_SameModelRetriesCountOnceAndModelSwitchFinishesP
 	_, err = tracker.OnOutboundRawRequest(ctx, request)
 
 	require.NoError(t, err)
-	require.Equal(t, biz.HealthGateStateOpen, gate.Inspect(first, healthGateResolver(cfg)).State)
+	require.Equal(t, biz.HealthGateStateOpen, healthGateInspect(t, gate, first, healthGateResolver(cfg)).State)
 	require.NoError(t, tracker.finalize(ctx, nil, false))
 }
 
@@ -316,7 +316,7 @@ func TestHealthGateOrchestrator_CanceledLastResortPreservesCancellation(t *testi
 	cancel()
 	require.ErrorIs(t, tracker.finalize(ctx, context.Canceled, false), context.Canceled)
 	cfg := biz.ResolveHealthGateConfig(biz.DefaultHealthGatePolicy(), candidate.Channel)
-	require.Equal(t, biz.HealthGateStateHealthy, gate.Inspect(biz.HealthGateKey{ChannelID: 1, ActualModel: "model"}, healthGateResolver(cfg)).State)
+	require.Equal(t, biz.HealthGateStateHealthy, healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: 1, ActualModel: "model"}, healthGateResolver(cfg)).State)
 }
 
 func TestHealthGateOrchestrator_DisablingThresholdInvalidatesInFlightTicket(t *testing.T) {
@@ -340,9 +340,9 @@ func TestHealthGateOrchestrator_DisablingThresholdInvalidatesInFlightTicket(t *t
 	require.Error(t, tracker.finalize(ctx, healthGateServerError(), false))
 	policy.HealthGate.FailureThreshold = 1
 	cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), candidate.Channel)
-	view := gate.Inspect(biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: "model"}, healthGateResolver(cfg))
+	view := healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: "model"}, healthGateResolver(cfg))
 	require.Equal(t, biz.HealthGateStateHealthy, view.State)
-	require.Zero(t, gate.Snapshot(candidate.Channel.ID, healthGateResolver(cfg))[0].ConsecutiveFailures)
+	require.Zero(t, healthGateSnapshot(t, gate, candidate.Channel.ID, healthGateResolver(cfg))[0].ConsecutiveFailures)
 }
 
 func TestHealthGateOrchestrator_OldDisabledSelectionCannotResetNewCycle(t *testing.T) {
@@ -375,7 +375,7 @@ func TestHealthGateOrchestrator_OldDisabledSelectionCannotResetNewCycle(t *testi
 	newTracker.OnOutboundRawError(ctx, healthGateServerError())
 	require.Error(t, newTracker.finalize(ctx, healthGateServerError(), false))
 	cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), candidate.Channel)
-	require.Equal(t, biz.HealthGateStateOpen, gate.Inspect(biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: "model"}, healthGateResolver(cfg)).State)
+	require.Equal(t, biz.HealthGateStateOpen, healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: "model"}, healthGateResolver(cfg)).State)
 }
 
 func TestHealthGateOrchestrator_StreamInternalTimeoutIsFailure(t *testing.T) {
@@ -393,5 +393,5 @@ func TestHealthGateOrchestrator_StreamInternalTimeoutIsFailure(t *testing.T) {
 	cancel(pipeline.ErrStreamFirstEventTimeout)
 	require.NoError(t, wrapper.Close())
 	cfg := biz.ResolveHealthGateConfig(policy, candidate.Channel)
-	require.Equal(t, biz.HealthGateStateOpen, gate.Inspect(biz.HealthGateKey{ChannelID: 1, ActualModel: "model"}, healthGateResolver(cfg)).State)
+	require.Equal(t, biz.HealthGateStateOpen, healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: 1, ActualModel: "model"}, healthGateResolver(cfg)).State)
 }

@@ -112,16 +112,16 @@ func TestHealthGateChannelServiceWebhookBridge(t *testing.T) {
 	key := HealthGateKey{ChannelID: ch.ID, ActualModel: "actual"}
 	policy := HealthGateConfig{FailureThreshold: 1, OpenDuration: time.Minute, MaxOpenDuration: time.Minute, ProbeSuccessThreshold: 1, UnstableWindow: time.Minute}
 	resolve := healthGateTestResolver(policy)
-	ticket, ok := gate.Begin(key, resolve, false, false)
+	ticket, ok := healthGateBegin(t, gate, key, resolve, false, false)
 	if !ok {
 		t.Fatal("initial attempt rejected")
 	}
-	gate.Finish(ticket, resolve, HealthGateOutcomeFailure, HealthGateErrorInfo{StatusCode: 503})
-	probe, ok := gate.Begin(key, resolve, false, true)
+	healthGateFinish(t, gate, ticket, resolve, HealthGateOutcomeFailure, HealthGateErrorInfo{StatusCode: 503})
+	probe, ok := healthGateBegin(t, gate, key, resolve, false, true)
 	if !ok {
 		t.Fatal("last-resort recovery probe rejected")
 	}
-	gate.Finish(probe, resolve, HealthGateOutcomeSuccess, HealthGateErrorInfo{})
+	healthGateFinish(t, gate, probe, resolve, HealthGateOutcomeSuccess, HealthGateErrorInfo{})
 
 	seen := make(map[string]bool)
 	for range 2 {

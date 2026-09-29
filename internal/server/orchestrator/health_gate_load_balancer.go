@@ -31,7 +31,7 @@ func currentHealthGateConfig(
 		}
 		currentPolicy := fallback
 		if provider != nil {
-			currentPolicy = provider.RetryPolicyOrDefault(context.WithoutCancel(ctx)).HealthGateOrDefault()
+			currentPolicy = provider.RetryPolicyOrDefault(ctx).HealthGateOrDefault()
 		}
 		return biz.ResolveHealthGateConfig(currentPolicy, currentChannel), true
 	}

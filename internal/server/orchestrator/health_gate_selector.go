@@ -63,7 +63,10 @@ func (s *LoadBalancedSelector) selectHealthGated(
 		cfg := currentHealthGateConfig(ctx, s.policy, channelService, candidate.Channel, policy.HealthGateOrDefault())
 		indices := make([]int, 0, len(candidate.Models))
 		for index, entry := range candidate.Models {
-			view := lb.healthGate.Inspect(biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: entry.ActualModel}, cfg)
+			view, err := lb.healthGate.Inspect(ctx, biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: entry.ActualModel}, cfg)
+			if err != nil {
+				return nil, err
+			}
 			combo := healthGateCombo(candidate, entry.ActualModel, view.State)
 			if ownerCandidate && decision.record.Owner.ActualModel == "" {
 				decision.record.Owner.ActualModel = combo.ActualModel

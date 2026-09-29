@@ -1,11 +1,14 @@
 package biz
 
 import (
+	"context"
 	"math"
 	"sort"
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"golang.org/x/sync/semaphore"
 )
 
 type HealthGateConfig struct {
@@ -139,7 +142,7 @@ type healthGateEntry struct {
 type HealthGate struct {
 	// Lock order: channel observation lock, then mu. Resolvers never run under mu.
 	obsMu             sync.Mutex
-	obsLocks          map[int]*sync.Mutex
+	obsLocks          map[int]*semaphore.Weighted
 	mu                sync.Mutex
 	entries           map[HealthGateKey]*healthGateEntry
 	nextProbeID       uint64
@@ -170,15 +173,15 @@ func (g *HealthGate) SetTransitionHandler(handler func(HealthGateTransition)) {
 	g.transitionHandler = handler
 }
 
-func (g *HealthGate) observationLock(channelID int) *sync.Mutex {
+func (g *HealthGate) observationLock(channelID int) *semaphore.Weighted {
 	g.obsMu.Lock()
 	defer g.obsMu.Unlock()
 	if g.obsLocks == nil {
-		g.obsLocks = make(map[int]*sync.Mutex)
+		g.obsLocks = make(map[int]*semaphore.Weighted)
 	}
 	lock := g.obsLocks[channelID]
 	if lock == nil {
-		lock = &sync.Mutex{}
+		lock = semaphore.NewWeighted(1)
 		g.obsLocks[channelID] = lock
 	}
 	return lock
@@ -231,11 +234,16 @@ func healthGateState(entry *healthGateEntry, cfg HealthGateConfig, now time.Time
 	return HealthGateStateHealthy
 }
 
-func (g *HealthGate) Inspect(key HealthGateKey, resolve HealthGateConfigResolver) HealthGateView {
+func (g *HealthGate) Inspect(ctx context.Context, key HealthGateKey, resolve HealthGateConfigResolver) (HealthGateView, error) {
 	observation := g.observationLock(key.ChannelID)
-	observation.Lock()
-	defer observation.Unlock()
+	if err := observation.Acquire(ctx, 1); err != nil {
+		return HealthGateView{}, err
+	}
+	defer observation.Release(1)
 	cfg, current := resolve()
+	if err := ctx.Err(); err != nil {
+		return HealthGateView{}, err
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	now := g.now()
@@ -244,7 +252,7 @@ func (g *HealthGate) Inspect(key HealthGateKey, resolve HealthGateConfigResolver
 		entry = g.observe(key, cfg, now, false)
 	}
 	if entry == nil || entry.disabled {
-		return HealthGateView{State: HealthGateStateHealthy}
+		return HealthGateView{State: HealthGateStateHealthy}, nil
 	}
 	stateCfg := cfg
 	if !current {
@@ -255,37 +263,42 @@ func (g *HealthGate) Inspect(key HealthGateKey, resolve HealthGateConfigResolver
 		view.OpenUntil = entry.openUntil
 		view.ProbeBusy = entry.probeHolder != 0
 	}
-	return view
+	return view, nil
 }
 
-func (g *HealthGate) Begin(key HealthGateKey, resolve HealthGateConfigResolver, allowProbe, lastResort bool) (HealthGateTicket, bool) {
+func (g *HealthGate) Begin(ctx context.Context, key HealthGateKey, resolve HealthGateConfigResolver, allowProbe, lastResort bool) (HealthGateTicket, bool, error) {
 	observation := g.observationLock(key.ChannelID)
-	observation.Lock()
-	defer observation.Unlock()
+	if err := observation.Acquire(ctx, 1); err != nil {
+		return HealthGateTicket{}, false, err
+	}
+	defer observation.Release(1)
 	cfg, current := resolve()
+	if err := ctx.Err(); err != nil {
+		return HealthGateTicket{}, false, err
+	}
 	if !current {
-		return HealthGateTicket{}, false
+		return HealthGateTicket{}, false, nil
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	now := g.now()
 	entry := g.observe(key, cfg, now, true)
 	if cfg.Disabled() {
-		return HealthGateTicket{key: key, noop: true}, true
+		return HealthGateTicket{key: key, noop: true}, true, nil
 	}
 	ticket := HealthGateTicket{key: key, gen: entry.gen, cfg: cfg}
 	switch healthGateState(entry, cfg, now) {
 	case HealthGateStateOpen:
 		if !lastResort || entry.probeHolder != 0 {
-			return HealthGateTicket{}, false
+			return HealthGateTicket{}, false, nil
 		}
 		entry.openUntil = now
 	case HealthGateStateProbing:
 		if (!allowProbe && !lastResort) || entry.probeHolder != 0 {
-			return HealthGateTicket{}, false
+			return HealthGateTicket{}, false, nil
 		}
 	default:
-		return ticket, true
+		return ticket, true, nil
 	}
 	g.nextProbeID++
 	if g.nextProbeID == 0 {
@@ -293,7 +306,7 @@ func (g *HealthGate) Begin(key HealthGateKey, resolve HealthGateConfigResolver, 
 	}
 	entry.probeHolder = g.nextProbeID
 	ticket.probeID = g.nextProbeID
-	return ticket, true
+	return ticket, true, nil
 }
 
 func healthGateOpenDuration(cfg HealthGateConfig, level int) time.Duration {
@@ -323,23 +336,31 @@ func healthGateRecordError(entry *healthGateEntry, now time.Time, info HealthGat
 	entry.lastErrorAt = now
 }
 
-func (g *HealthGate) Finish(t HealthGateTicket, resolve HealthGateConfigResolver, outcome HealthGateOutcome, info HealthGateErrorInfo) {
+func (g *HealthGate) Finish(ctx context.Context, t HealthGateTicket, resolve HealthGateConfigResolver, outcome HealthGateOutcome, info HealthGateErrorInfo) error {
 	observation := g.observationLock(t.key.ChannelID)
-	observation.Lock()
+	if err := observation.Acquire(ctx, 1); err != nil {
+		g.releaseProbe(t)
+		return err
+	}
 	cfg, current := resolve()
+	if err := ctx.Err(); err != nil {
+		observation.Release(1)
+		g.releaseProbe(t)
+		return err
+	}
 	g.mu.Lock()
 	var transition *HealthGateTransition
 	defer func() {
 		handler := g.transitionHandler
 		g.mu.Unlock()
-		observation.Unlock()
+		observation.Release(1)
 		if transition != nil && handler != nil {
 			handler(*transition)
 		}
 	}()
 	entry := g.entries[t.key]
 	if t.noop || entry == nil || entry.gen != t.gen {
-		return
+		return nil
 	}
 	now := g.now()
 	if current {
@@ -348,11 +369,11 @@ func (g *HealthGate) Finish(t HealthGateTicket, resolve HealthGateConfigResolver
 		cfg = t.cfg
 	}
 	if entry.disabled || entry.gen != t.gen {
-		return
+		return nil
 	}
 	if t.IsProbe() {
 		if entry.probeHolder != t.probeID {
-			return
+			return nil
 		}
 		entry.probeHolder = 0
 		switch outcome {
@@ -387,13 +408,13 @@ func (g *HealthGate) Finish(t HealthGateTicket, resolve HealthGateConfigResolver
 				healthGateRecordError(entry, now, info)
 			}
 		}
-		return
+		return nil
 	}
 	if entry.open {
 		if outcome == HealthGateOutcomeFailure || outcome == HealthGateOutcomeUnstable {
 			healthGateRecordError(entry, now, info)
 		}
-		return
+		return nil
 	}
 	switch outcome {
 	case HealthGateOutcomeSuccess:
@@ -424,13 +445,32 @@ func (g *HealthGate) Finish(t HealthGateTicket, resolve HealthGateConfigResolver
 		entry.lastUnstableAt = now
 		healthGateRecordError(entry, now, info)
 	}
+	return nil
 }
 
-func (g *HealthGate) Snapshot(channelID int, resolve HealthGateConfigResolver) []HealthGateModelSnapshot {
+// A timed-out finalization must release its own probe without waiting for
+// configuration I/O or changing a newer generation's state.
+func (g *HealthGate) releaseProbe(t HealthGateTicket) {
+	if !t.IsProbe() {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if entry := g.entries[t.key]; entry != nil && entry.gen == t.gen && entry.probeHolder == t.probeID {
+		entry.probeHolder = 0
+	}
+}
+
+func (g *HealthGate) Snapshot(ctx context.Context, channelID int, resolve HealthGateConfigResolver) ([]HealthGateModelSnapshot, error) {
 	observation := g.observationLock(channelID)
-	observation.Lock()
-	defer observation.Unlock()
+	if err := observation.Acquire(ctx, 1); err != nil {
+		return nil, err
+	}
+	defer observation.Release(1)
 	cfg, current := resolve()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	now := g.now()
@@ -470,7 +510,7 @@ func (g *HealthGate) Snapshot(channelID int, resolve HealthGateConfigResolver) [
 		snapshots = append(snapshots, snapshot)
 	}
 	sort.Slice(snapshots, func(i, j int) bool { return snapshots[i].ActualModel < snapshots[j].ActualModel })
-	return snapshots
+	return snapshots, nil
 }
 
 func (g *HealthGate) Reset(channelID int, actualModel string) {

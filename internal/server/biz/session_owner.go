@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"sync"
 	"time"
 
 	"github.com/eko/gocache/lib/v4/store"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/log"
@@ -22,12 +22,18 @@ const sessionOwnerTTL = 30 * time.Minute
 // sessions have existed; unrelated sessions may occasionally share a shard.
 // Shared-cache deployments require a distributed compare-and-swap for
 // cross-instance serialization.
-var ownerUpdateLockShards [256]sync.Mutex
+var ownerUpdateLockShards = func() [256]*semaphore.Weighted {
+	var locks [256]*semaphore.Weighted
+	for i := range locks {
+		locks[i] = semaphore.NewWeighted(1)
+	}
+	return locks
+}()
 
-func ownerUpdateLock(key string) *sync.Mutex {
+func ownerUpdateLock(key string) *semaphore.Weighted {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(key))
-	return &ownerUpdateLockShards[h.Sum32()%uint32(len(ownerUpdateLockShards))]
+	return ownerUpdateLockShards[h.Sum32()%uint32(len(ownerUpdateLockShards))]
 }
 
 // SessionOwner is the channel bound to a thread (or a standalone trace), plus
@@ -103,8 +109,11 @@ func (s *RequestService) UpdateSessionOwner(ctx context.Context, threadID, trace
 		return
 	}
 	mu := ownerUpdateLock(key)
-	mu.Lock()
-	defer mu.Unlock()
+	if err := mu.Acquire(ctx, 1); err != nil {
+		log.Warn(ctx, "session owner update canceled while waiting", log.Cause(err))
+		return
+	}
+	defer mu.Release(1)
 
 	current, found, err := s.GetSessionOwner(ctx, threadID, traceID)
 	if err != nil {
@@ -112,7 +121,7 @@ func (s *RequestService) UpdateSessionOwner(ctx context.Context, threadID, trace
 		return
 	}
 	next, write := update(current, found)
-	if !write || next.ChannelID <= 0 {
+	if !write || next.ChannelID <= 0 || ctx.Err() != nil {
 		return
 	}
 	if threadID > 0 {

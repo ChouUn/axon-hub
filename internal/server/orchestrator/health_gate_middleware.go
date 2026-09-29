@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
+
+	"github.com/looplj/axonhub/internal/log"
+	"github.com/looplj/axonhub/internal/pkg/xcontext"
 
 	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/llm"
@@ -47,9 +51,13 @@ func (m *healthGateAttemptTracker) finishActive(ctx context.Context) {
 	if !m.active {
 		return
 	}
+	ctx, cancel := xcontext.DetachWithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	state := m.outbound.state
 	resolve := currentHealthGateConfig(ctx, state.RetryPolicyProvider, state.ChannelService, m.channel, m.policy)
-	m.gate.Finish(m.ticket, resolve, m.lastOutcome, m.lastInfo)
+	if err := m.gate.Finish(ctx, m.ticket, resolve, m.lastOutcome, m.lastInfo); err != nil {
+		log.Warn(ctx, "failed to finalize health gate attempt", log.Cause(err))
+	}
 	m.active = false
 }
 
@@ -88,7 +96,10 @@ func (m *healthGateAttemptTracker) OnOutboundRawRequest(ctx context.Context, req
 	m.lastResort = lastResort
 	m.lastOutcome = biz.HealthGateOutcomeNeutral
 	m.lastInfo = biz.HealthGateErrorInfo{}
-	ticket, ok := m.gate.Begin(key, resolve, allowProbe, lastResort)
+	ticket, ok, err := m.gate.Begin(ctx, key, resolve, allowProbe, lastResort)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, errSkipCandidateByHealthGate
 	}

@@ -750,6 +750,26 @@ fork 改动，由用户决定。
 
 ## Bugfix Topics
 
+### 健康门控配置等待不可取消
+
+- 问题：`6298a0cb` 的配置 resolver 使用 `WithoutCancel`，且渠道观察锁在配置读取期间
+  持有；缓存/数据库阻塞时，请求取消不能退出，也会拖住同渠道其他模型的锁等待。
+- 行为：选路、请求准入和管理端状态读取沿用调用方 context；渠道观察锁改为可取消等待，
+  保留配置读取的串行顺序，避免旧配置覆盖新代次。取消后返回原 context 错误，不伪装成
+  渠道熔断或健康状态正常，也不应用失败读取产生的默认配置。
+- 收尾：尝试健康结果登记及会话/路由记录登记各使用独立 10 秒预算，允许客户端取消后
+  有界收尾；会话更新锁等待也遵守预算。健康结果登记超时只释放属于当前票据的探测占位，
+  不篡改新代次/新探测，不误记上游失败或恢复。
+- 代码：`internal/server/biz/health_gate.go`、`session_owner.go`、
+  `internal/server/orchestrator/health_gate_{load_balancer,selector,middleware,session}.go`、
+  `internal/server/gql/channel_health_gate.go` 及对应 resolver。
+- 验证：真实 SQLite 单连接池被占用时，配置读取在 120ms deadline 退出；同渠道另一模型
+  在 20ms deadline 退出锁等待，原请求退出后无需释放数据库连接即可继续读渠道状态。
+  biz/orchestrator/gql 完整测试及健康门控、会话归属三轮 race 检查通过。
+- 迁移：无 schema、data migration、GraphQL schema 或缓存序列化变化；测试调用迁移到
+  显式 context/error API，保留原健康状态机覆盖；无新增 fixture。
+- 同步上游：保留可取消观察顺序与代次校验；不能为退出超时直接漏掉探测占位释放。
+
 ### 透传预读队列循环等待
 
 - 问题：启用流式透传与重试时，首个有效内容前的空 thinking 或被转换器跳过的事件可填满
