@@ -54,6 +54,7 @@ type SelfUsageRequest struct {
 	Cost                *float64               `json:"cost,omitempty"`
 	CostItems           []*SelfUsageCostItem   `json:"costItems"`
 	CostMultiplier      *float64               `json:"costMultiplier,omitempty"`
+	CostMultiplierMixed bool                   `json:"costMultiplierMixed"`
 	UsageRecords        int                    `json:"usageRecords"`
 	UnpricedRecords     int                    `json:"unpricedRecords"`
 }

@@ -64,7 +64,7 @@ func toRequest(value biz.SelfUsageRequest) *SelfUsageRequest {
 		InputTokens: value.InputTokens, OutputTokens: value.OutputTokens,
 		CacheReadTokens: value.CacheReadTokens, CacheWriteTokens: value.CacheWriteTokens,
 		ReasoningTokens: value.ReasoningTokens, TotalTokens: value.TotalTokens,
-		Cost: value.Cost, CostItems: items, CostMultiplier: value.CostMultiplier,
+		Cost: value.Cost, CostItems: items, CostMultiplier: value.CostMultiplier, CostMultiplierMixed: value.CostMultiplierMixed,
 		UsageRecords: value.UsageRecords, UnpricedRecords: value.UnpricedRecords,
 	}
 }

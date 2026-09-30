@@ -54,13 +54,14 @@ func TestUsageLogCostPriceMultiplierBatchesVisibleRows(t *testing.T) {
 	ctx := context.WithValue(context.Background(), usagePriceLoaderKey{}, loader)
 	resolver := &usageLogResolver{Resolver: &Resolver{client: client}}
 	refs := []string{"legacy", "discount", "free", "missing-version", ""}
+	cost := 1.0
 	const rowCount = 30
 	results := make([]*decimal.Decimal, rowCount)
 	var group errgroup.Group
 	for i := range results {
 		i := i
 		group.Go(func() error {
-			value, err := resolver.CostPriceMultiplier(ctx, &ent.UsageLog{CostPriceReferenceID: refs[i%len(refs)]})
+			value, err := resolver.CostPriceMultiplier(ctx, &ent.UsageLog{CostPriceReferenceID: refs[i%len(refs)], TotalCost: &cost})
 			results[i] = value
 			return err
 		})
@@ -71,22 +72,25 @@ func TestUsageLogCostPriceMultiplierBatchesVisibleRows(t *testing.T) {
 	require.NoError(t, group.Wait())
 	for i, value := range results {
 		switch refs[i%len(refs)] {
-		case "legacy":
-			require.Equal(t, "1", value.String())
 		case "discount":
 			require.Equal(t, "0.5", value.String())
 		case "free":
 			require.Equal(t, "0", value.String())
 		default:
-			require.Nil(t, value, fmt.Sprintf("reference %q", refs[i%len(refs)]))
+			// Legacy snapshots, missing versions and unreferenced records were billed without a multiplier.
+			require.Equal(t, "1", value.String(), fmt.Sprintf("reference %q", refs[i%len(refs)]))
 		}
 	}
 	require.Equal(t, int64(1), queries.Load(), "all rows in one batch must share one version query")
 
-	again, err := resolver.CostPriceMultiplier(ctx, &ent.UsageLog{CostPriceReferenceID: "discount"})
+	again, err := resolver.CostPriceMultiplier(ctx, &ent.UsageLog{CostPriceReferenceID: "discount", TotalCost: &cost})
 	require.NoError(t, err)
 	require.Equal(t, "0.5", again.String())
 	require.Equal(t, int64(1), queries.Load(), "a resolved reference must not be queried again in the same operation")
+
+	unpriced, err := resolver.CostPriceMultiplier(ctx, &ent.UsageLog{CostPriceReferenceID: "discount"})
+	require.NoError(t, err)
+	require.Nil(t, unpriced, "an unpriced record has no multiplier")
 }
 
 func TestUsagePriceLoaderCallerCancellationDoesNotAffectSiblings(t *testing.T) {

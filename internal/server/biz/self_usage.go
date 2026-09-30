@@ -85,6 +85,7 @@ type SelfUsageRequest struct {
 	Cost                *float64
 	CostItems           []SelfUsageCostItem
 	CostMultiplier      *float64
+	CostMultiplierMixed bool
 	UsageRecords        int
 	UnpricedRecords     int
 }
@@ -441,6 +442,7 @@ func (s *SelfUsageService) Requests(ctx context.Context, start, end string, mode
 			row.RequestStatus = string(req.Status)
 			row.CostItems = costs[req.ID].items
 			row.CostMultiplier = costs[req.ID].multiplier
+			row.CostMultiplierMixed = costs[req.ID].multiplierMixed
 			switch req.Status {
 			case request.StatusCompleted:
 				row.Status = "SUCCESS"

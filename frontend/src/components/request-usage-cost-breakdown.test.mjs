@@ -3,7 +3,7 @@ import test from 'node:test';
 import { buildCostBreakdown } from './request-usage-cost-breakdown.ts';
 
 const item = (itemCode, quantity, subtotal, variant = null, tiers = []) => ({ itemCode, variant, quantity, subtotal, tiers });
-const breakdown = (items, multiplier = null) => ({ items, multiplier });
+const breakdown = (items, multiplier = 1) => ({ items, multiplier });
 
 test('orders known items and preserves other item order while omitting zero items', () => {
   const rows = buildCostBreakdown(4, breakdown([
@@ -22,10 +22,10 @@ test('unit price uses the stored subtotal per million tokens and is absent when 
   assert.equal(rows.items[1].unitPrice, null);
 });
 
-test('unknown and identity multipliers do not show a base; non-unit and zero multipliers do', () => {
-  for (const multiplier of [null, 1]) {
+test('every multiplier is kept; only a known multiplier other than 1 and 0 derives a base total', () => {
+  for (const multiplier of [1, 'mixed']) {
     const rows = buildCostBreakdown(2, breakdown([], multiplier));
-    assert.equal(rows.multiplier, null);
+    assert.equal(rows.multiplier, multiplier);
     assert.equal(rows.baseTotal, null);
     assert.equal(rows.total, 2);
   }

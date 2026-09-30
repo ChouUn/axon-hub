@@ -15,12 +15,21 @@ import (
 
 // CostPriceMultiplier is the resolver for the costPriceMultiplier field.
 func (r *usageLogResolver) CostPriceMultiplier(ctx context.Context, obj *ent.UsageLog) (*decimal.Decimal, error) {
-	if obj.CostPriceReferenceID == "" {
+	if obj.TotalCost == nil {
 		return nil, nil
+	}
+	// Records priced before price versions existed, or whose version is gone, were billed without a multiplier.
+	one := decimal.NewFromInt(1)
+	if obj.CostPriceReferenceID == "" {
+		return &one, nil
 	}
 	loader, ok := ctx.Value(usagePriceLoaderKey{}).(*usagePriceLoader)
 	if !ok {
 		return nil, fmt.Errorf("usage price loader unavailable")
 	}
-	return loader.load(ctx, obj.CostPriceReferenceID)
+	multiplier, err := loader.load(ctx, obj.CostPriceReferenceID)
+	if err != nil || multiplier != nil {
+		return multiplier, err
+	}
+	return &one, nil
 }

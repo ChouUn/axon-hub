@@ -8,7 +8,7 @@ export type CostBreakdownItem = {
 
 export type CostBreakdown = {
   items: CostBreakdownItem[];
-  multiplier: number | null;
+  multiplier: number | 'mixed';
   unpricedRecords?: number;
 };
 
@@ -33,11 +33,11 @@ export function buildCostBreakdown(total: number, breakdown: CostBreakdown) {
         : [],
     }))
     .sort((a, b) => (itemOrder[a.itemCode] ?? 4) - (itemOrder[b.itemCode] ?? 4));
-  const multiplier = breakdown.multiplier !== null && breakdown.multiplier !== 1 ? breakdown.multiplier : null;
+  const { multiplier } = breakdown;
   return {
     items,
     multiplier,
-    baseTotal: multiplier === null || multiplier === 0 ? null : total / multiplier,
+    baseTotal: typeof multiplier !== 'number' || multiplier === 1 || multiplier === 0 ? null : total / multiplier,
     total,
   };
 }

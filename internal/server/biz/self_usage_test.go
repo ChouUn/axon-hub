@@ -335,9 +335,15 @@ func TestSelfUsageRequestCostMergeAndMultiplier(t *testing.T) {
 	require.Equal(t, "completed", rows[uniform.ID].RequestStatus)
 	require.NotNil(t, rows[uniform.ID].CostMultiplier)
 	require.Equal(t, 2.0, *rows[uniform.ID].CostMultiplier)
+	require.False(t, rows[uniform.ID].CostMultiplierMixed)
 	require.Nil(t, rows[different.ID].CostMultiplier)
+	require.True(t, rows[different.ID].CostMultiplierMixed)
+	// A missing version counts as 1, which differs from the other record's 2.
 	require.Nil(t, rows[missing.ID].CostMultiplier)
-	require.Nil(t, rows[unreferenced.ID].CostMultiplier)
+	require.True(t, rows[missing.ID].CostMultiplierMixed)
+	require.NotNil(t, rows[unreferenced.ID].CostMultiplier)
+	require.Equal(t, 1.0, *rows[unreferenced.ID].CostMultiplier)
+	require.False(t, rows[unreferenced.ID].CostMultiplierMixed)
 	items := rows[uniform.ID].CostItems
 	require.Len(t, items, 5)
 	require.Equal(t, []string{"prompt_tokens", "completion_tokens", "prompt_write_cached_tokens", "prompt_write_cached_tokens", "prompt_write_cached_tokens"},

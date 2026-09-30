@@ -84,6 +84,7 @@ type ComplexityRoot struct {
 		Cost                func(childComplexity int) int
 		CostItems           func(childComplexity int) int
 		CostMultiplier      func(childComplexity int) int
+		CostMultiplierMixed func(childComplexity int) int
 		CreatedAt           func(childComplexity int) int
 		FirstTokenLatencyMs func(childComplexity int) int
 		ID                  func(childComplexity int) int
@@ -308,6 +309,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SelfUsageRequest.CostMultiplier(childComplexity), true
+	case "SelfUsageRequest.costMultiplierMixed":
+		if e.complexity.SelfUsageRequest.CostMultiplierMixed == nil {
+			break
+		}
+
+		return e.complexity.SelfUsageRequest.CostMultiplierMixed(childComplexity), true
 	case "SelfUsageRequest.createdAt":
 		if e.complexity.SelfUsageRequest.CreatedAt == nil {
 			break
@@ -1978,6 +1985,35 @@ func (ec *executionContext) fieldContext_SelfUsageRequest_costMultiplier(_ conte
 	return fc, nil
 }
 
+func (ec *executionContext) _SelfUsageRequest_costMultiplierMixed(ctx context.Context, field graphql.CollectedField, obj *SelfUsageRequest) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SelfUsageRequest_costMultiplierMixed,
+		func(ctx context.Context) (any, error) {
+			return obj.CostMultiplierMixed, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SelfUsageRequest_costMultiplierMixed(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SelfUsageRequest",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SelfUsageRequest_usageRecords(ctx context.Context, field graphql.CollectedField, obj *SelfUsageRequest) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -2094,6 +2130,8 @@ func (ec *executionContext) fieldContext_SelfUsageRequestPage_items(_ context.Co
 				return ec.fieldContext_SelfUsageRequest_costItems(ctx, field)
 			case "costMultiplier":
 				return ec.fieldContext_SelfUsageRequest_costMultiplier(ctx, field)
+			case "costMultiplierMixed":
+				return ec.fieldContext_SelfUsageRequest_costMultiplierMixed(ctx, field)
 			case "usageRecords":
 				return ec.fieldContext_SelfUsageRequest_usageRecords(ctx, field)
 			case "unpricedRecords":
@@ -4636,6 +4674,11 @@ func (ec *executionContext) _SelfUsageRequest(ctx context.Context, sel ast.Selec
 			}
 		case "costMultiplier":
 			out.Values[i] = ec._SelfUsageRequest_costMultiplier(ctx, field, obj)
+		case "costMultiplierMixed":
+			out.Values[i] = ec._SelfUsageRequest_costMultiplierMixed(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "usageRecords":
 			out.Values[i] = ec._SelfUsageRequest_usageRecords(ctx, field, obj)
 			if out.Values[i] == graphql.Null {

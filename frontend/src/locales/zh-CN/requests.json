@@ -44,6 +44,7 @@
   "requests.costBreakdown.above": "以上",
   "requests.costBreakdown.baseTotal": "基础合计",
   "requests.costBreakdown.multiplier": "倍率",
+  "requests.costBreakdown.mixed": "混合",
   "requests.costBreakdown.total": "合计",
   "requests.columns.unknown": "未知",
   "requests.columns.requestBody": "请求体",

@@ -44,6 +44,7 @@
   "requests.costBreakdown.above": "Above",
   "requests.costBreakdown.baseTotal": "Base total",
   "requests.costBreakdown.multiplier": "Multiplier",
+  "requests.costBreakdown.mixed": "Mixed",
   "requests.costBreakdown.total": "Total",
   "requests.columns.unknown": "Unknown",
   "requests.columns.requestBody": "Request Body",

@@ -27,8 +27,9 @@ type SelfUsageCostItem struct {
 }
 
 type selfUsageRequestCosts struct {
-	items      []SelfUsageCostItem
-	multiplier *float64
+	items           []SelfUsageCostItem
+	multiplier      *float64
+	multiplierMixed bool
 }
 
 type selfUsageCostKey struct {
@@ -78,7 +79,7 @@ func (s *SelfUsageService) loadRequestCosts(ctx context.Context, scope selfUsage
 	type aggregate struct {
 		items      map[selfUsageCostKey]*selfUsageMergedItem
 		multiplier *decimal.Decimal
-		invalid    bool
+		mixed      bool
 	}
 	byRequest := make(map[int]*aggregate, len(ids))
 	for _, log := range logs {
@@ -110,19 +111,21 @@ func (s *SelfUsageService) loadRequestCosts(ctx context.Context, scope selfUsage
 		if log.TotalCost == nil {
 			continue
 		}
+		// A missing reference or version means the record was billed without a multiplier.
 		multiplier, ok := multipliers[log.CostPriceReferenceID]
 		if !ok {
-			row.invalid = true
-		} else if row.multiplier == nil {
+			multiplier = decimal.NewFromInt(1)
+		}
+		if row.multiplier == nil {
 			row.multiplier = &multiplier
 		} else if !row.multiplier.Equal(multiplier) {
-			row.invalid = true
+			row.mixed = true
 		}
 	}
 	result := make(map[int]selfUsageRequestCosts, len(byRequest))
 	for requestID, row := range byRequest {
-		out := selfUsageRequestCosts{items: make([]SelfUsageCostItem, 0, len(row.items))}
-		if row.multiplier != nil && !row.invalid {
+		out := selfUsageRequestCosts{items: make([]SelfUsageCostItem, 0, len(row.items)), multiplierMixed: row.mixed}
+		if row.multiplier != nil && !row.mixed {
 			value, _ := row.multiplier.Float64()
 			out.multiplier = &value
 		}

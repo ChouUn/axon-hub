@@ -136,12 +136,10 @@ export function CostCell({ total, currencyCode, breakdown, emptyLabel = '—' }:
               ))}
             </div>
           ))}
-          {rows.multiplier !== null && (
-            <div className='space-y-1 border-t pt-2'>
-              {rows.baseTotal !== null && <div className='flex justify-between gap-4'><span>{t('requests.costBreakdown.baseTotal')}</span><span className='font-mono'>{money(rows.baseTotal, 6)}</span></div>}
-              <div className='flex justify-between gap-4'><span>{t('requests.costBreakdown.multiplier')}</span><span>×{rows.multiplier}</span></div>
-            </div>
-          )}
+          <div className='space-y-1 border-t pt-2'>
+            {rows.baseTotal !== null && <div className='flex justify-between gap-4'><span>{t('requests.costBreakdown.baseTotal')}</span><span className='font-mono'>{money(rows.baseTotal, 6)}</span></div>}
+            <div className='flex justify-between gap-4'><span>{t('requests.costBreakdown.multiplier')}</span><span>{rows.multiplier === 'mixed' ? t('requests.costBreakdown.mixed') : `×${rows.multiplier}`}</span></div>
+          </div>
           {(breakdown.unpricedRecords ?? 0) > 0 && <div className='text-background/75'>{t('selfUsage.cost.unpriced', { count: breakdown.unpricedRecords })}</div>}
           <div className='flex justify-between gap-4 border-t pt-2 font-semibold'>
             <span>{t('requests.costBreakdown.total')}</span>

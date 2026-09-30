@@ -63,6 +63,7 @@ type SelfUsageRequest {
   cost: Float
   costItems: [SelfUsageCostItem!]!
   costMultiplier: Float
+  costMultiplierMixed: Boolean!
   usageRecords: Int!
   unpricedRecords: Int!
 }
