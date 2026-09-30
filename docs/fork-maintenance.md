@@ -468,7 +468,8 @@ fork 改动，由用户决定。
 
 ### 请求成本明细悬浮
 
-- 状态：已实现。提交：`1c5509ae`（`feat(requests): 请求成本明细悬浮并对齐自助页请求日志`）。
+- 状态：已实现。提交：`1c5509ae`（`feat(requests): 请求成本明细悬浮并对齐自助页请求日志`）、`b61412dc`
+  （`fix(requests): 成本悬浮始终显示倍率`）。
 - 动机：管理端请求列表「成本」列与自助用量页请求日志只显示合计
   （`frontend/src/features/requests/components/requests-columns.tsx:521-542`、
   `frontend/src/features/self-usage/index.tsx:464-466`），看不出由哪几项、按什么单价、是否乘了倍率构成；
@@ -485,6 +486,8 @@ fork 改动，由用户决定。
     用量日志页、自助页汇总卡、趋势与按模型统计不在本 topic。
   - D2 管理端内容：分项、折算单价、阶梯与倍率。
   - D3 自助页内容：与管理端完全一致，含基础合计与倍率（用户确认，不采用 CCH 的隐藏做法）。
+  - D4 倍率始终显示：已定价的悬浮一律列倍率行，1 倍也显示「×1」，与其他倍率对齐；自助页合并记录的倍率不一致时
+    显示「混合」。取代原「倍率为 1 或查不到时不列倍率行」的做法。
 - 规则：
   - R1 分项来源：只读已落库的 `usage_logs.cost_items`，不按当前价格重算。顺序为输入、输出、读缓存、
     写缓存（有 5m / 1h 变体时分行标注）、其他项（显示项目代码原名）；只列数量或金额大于 0 的项。
@@ -492,13 +495,15 @@ fork 改动，由用户决定。
     保留 2 至 6 位小数，使 0.0028 这类低单价不被舍为 0；数量为 0 时不显示单价）；`tierBreakdown` 多于一段时
     逐段列出区间上限、数量与金额。
   - R3 倍率：取用量记录 `cost_price_reference_id` 对应价格版本（`channel_model_price_versions.reference_id`）
-    的 `price.multiplier`，缺省按 1。倍率不为 1 时，先列基础合计（合计 ÷ 倍率）与倍率，再以删除线基础合计
-    对比最终合计；各项金额为已含倍率的落库金额。倍率为 0 时只列倍率与合计，不列基础合计。无价格引用或
-    价格版本已不存在时不列倍率行。
+    的 `price.multiplier`，缺省按 1。无价格引用（引用上线前的记录）或价格版本已不存在时同样按 1：计费当时不存在倍率，
+    实际按 1 倍计费；代码只归档、不删除价格版本。未定价记录（`total_cost` 为空）不返回倍率。悬浮始终列倍率行；
+    倍率不为 1 时先列基础合计（合计 ÷ 倍率），再以删除线基础合计对比最终合计；各项金额为已含倍率的落库金额。
+    倍率为 0 时只列倍率与合计，不列基础合计。
   - R4 合计：悬浮末行合计与单元格数值一致。合计为空（未定价）的单元格显示「-」且无悬浮；自助页部分
     未定价时悬浮末尾标注未定价记录数。
   - R5 多条用量记录：管理端列表沿用上游只取第一条用量记录（`usageLogs(first: 1)`）；自助页一行汇总该请求
-    全部用量记录，分项按项目代码与变体合并数量和金额，各记录倍率一致时列倍率，不一致时不列倍率与基础合计。
+    全部用量记录，分项按项目代码与变体合并数量和金额；各已定价记录倍率一致时列该倍率，不一致时倍率显示「混合」
+    （`SelfUsageRequest.costMultiplierMixed`），不列基础合计。
   - R6 可见性：管理端倍率随用量记录一并返回，可见成本即可见倍率，不额外要求渠道读取权限；自助页沿用
     「API Key 自助用量页」R2 的 Key 隔离。
 - 代码：
@@ -518,11 +523,12 @@ fork 改动，由用户决定。
     `frontend/src/locales/{en,zh-CN}/selfUsage.json`、`docs/{zh,en}/guides/self-usage.md`。
 - 迁移：无 schema migration、data migration 与缓存键变化；已重新生成 `internal/server/gql` 与
   `internal/server/gql/selfusage` 的 gqlgen 代码。
-- 测试：`internal/server/biz/self_usage_test.go`（多条用量记录分项合并、倍率一致 / 不一致 / 版本缺失、
-  未定价记录不参与倍率判定、其他 Key 的用量不出现）、`internal/server/gql/usage_cost_test.go`（历史价格版本倍率、
-  无引用返回 null、同批多行只发一次版本查询且同操作内不重复查询、一个字段取消不影响同批其他字段、未设变体返回 null；
-  批次窗口由测试手动关闭，不依赖调度时机）、
-  `frontend/src/components/request-usage-cost-breakdown.test.mjs`（排序与零值跳过、折算单价、倍率 null / 1 / 2 / 0、阶梯）。
+- 测试：`internal/server/biz/self_usage_test.go`（多条用量记录分项合并、倍率一致 / 不一致为混合 / 版本缺失按 1 参与判定、
+  无引用按 1、未定价记录不参与倍率判定、其他 Key 的用量不出现）、`internal/server/gql/usage_cost_test.go`（历史价格版本
+  倍率、无引用与版本缺失返回 1、未定价返回 null、同批多行只发一次版本查询且同操作内不重复查询、一个字段取消不影响
+  同批其他字段、未设变体返回 null；批次窗口由测试手动关闭，不依赖调度时机）、
+  `frontend/src/components/request-usage-cost-breakdown.test.mjs`（排序与零值跳过、折算单价、倍率 1 / 混合 / 2 / 0 的
+  基础合计、阶梯）。
 - 同步上游注意：上游若调整请求列表的 Token、缓存、成本、耗时列或 `CostItem` 类型，需同步到共享组件与
   `cost.graphql`；`graphql.go` 的 `AroundOperations` 注入与上游已有的操作钩子并列。
 
