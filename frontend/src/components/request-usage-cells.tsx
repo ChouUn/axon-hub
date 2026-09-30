@@ -137,13 +137,13 @@ export function CostCell({ total, currencyCode, breakdown, emptyLabel = '—' }:
             </div>
           ))}
           <div className='space-y-1 border-t pt-2'>
-            {rows.baseTotal !== null && <div className='flex justify-between gap-4'><span>{t('requests.costBreakdown.baseTotal')}</span><span className='font-mono'>{money(rows.baseTotal, 6)}</span></div>}
+            <div className='flex justify-between gap-4'><span>{t('requests.costBreakdown.baseTotal')}</span><span className='font-mono'>{rows.baseTotal === null ? '-' : money(rows.baseTotal, 6)}</span></div>
             <div className='flex justify-between gap-4'><span>{t('requests.costBreakdown.multiplier')}</span><span>{rows.multiplier === 'mixed' ? t('requests.costBreakdown.mixed') : `×${rows.multiplier}`}</span></div>
           </div>
           {(breakdown.unpricedRecords ?? 0) > 0 && <div className='text-background/75'>{t('selfUsage.cost.unpriced', { count: breakdown.unpricedRecords })}</div>}
           <div className='flex justify-between gap-4 border-t pt-2 font-semibold'>
             <span>{t('requests.costBreakdown.total')}</span>
-            <span className='font-mono'>{rows.baseTotal !== null && <span className='text-background/75 mr-2 line-through'>{money(rows.baseTotal, 6)}</span>}{amount}</span>
+            <span className='font-mono'>{amount}</span>
           </div>
         </div>
       </TooltipContent>

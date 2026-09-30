@@ -37,7 +37,7 @@ export function buildCostBreakdown(total: number, breakdown: CostBreakdown) {
   return {
     items,
     multiplier,
-    baseTotal: typeof multiplier !== 'number' || multiplier === 1 || multiplier === 0 ? null : total / multiplier,
+    baseTotal: typeof multiplier === 'number' && multiplier !== 0 ? total / multiplier : null,
     total,
   };
 }

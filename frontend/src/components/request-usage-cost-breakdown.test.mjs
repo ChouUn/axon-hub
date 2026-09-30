@@ -22,21 +22,19 @@ test('unit price uses the stored subtotal per million tokens and is absent when 
   assert.equal(rows.items[1].unitPrice, null);
 });
 
-test('every multiplier is kept; only a known multiplier other than 1 and 0 derives a base total', () => {
-  for (const multiplier of [1, 'mixed']) {
+test('base total derives from every known nonzero multiplier, including 1', () => {
+  const cases = [[1, 2], [2, 1], [0.5, 4]];
+  for (const [multiplier, baseTotal] of cases) {
     const rows = buildCostBreakdown(2, breakdown([], multiplier));
     assert.equal(rows.multiplier, multiplier);
-    assert.equal(rows.baseTotal, null);
+    assert.equal(rows.baseTotal, baseTotal);
     assert.equal(rows.total, 2);
   }
-  assert.deepEqual(
-    (({ multiplier, baseTotal, total }) => ({ multiplier, baseTotal, total }))(buildCostBreakdown(2, breakdown([], 2))),
-    { multiplier: 2, baseTotal: 1, total: 2 }
-  );
-  const free = buildCostBreakdown(0, breakdown([], 0));
-  assert.equal(free.multiplier, 0);
-  assert.equal(free.baseTotal, null);
-  assert.equal(free.total, 0);
+  for (const [total, multiplier] of [[0, 0], [2, 'mixed']]) {
+    const rows = buildCostBreakdown(total, breakdown([], multiplier));
+    assert.equal(rows.multiplier, multiplier);
+    assert.equal(rows.baseTotal, null);
+  }
 });
 
 test('only multi-segment tiers receive display rows and per-tier unit prices', () => {
