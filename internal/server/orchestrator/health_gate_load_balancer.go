@@ -12,6 +12,31 @@ func (lb *LoadBalancer) WithHealthGate(gate *biz.HealthGate) *LoadBalancer {
 	return lb
 }
 
+// compareHealthGateWeightTiers keeps hard rejections behind available channels
+// before applying explicit weight tiers. Exhausted quota scores use the same
+// hard-unavailable threshold. Soft quota warnings only affect scores within a
+// weight tier; they do not override an explicit higher weight.
+func compareHealthGateWeightTiers(a *biz.Channel, aScore float64, b *biz.Channel, bScore float64) int {
+	aUnavailable := isHardUnavailableScore(aScore)
+	bUnavailable := isHardUnavailableScore(bScore)
+	if aUnavailable != bUnavailable {
+		if aUnavailable {
+			return 1
+		}
+		return -1
+	}
+
+	if a != nil && b != nil {
+		if a.OrderingWeight > b.OrderingWeight {
+			return -1
+		} else if a.OrderingWeight < b.OrderingWeight {
+			return 1
+		}
+	}
+
+	return 0
+}
+
 // Resolve against current settings, not the candidate snapshot: a delayed
 // request must never roll back a newer health-gate configuration cycle.
 func currentHealthGateConfig(

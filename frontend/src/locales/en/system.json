@@ -164,7 +164,7 @@
   "system.retry.loadBalancerStrategy.documentation.failover": "Orders channels by weight. Automatically switches to the next available channel upon failure.",
   "system.retry.loadBalancerStrategy.documentation.circuit-breaker": "Model Circuit Breaker. Tracks health per channel-model combination to isolate failures. Falls back to weight when a channel is healthy.",
   "system.retry.loadBalancerStrategy.documentation.round-robin": "Rotates channels by historical request count so less-used channels are selected first. Channels with 3 recent consecutive failures are skipped behind healthy round-robin candidates.",
-  "system.retry.loadBalancerStrategy.documentation.health-gated": "Tracks circuit health per channel and actual upstream model. Broken combinations are skipped; real requests from new sessions probe recovery. If every combination is broken, one last attempt is made and a counted failure returns 503.",
+  "system.retry.loadBalancerStrategy.documentation.health-gated": "Tracks circuit health per channel and upstream model. Within each model association priority, available channels are ordered by descending weight; historical performance breaks equal-weight ties. Sessions retain ownership only during the cache protection window and reselect after expiry. New sessions can immediately use a new higher-weight channel. If all combinations are broken, one last attempt is made; a counted failure returns 503.",
   "system.retry.healthGate.title": "Health gate",
   "system.retry.healthGate.description": "Circuit breaking is active only for health-gated routing. A failure threshold of 0 disables it globally.",
   "system.retry.healthGate.failureThreshold": "Consecutive failures (N; 0 disables)",

@@ -115,8 +115,9 @@ fork 改动，由用户决定。
   - D4 单机部署：健康状态只存进程内存，不做跨实例共享，重启后清零。
   - D5 统计范围：只统计走 `health-gated` 策略的流量；其他策略的请求不产生、不改变
     健康状态，保证管理端看到的熔断即实际生效的熔断。
-  - D6 健康候选排序：沿用 `adaptive` 的组成去掉 ErrorAware，即 WeightRoundRobin、
-    LatencyAware、RateLimitAware、QuotaAware（`internal/server/orchestrator/orchestrator.go:53-59`）。
+  - D6 健康候选排序（会话产品行为修订）：模型关联优先级分组保持小值先；组内硬不可用
+    候选后置，可用候选按渠道 OrderingWeight 大值先。WeightRoundRobin、LatencyAware、
+    RateLimitAware、QuotaAware 综合分仅在同权重内排序，避免旧渠道历史样本压过新增高权重渠道。
   - D7 现有 `circuit-breaker` 策略及其熔断器保留原样，不改动、不复用其实例。
 - 健康状态规则：
   - R1 状态：健康、不稳、熔断、试探。熔断与试探是互斥且优先的门控状态；仅在非熔断、
@@ -225,9 +226,9 @@ fork 改动，由用户决定。
   （`src/drizzle/schema.ts:571-575`）；Webhook 参考 CCH 开闸告警。
 - 业务场景（用户确认）：会话不因单次波动在渠道间来回切换，也不长期停在失败渠道上。
 - 已确认决策：
-  - D1 不迁回，原渠道恢复后已迁走的会话留在新渠道，缓存成本优先。
-  - D2 切换到 `health-gated` 时沿用旧粘性记录：新归属记录缺失时读取一次旧渠道记录作为归属，
-    连续转移计数从 0 开始；旧记录只含渠道且在尝试前写入，可能指向失败渠道，由 R3/R4 纠正。
+  - D1 有效缓存保护窗口内不主动迁回，窗口过期后按当前健康候选与权重重新选择。
+  - D2 会话产品行为修订后废止旧键种子：v2 归属必须有明确有效截止时间；缺失、过期或无
+    截止时间的记录均按新会话处理，不再从旧 v1/previous-channel 记录恢复归属。
   - D3 K 为系统级参数，放在重试策略的健康门控参数中，不提供渠道覆盖。
   - D4 决策记录包含：请求开始时的归属渠道×模型、因熔断被跳过的渠道×模型、是否临时转移、
     是否最后一试、本次是否迁移（迁出、迁入与原因：归属熔断或连续 K 次转移）。
@@ -236,13 +237,16 @@ fork 改动，由用户决定。
   - R1 会话主键：有 thread 时，归属与连续转移计数只以 thread 缓存为权威，选路不读取、不被
     任何 trace 旧值覆盖（现有选路 trace 优先，`internal/server/orchestrator/candidates.go:749-776`，
     `health-gated` 下需改为 thread 优先）；没有 thread 时才用 trace。成功提交迁移时同步改写
-    当前 trace 的归属，仅用于一致性与展示，不是 thread 归属生效的前提。归属缓存失效（30 分钟，
-    每次成功提交续期）即视为新会话，不回退使用旧 trace 归属；D1 的不迁回只在归属有效期内保证。
+    当前 trace 的归属，仅用于一致性与展示，不是 thread 归属生效的前提。归属保护窗口默认
+    5 分钟，最终出站 Anthropic 请求含合法 1 小时缓存断点时为 1 小时；窗口结束按新会话处理。
+    只有原归属自身成功或实际迁移才续期，临时故障转移只更新计数，不续期旧归属。
+    该窗口依据请求声明，不代表已确认上游命中；D1 不迁回只在有效窗口内保证。
     归属以渠道为单位，「归属渠道×模型」指归属渠道上本次请求选用的上游实际模型。仅在
     `prefer_previous_channel` 粘性模式下生效；粘性关闭时不读写归属。
   - R2 归属只在请求成功时写入，失败尝试不改写。提交时以会话当前归属为准重新计算（按会话主键进程内串行），
     同一会话并发请求中晚完成者不得把已迁移的归属写回旧渠道；多实例共享缓存时不保证跨实例串行。
-  - R3 单次故障转移：由备用渠道完成本次请求，归属不变，下个请求仍回归属渠道。
+  - R3 单次故障转移：由备用渠道完成本次请求，归属不变且不续期；下个请求仅在保护窗口
+    仍有效时回归属渠道，过期后重新选择。
   - R4 迁移条件：本次请求结束时归属渠道×模型处于熔断或试探（未获本次准入，含本次请求自身触发的熔断），或同一会话连续 K 次
     请求都需故障转移才完成；归属渠道不在本次候选中也按故障转移计数。迁往完成该次请求的渠道，
     计数清零。归属渠道直接成功时连续转移计数清零；请求整体失败或客户端取消时计数不变。
@@ -274,12 +278,13 @@ fork 改动，由用户决定。
   `frontend/src/features/system/components/{retry-settings,webhook-settings}.tsx`、`frontend/src/features/system/data/system.ts`、
   `frontend/src/locales/`；用户文档 `docs/{zh,en}/guides/load-balance.md`。
 - 迁移：请求表新增可空 JSON 列 `routing_decision`，由 ent 自动迁移，无 data migration。
-  归属使用新缓存键 `axonhub:routing:session-owner:v1:{thread|trace}:%d`，值为
-  `{channel_id, consecutive_failovers}`；不改动旧 `previous-channel:v1` 键的值形状
-  （`.agent/rules/cache-compat.md`）。`health-gated` 下不在尝试前写旧键，成功提交归属时同步写
-  旧键与新键（同一 TTL），便于切回其他策略时保持粘性。
-- 测试与 fixture：`internal/server/biz/session_owner_test.go`（thread 权威、D2 旧键种子、新旧键同写与 TTL、
-  缓存读错误、决策读写）、`internal/server/biz/health_gate_test.go`（只在首次熔断与恢复产生转移、回调锁外可重入）、
+  归属缓存升级为 `axonhub:routing:session-owner:v2:{thread|trace}:%d`，新增明确截止时间；
+  不读取缺乏可证明有效期的 v1/previous-channel 记录。首次升级后原会话重新选路一次，
+  避免继承已无缓存收益的旧黏性。旧 `previous-channel:v1` 保持整数值形状，供其他策略使用，
+  不作为健康门控恢复归属的来源。无新增 schema/data migration。
+- 测试与 fixture：`internal/server/biz/session_owner_test.go`（thread 权威、过期与旧值拒绝、
+  显式截止时间、活跃续期与临时转移不续期、缓存读错误、决策读写）、
+  `internal/server/biz/health_gate_test.go`（只在首次熔断与恢复产生转移、回调锁外可重入）、
   `internal/server/biz/health_gate_notify_test.go`（事件订阅匹配、渲染字段、异步桥接）、
   `internal/server/orchestrator/health_gate_session_test.go`（单次转移保留归属、连续 K 次迁移、归属熔断立即迁移、
   归属成功清零、失败与取消不写、流式仅完成后提交、粘性关闭不读写）、
@@ -755,6 +760,29 @@ fork 改动，由用户决定。
 - 已知差异：无。内嵌快照已随上游更新。
 
 ## Bugfix Topics
+
+### 健康门控新增渠道与会话重选
+
+- 问题：健康门控直接复用自适应综合评分时，即使新会话没有归属，权重 10 的旧渠道也可
+  因历史延迟分数胜过权重 15 的新渠道。旧会话则固定成功续期 30 分钟，包括临时转移到
+  别的渠道的成功；这与短缓存失效后按新配置重选的预期不一致。
+- 修正规则：健康过滤及模型关联优先级保留；仅健康门控组内排序改为硬可用性、渠道权重、
+  同权重综合评分依次比较。原会话只在明确的缓存保护期内优先，期满作为新会话重选。
+  具体租期、升级与故障迁移规则已同步到前述健康门控 feature topic。
+- 用户场景覆盖：只有旧渠道 10 → 新增 15 → 全新 thread 选 15；有效旧会话保持 10；
+  默认窗口内成功可续期，空闲 6 分钟或 31 分钟后选 15；合法 1 小时声明仍有效时保持 10。
+  覆盖跳过故障/硬不可用渠道、同权重分配、调试与生产排序一致、其他策略不变。
+- 验证：相同新会话测试用修复前 `load_balancer.go` overlay，生产与调试路径均出现
+  expected 15 / actual 10；修复后通过。biz/orchestrator/gql 完整测试及归属/健康门控
+  三轮 race 检查通过。空闲通过显式绝对截止时间推进，旧 30 分钟物理过期另用 Redis
+  模拟时钟验证，不依赖长时间 sleep。
+- 代码：`internal/server/orchestrator/load_balancer.go`、`health_gate_load_balancer.go`、
+  `health_gate_session.go`、`outbound.go`、`internal/server/biz/session_owner.go`。
+- 兼容：v2 会话键不导入旧无截止时间记录，升级后旧会话重新选路一次；其他策略的
+  `previous-channel:v1` 整数记录保留原形状。无 schema/data migration；无新增 fixture。
+  两级缓存配置下，健康门控归属单独使用 Redis 权威读写（未配置 Redis 则内存），避免
+  异步 L2→L1 回填把旧归属覆盖到已迁移的新归属；其他策略缓存模式不变。
+- 文档与界面：更新中英文负载均衡指南及系统策略说明，区分权重、关联优先级与有效期黏性。
 
 ### 健康门控配置等待不可取消
 

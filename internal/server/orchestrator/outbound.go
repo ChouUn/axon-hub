@@ -849,6 +849,10 @@ func finalizeTransportRequest(p *PersistentOutboundTransformer) pipeline.Middlew
 			return request, nil
 		}
 
-		return finalizer.FinalizeTransportRequest(request), nil
+		request = finalizer.FinalizeTransportRequest(request)
+		if p.state != nil {
+			p.state.RawProviderRequest = request
+		}
+		return request, nil
 	})
 }

@@ -57,7 +57,7 @@ func NewRequestService(
 		DataStorageService:   dataStorageService,
 		LiveStreamRegistry:   liveStreamRegistry,
 		previousChannelCache: xcache.NewFromConfig[int](cacheConfig),
-		sessionOwnerCache:    xcache.NewFromConfig[SessionOwner](cacheConfig),
+		sessionOwnerCache:    newSessionOwnerCache(cacheConfig),
 	}
 }
 

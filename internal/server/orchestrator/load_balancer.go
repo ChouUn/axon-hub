@@ -251,33 +251,9 @@ func (lb *LoadBalancer) sortProduction(
 	}
 
 	// Use partial sort to efficiently get top k candidates
-	// Sort by total score descending (higher score = higher priority)
-	// When scores are equal, use OrderingWeight as tie-breaker (higher weight = higher priority)
-	// Do NOT use channel ID as tie-breaker to avoid deterministic ordering that causes uneven distribution
+	// Health-gated candidates use weight tiers; other balancers remain score-first.
 	partial.SortFunc(scored, sortK, func(a, b candidateScore) int {
-		if a.score > b.score {
-			return -1
-		} else if a.score < b.score {
-			return 1
-		}
-
-		if lb.weightTieBreaker && a.candidate != nil && b.candidate != nil && a.candidate.Channel != nil && b.candidate.Channel != nil {
-			if a.candidate.Channel.OrderingWeight > b.candidate.Channel.OrderingWeight {
-				return -1
-			} else if a.candidate.Channel.OrderingWeight < b.candidate.Channel.OrderingWeight {
-				return 1
-			}
-		}
-
-		if !lb.weightTieBreaker {
-			if a.index < b.index {
-				return -1
-			} else if a.index > b.index {
-				return 1
-			}
-		}
-
-		return 0
+		return lb.compareCandidateScores(a.candidate.Channel, a.score, a.index, b.candidate.Channel, b.score, b.index)
 	})
 
 	selected := scored[:sortK]
@@ -331,6 +307,39 @@ func isHardUnavailableScore(score float64) bool {
 	return score <= rateLimitExhaustedScore/2
 }
 
+// compareCandidateScores compares candidates within one association-priority group.
+func (lb *LoadBalancer) compareCandidateScores(a *biz.Channel, aScore float64, aIndex int, b *biz.Channel, bScore float64, bIndex int) int {
+	if lb.healthGate != nil {
+		if order := compareHealthGateWeightTiers(a, aScore, b, bScore); order != 0 {
+			return order
+		}
+	}
+
+	if aScore > bScore {
+		return -1
+	} else if aScore < bScore {
+		return 1
+	}
+
+	if lb.weightTieBreaker && a != nil && b != nil {
+		if a.OrderingWeight > b.OrderingWeight {
+			return -1
+		} else if a.OrderingWeight < b.OrderingWeight {
+			return 1
+		}
+	}
+
+	if !lb.weightTieBreaker {
+		if aIndex < bIndex {
+			return -1
+		} else if aIndex > bIndex {
+			return 1
+		}
+	}
+
+	return 0
+}
+
 // sortWithDebug is the debug path with detailed logging.
 // Uses partial sorting to efficiently get only the top k candidates.
 func (lb *LoadBalancer) sortWithDebug(
@@ -367,38 +376,14 @@ func (lb *LoadBalancer) sortWithDebug(
 	}
 
 	// Use partial sort to efficiently get top k candidates
-	// Sort by total score descending (higher score = higher priority)
-	// When scores are equal, use OrderingWeight as tie-breaker (higher weight = higher priority)
-	// Do NOT use channel ID as tie-breaker to avoid deterministic ordering that causes uneven distribution
+	// Use the same comparison as production so debug cannot change routing.
 	sortK := topK
 	if lb.roundRobinHealthFilter != nil {
 		sortK = len(decisions)
 	}
 
 	partial.SortFunc(decisions, sortK, func(a, b ChannelDecision) int {
-		if a.TotalScore > b.TotalScore {
-			return -1
-		} else if a.TotalScore < b.TotalScore {
-			return 1
-		}
-
-		if lb.weightTieBreaker && a.Channel != nil && b.Channel != nil {
-			if a.Channel.OrderingWeight > b.Channel.OrderingWeight {
-				return -1
-			} else if a.Channel.OrderingWeight < b.Channel.OrderingWeight {
-				return 1
-			}
-		}
-
-		if !lb.weightTieBreaker {
-			if a.OriginalIndex < b.OriginalIndex {
-				return -1
-			} else if a.OriginalIndex > b.OriginalIndex {
-				return 1
-			}
-		}
-
-		return 0
+		return lb.compareCandidateScores(a.Channel, a.TotalScore, a.OriginalIndex, b.Channel, b.TotalScore, b.OriginalIndex)
 	})
 
 	selected := decisions[:sortK]

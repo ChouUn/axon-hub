@@ -154,20 +154,48 @@ func (m *healthGateAttemptTracker) finishSession(ctx context.Context, successful
 	record.LastResort = m.lastResort || record.LastResort
 	if successful && m.channel != nil && d.sticky && state.RequestService != nil && (d.threadID != 0 || d.traceID != 0) {
 		success := healthGateCombo(state.CurrentCandidate, m.key.ActualModel, "")
+		// This is the protection window declared by the final upstream request,
+		// after overrides; it does not imply an upstream cache hit.
+		ttl := sessionOwnerProtectionTTL(state.RawProviderRequest)
 		state.RequestService.UpdateSessionOwner(ctx, d.threadID, d.traceID, func(current biz.SessionOwner, found bool) (biz.SessionOwner, bool) {
-			if !found {
-				record.ConsecutiveFailovers = 0
-				return biz.SessionOwner{ChannelID: success.ChannelID}, true
+			record.ConsecutiveFailovers = 0
+			if found {
+				record.ConsecutiveFailovers = current.ConsecutiveFailovers
 			}
-			record.ConsecutiveFailovers = current.ConsecutiveFailovers
+			if d.found && found && !current.Generation.Equal(d.owner.Generation) {
+				return current, false
+			}
+			if !d.found && found && current.ChannelID != success.ChannelID {
+				// Concurrent fresh requests may select different channels. The
+				// first completed binding wins; a late fresh success is not a
+				// failover from an owner it never selected.
+				return current, false
+			}
+			if !found && d.found {
+				// The selected lease expired while this request was in flight.
+				// A fresh selection may already be using another channel; this
+				// old completion cannot resurrect the expired binding.
+				return current, false
+			}
+			// A completion selected against another owner cannot count as a
+			// failover from the new binding, including success on a third channel.
+			// Success on the current owner itself may still refresh its lease.
+			if d.found && current.ChannelID > 0 && current.ChannelID != d.owner.ChannelID && success.ChannelID != current.ChannelID {
+				return current, false
+			}
+			completedOwner := func(channelID int) biz.SessionOwner {
+				generation := time.Now()
+				if found && current.ChannelID == channelID {
+					generation = current.Generation
+				}
+				return biz.SessionOwner{ChannelID: channelID, ExpiresAt: time.Now().Add(ttl), Generation: generation}
+			}
+			if !found {
+				return completedOwner(success.ChannelID), true
+			}
 			if current.ChannelID == success.ChannelID {
 				record.ConsecutiveFailovers = 0
-				return biz.SessionOwner{ChannelID: current.ChannelID}, true
-			}
-			// This request selected the former owner. If another request already
-			// migrated the session, its late success cannot move it back.
-			if d.found && current.ChannelID != d.owner.ChannelID && success.ChannelID == d.owner.ChannelID {
-				return current, false
+				return completedOwner(current.ChannelID), true
 			}
 			fromName := healthGateOwnerName(ctx, current.ChannelID, d.candidates, d.channelSvc, d.requestSvc)
 			if d.found && current.ChannelID == d.owner.ChannelID && d.record.Owner != nil {
@@ -180,7 +208,7 @@ func (m *healthGateAttemptTracker) finishSession(ctx context.Context, successful
 					ToChannelID: success.ChannelID, ToChannelName: success.ChannelName,
 					Reason: reason,
 				}
-				return biz.SessionOwner{ChannelID: success.ChannelID}, true
+				return completedOwner(success.ChannelID), true
 			}
 			if d.ownerGatedAtCompletion(ctx, m.gate, current.ChannelID) {
 				return migration(objects.RoutingMigrationReasonOwnerOpen)
@@ -191,7 +219,8 @@ func (m *healthGateAttemptTracker) finishSession(ctx context.Context, successful
 			}
 			record.ConsecutiveFailovers = count
 			record.TemporaryFailover = true
-			return biz.SessionOwner{ChannelID: current.ChannelID, ConsecutiveFailovers: count}, true
+			current.ConsecutiveFailovers = count
+			return current, true
 		})
 	}
 	if state.Request == nil || state.RequestService == nil {

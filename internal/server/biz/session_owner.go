@@ -13,9 +13,27 @@ import (
 	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/internal/pkg/xcache"
 )
 
-const sessionOwnerTTL = 30 * time.Minute
+const (
+	sessionOwnerTTL = 5 * time.Minute
+	// Keep expired identity for a bounded grace period for late completions.
+	// Cache retention does not extend the logical lease.
+	sessionOwnerExpiryRetention = 30 * time.Minute
+)
+
+// Mutable ownership must not use the chain's asynchronous L2-to-L1 promotion:
+// a delayed read promotion can overwrite a newer successful migration in L1.
+func newSessionOwnerCache(cfg xcache.Config) xcache.Cache[SessionOwner] {
+	if cfg.Mode == xcache.ModeTwoLevel {
+		cfg.Mode = xcache.ModeMemory
+		if cfg.Redis.Addr != "" || len(cfg.Redis.Addrs) != 0 || cfg.Redis.URL != "" {
+			cfg.Mode = xcache.ModeRedis
+		}
+	}
+	return xcache.NewFromConfig[SessionOwner](cfg)
+}
 
 // ownerUpdateLockShards serializes updates to one authoritative thread (or trace)
 // within this process. A fixed shard count bounds memory regardless of how many
@@ -41,55 +59,71 @@ func ownerUpdateLock(key string) *semaphore.Weighted {
 type SessionOwner struct {
 	ChannelID            int `json:"channel_id"`
 	ConsecutiveFailovers int `json:"consecutive_failovers"`
+	// ExpiresAt is the logical deadline, independent of cache eviction.
+	// Missing deadlines are rejected; old v1/legacy entries are not imported.
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
+	// Generation identifies a new binding; renewing a live binding preserves it.
+	Generation time.Time `json:"generation,omitempty"`
 }
 
 func buildSessionThreadOwnerCacheKey(threadID int) string {
-	return fmt.Sprintf("axonhub:routing:session-owner:v1:thread:%d", threadID)
+	return fmt.Sprintf("axonhub:routing:session-owner:v2:thread:%d", threadID)
 }
 
 func buildSessionTraceOwnerCacheKey(traceID int) string {
-	return fmt.Sprintf("axonhub:routing:session-owner:v1:trace:%d", traceID)
+	return fmt.Sprintf("axonhub:routing:session-owner:v2:trace:%d", traceID)
 }
 
-// GetSessionOwner reads the thread alone when available. A missing v1 entry
-// inherits the previous-channel cache on that same key; trace never overrides
-// a thread owner, even when the thread key has expired.
+// GetSessionOwner reads only the authoritative thread when available. The v2
+// boundary deliberately reevaluates old bindings once on upgrade: no v1 or
+// legacy value without a provable deadline can revive an expired owner.
 func (s *RequestService) GetSessionOwner(ctx context.Context, threadID, traceID int) (SessionOwner, bool, error) {
-	var ownerKey, previousKey string
-	switch {
-	case threadID > 0:
-		ownerKey = buildSessionThreadOwnerCacheKey(threadID)
-		previousKey = buildPreviousThreadChannelCacheKey(threadID)
-	case traceID > 0:
-		ownerKey = buildSessionTraceOwnerCacheKey(traceID)
-		previousKey = buildPreviousTraceChannelCacheKey(traceID)
-	default:
+	ownerKey := sessionOwnerKey(threadID, traceID)
+	if ownerKey == "" {
 		return SessionOwner{}, false, nil
 	}
+	mu := ownerUpdateLock(ownerKey)
+	if err := mu.Acquire(ctx, 1); err != nil {
+		return SessionOwner{}, false, err
+	}
+	defer mu.Release(1)
+	owner, found, err := s.readSessionOwner(ctx, ownerKey)
+	if !found {
+		return SessionOwner{}, false, err
+	}
+	return owner, true, err
+}
 
+func sessionOwnerKey(threadID, traceID int) string {
+	if threadID > 0 {
+		return buildSessionThreadOwnerCacheKey(threadID)
+	}
+	if traceID > 0 {
+		return buildSessionTraceOwnerCacheKey(traceID)
+	}
+	return ""
+}
+
+// readSessionOwner must run under the authoritative key's lock. It preserves
+// expired identity for completion's late-migration guard, but reports found=false.
+func (s *RequestService) readSessionOwner(ctx context.Context, ownerKey string) (SessionOwner, bool, error) {
 	owner, err := s.sessionOwnerCache.Get(ctx, ownerKey)
-	if err == nil {
-		if owner.ChannelID > 0 {
-			return owner, true, nil
-		}
-		return SessionOwner{}, false, nil
-	}
 	var missing *store.NotFound
-	if !errors.As(err, &missing) {
-		return SessionOwner{}, false, fmt.Errorf("read session owner %q: %w", ownerKey, err)
-	}
-
-	channelID, err := s.previousChannelCache.Get(ctx, previousKey)
-	if err == nil {
-		if channelID > 0 {
-			return SessionOwner{ChannelID: channelID}, true, nil
+	if err != nil {
+		if !errors.As(err, &missing) {
+			return SessionOwner{}, false, fmt.Errorf("read session owner %q: %w", ownerKey, err)
 		}
 		return SessionOwner{}, false, nil
 	}
-	if !errors.As(err, &missing) {
-		return SessionOwner{}, false, fmt.Errorf("read previous session channel %q: %w", previousKey, err)
+	if owner.ChannelID <= 0 || owner.ExpiresAt.IsZero() {
+		return SessionOwner{}, false, nil
 	}
-	return SessionOwner{}, false, nil
+	return owner, time.Now().Before(owner.ExpiresAt), nil
+}
+
+func (s *RequestService) cacheSessionOwner(ctx context.Context, key string, owner SessionOwner) error {
+	retention := max(time.Until(owner.ExpiresAt), 0) + sessionOwnerExpiryRetention
+	return s.sessionOwnerCache.Set(ctx, key, owner, store.WithExpiration(retention))
 }
 
 // UpdateSessionOwner serializes read/modify/write for an authoritative session
@@ -100,12 +134,8 @@ func (s *RequestService) UpdateSessionOwner(ctx context.Context, threadID, trace
 	if update == nil {
 		return
 	}
-	var key string
-	if threadID > 0 {
-		key = buildSessionThreadOwnerCacheKey(threadID)
-	} else if traceID > 0 {
-		key = buildSessionTraceOwnerCacheKey(traceID)
-	} else {
+	key := sessionOwnerKey(threadID, traceID)
+	if key == "" {
 		return
 	}
 	mu := ownerUpdateLock(key)
@@ -115,7 +145,7 @@ func (s *RequestService) UpdateSessionOwner(ctx context.Context, threadID, trace
 	}
 	defer mu.Release(1)
 
-	current, found, err := s.GetSessionOwner(ctx, threadID, traceID)
+	current, found, err := s.readSessionOwner(ctx, key)
 	if err != nil {
 		log.Warn(ctx, "failed to read session owner for update", log.Cause(err))
 		return
@@ -124,17 +154,25 @@ func (s *RequestService) UpdateSessionOwner(ctx context.Context, threadID, trace
 	if !write || next.ChannelID <= 0 || ctx.Err() != nil {
 		return
 	}
+	if next.ExpiresAt.IsZero() {
+		next.ExpiresAt = time.Now().Add(sessionOwnerTTL)
+	}
+	refreshLegacy := next.ChannelID != current.ChannelID || !next.ExpiresAt.Equal(current.ExpiresAt)
 	if threadID > 0 {
-		if err := s.sessionOwnerCache.Set(ctx, buildSessionThreadOwnerCacheKey(threadID), next, store.WithExpiration(sessionOwnerTTL)); err != nil {
+		if err := s.cacheSessionOwner(ctx, buildSessionThreadOwnerCacheKey(threadID), next); err != nil {
 			log.Warn(ctx, "failed to cache thread session owner", log.Cause(err), log.Int("thread_id", threadID))
 		}
-		s.setPreviousThreadChannelID(ctx, threadID, next.ChannelID)
+		if refreshLegacy {
+			s.setPreviousThreadChannelID(ctx, threadID, next.ChannelID)
+		}
 	}
 	if traceID > 0 {
-		if err := s.sessionOwnerCache.Set(ctx, buildSessionTraceOwnerCacheKey(traceID), next, store.WithExpiration(sessionOwnerTTL)); err != nil {
+		if err := s.cacheSessionOwner(ctx, buildSessionTraceOwnerCacheKey(traceID), next); err != nil {
 			log.Warn(ctx, "failed to cache trace session owner", log.Cause(err), log.Int("trace_id", traceID))
 		}
-		s.setPreviousTraceChannelID(ctx, traceID, next.ChannelID)
+		if refreshLegacy {
+			s.setPreviousTraceChannelID(ctx, traceID, next.ChannelID)
+		}
 	}
 }
 
