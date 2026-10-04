@@ -11,11 +11,12 @@ fork 改动，由用户决定。
 ### 新增或实质修改 Fork Topic
 
 - [ ] 新增或更新一个独立 topic，不把无关改动混在同一条目中。
-- [ ] 明确 topic 属于 feature 还是 bugfix。
+- [ ] 按功能来源分类：fork 自有功能的行为、实现和验证统一维护在原 Feature Topic 中，不按修复批次另立 topic 或修订小节；Bugfix Topics 记录对上游已有功能的修正，不按提交的 `feat:` / `fix:` 前缀分类。
 - [ ] 记录用户可观察行为、边界、相关提交和主要代码路径。
 - [ ] Bugfix 若为上游回补，记录上游来源、fork 中对应的提交及 fork 适配。
 - [ ] 明确 schema migration、data migration、测试和 fixture 的影响；没有也要注明。
 - [ ] 删除已经失效的描述，保证台账反映当前实现。
+- [ ] 已与上游完全一致且无兼容负担的条目只保留在上游同步记录；已发布迁移等仍须维护的差异继续保留归属条目。
 
 ### 同步上游 Release
 
@@ -57,6 +58,12 @@ fork 改动，由用户决定。
 | 模型价格时间戳修复回补 | 上游 `beta9` 迁移与 `fork.1` 并存，测试 helper 改名 |
 | 模型目录 schema 修复回补 | 与上游一致，无差异 |
 
+- 模型目录后端热加载：上游 `4483c2e4`（PR #2263），fork 提前回补 `d6a605a1`；
+  `7fdbd2ae` 合入后采用上游完整实现，不再有 fork 差异。`catalog_filter.go`、系统配置与
+  provider 快照均以上游为准；模型页使用后端 `providersCatalog(filtered)`。
+- 模型目录 `experimental` schema：上游 `6f729f7c`（PR #2305），fork 提前回补 `8c978c6b`；
+  `7fdbd2ae` 合入后与上游一致，无 fork 适配、迁移或待维护差异。
+
 ## Feature Topics
 
 ### 模型入口校验与渠道分发
@@ -84,7 +91,7 @@ fork 改动，由用户决定。
 
 ### 健康门控路由策略
 
-- 状态：已实现。提交：`6298a0cb`（`feat(routing): 新增健康门控路由策略`）。会话归属与决策记录见
+- 状态：已实现。相关提交：`6298a0cb`、`328cb528`、`dd5e17d3`。会话归属与决策记录见
   「健康门控会话归属迟滞与决策记录」。
 - 动机：管理端无法直观看到哪个渠道×模型坏了。现有 `(渠道, 模型)` 熔断器只挂在
   `circuit-breaker` 策略下，阈值写死，查询与重置方法无调用方
@@ -115,7 +122,7 @@ fork 改动，由用户决定。
   - D4 单机部署：健康状态只存进程内存，不做跨实例共享，重启后清零。
   - D5 统计范围：只统计走 `health-gated` 策略的流量；其他策略的请求不产生、不改变
     健康状态，保证管理端看到的熔断即实际生效的熔断。
-  - D6 健康候选排序（会话产品行为修订）：模型关联优先级分组保持小值先；组内硬不可用
+  - D6 健康候选排序：模型关联优先级分组保持小值先；组内硬不可用
     候选后置，可用候选按渠道 OrderingWeight 大值先。WeightRoundRobin、LatencyAware、
     RateLimitAware、QuotaAware 综合分仅在同权重内排序，避免旧渠道历史样本压过新增高权重渠道。
   - D7 现有 `circuit-breaker` 策略及其熔断器保留原样，不改动、不复用其实例。
@@ -178,6 +185,10 @@ fork 改动，由用户决定。
   读取时观察并生效；不为配置变更增加跨服务通知。不为配置新增表字段。
 - 生命周期（R11）：渠道停用、删除、归档或模型映射变更时不主动清理健康状态，只随时间演进
   或由管理员重置。条目数以实际用过的渠道×上游模型组合为上限，不做定期回收。
+- 取消与收尾：选路、请求准入和管理端状态读取遵守调用方 context，渠道观察锁可取消等待，
+  配置读取保持串行顺序。取消返回原 context 错误，不应用失败读取的默认配置，也不误计
+  上游失败。尝试健康结果登记使用独立 10 秒预算；超时只释放匹配代次与票据的自身探测占位，
+  不改变新代次、其他探测或恢复进度。
 - 默认值：N=5；首次熔断 5 分钟，试探失败翻倍，上限 60 分钟；M=2；W=5 分钟。
 - 明确不做：不改变上游四种策略的行为；不引入跨实例共享或健康状态持久化；不向上游发
   合成探测请求（试探只用真实业务请求：普通试探仅放行无粘性渠道的请求，R5 最后一试除外）；
@@ -207,12 +218,17 @@ fork 改动，由用户决定。
   `health_gate_selector_test.go`（门控、粘性跳过、试探资格、最后一试选择）、
   `health_gate_orchestrator_test.go`（端到端熔断、503 与透传、流式首 token 后断流）、
   `internal/server/gql/channel_health_gate_test.go`（状态映射与计数）。
+  `health_gate_context_test.go` 覆盖取消、配置代次与探测释放；
+  `health_gate_load_balancer_weight_test.go` 覆盖新增高权重渠道、硬不可用候选后置、同权重分配、
+  调试/生产排序一致及其他策略不变。真实 SQLite 连接池占满时，配置读取按 120ms deadline
+  退出，同渠道另一请求按 20ms deadline 退出锁等待。相同新会话测试使用旧排序时选 10、
+  当前实现选 15；biz/orchestrator/gql 完整测试及健康门控三轮 race 检查通过；无新增 fixture。
 - 同步上游注意：策略枚举与前端策略下拉为追加式冲突点；上游若新增策略、改动负载均衡
   组装或自行实现熔断可视化，需逐条对照 D1–D7、R1–R11。
 
 ### 健康门控会话归属迟滞与决策记录
 
-- 状态：已实现。提交：`a4ffb86d`（`feat(routing): 健康门控会话归属迟滞与决策记录`）。
+- 状态：已实现。相关提交：`a4ffb86d`、`328cb528`、`dd5e17d3`。
 - 依赖：建立在「健康门控路由策略」之上，仅在 `health-gated` 策略下生效；其他策略保持
   上游粘性语义。
 - 动机：会话粘性在每次尝试前改写（`internal/server/orchestrator/request_execution.go:105-113`、
@@ -227,7 +243,7 @@ fork 改动，由用户决定。
 - 业务场景（用户确认）：会话不因单次波动在渠道间来回切换，也不长期停在失败渠道上。
 - 已确认决策：
   - D1 有效缓存保护窗口内不主动迁回，窗口过期后按当前健康候选与权重重新选择。
-  - D2 会话产品行为修订后废止旧键种子：v2 归属必须有明确有效截止时间；缺失、过期或无
+  - D2 v2 归属必须有明确有效截止时间；缺失、过期或无
     截止时间的记录均按新会话处理，不再从旧 v1/previous-channel 记录恢复归属。
   - D3 K 为系统级参数，放在重试策略的健康门控参数中，不提供渠道覆盖。
   - D4 决策记录包含：请求开始时的归属渠道×模型、因熔断被跳过的渠道×模型、是否临时转移、
@@ -244,7 +260,8 @@ fork 改动，由用户决定。
     归属以渠道为单位，「归属渠道×模型」指归属渠道上本次请求选用的上游实际模型。仅在
     `prefer_previous_channel` 粘性模式下生效；粘性关闭时不读写归属。
   - R2 归属只在请求成功时写入，失败尝试不改写。提交时以会话当前归属为准重新计算（按会话主键进程内串行），
-    同一会话并发请求中晚完成者不得把已迁移的归属写回旧渠道；多实例共享缓存时不保证跨实例串行。
+    归属新建或迁移时建立 Generation，正常续期保持不变；完成回调校验所选世代，旧请求
+    不得改变新归属，即使过期后重新选择的是同一渠道。多实例共享缓存时不保证跨实例串行。
   - R3 单次故障转移：由备用渠道完成本次请求，归属不变且不续期；下个请求仅在保护窗口
     仍有效时回归属渠道，过期后重新选择。
   - R4 迁移条件：本次请求结束时归属渠道×模型处于熔断或试探（未获本次准入，含本次请求自身触发的熔断），或同一会话连续 K 次
@@ -254,6 +271,10 @@ fork 改动，由用户决定。
   - R6 归属渠道×模型已熔断时不参与粘性优先及同渠道重试，但仍可按阶段一 R5 成为最后一试；
     未熔断时沿用现有粘性候选零次同渠道重试（`internal/server/orchestrator/outbound.go:694-699`），
     失败即转移。
+- 归属存储与收尾：配置两级缓存且有 Redis 时，归属直接以 Redis 为权威读写，不经过异步
+  L2→L1 回填，避免旧值覆盖新归属；未配置 Redis 时使用内存。逻辑有效期以 ExpiresAt 为准，
+  物理缓存额外保留 30 分钟有限宽限期用于迟到结果判断，不延长黏性。会话/路由记录登记使用
+  独立 10 秒预算，包含可取消的会话锁等待；其他策略的缓存模式不变。
 - 决策记录与通知规则：
   - R7 请求决策记录：请求表新增可空 JSON 字段，内容见 D4，请求详情页展示；仅 `health-gated`
     请求写入，请求结束（非流式完成或失败、流式关闭）时写一次；渠道名称按选路时快照保存（归属渠道
@@ -267,6 +288,8 @@ fork 改动，由用户决定。
   `internal/server/biz/health_gate_notify.go`（熔断转移异步通知）、
   `internal/server/orchestrator/health_gate_session.go`（归属判定与决策提交）、
   `internal/objects/request_routing.go`（决策记录类型）、`internal/server/gql/request_routing.graphql`。
+  `internal/server/orchestrator/session_owner_ttl.go`（最终出站声明的保护期）、
+  `internal/server/orchestrator/outbound.go`（保存最终传输请求对象）。
   阶段一文件扩展：`internal/server/biz/health_gate.go`（转移回调，锁外调用）、
   `internal/server/biz/system_health_gate.go`（K）、`internal/server/orchestrator/health_gate_selector.go`
   （thread 优先归属、跳过项与最后一试快照）、`internal/server/orchestrator/health_gate_middleware.go`（成功时提交）。
@@ -278,7 +301,7 @@ fork 改动，由用户决定。
   `frontend/src/features/system/components/{retry-settings,webhook-settings}.tsx`、`frontend/src/features/system/data/system.ts`、
   `frontend/src/locales/`；用户文档 `docs/{zh,en}/guides/load-balance.md`。
 - 迁移：请求表新增可空 JSON 列 `routing_decision`，由 ent 自动迁移，无 data migration。
-  归属缓存升级为 `axonhub:routing:session-owner:v2:{thread|trace}:%d`，新增明确截止时间；
+  归属缓存为 `axonhub:routing:session-owner:v2:{thread|trace}:%d`，包含 ExpiresAt 与 Generation；
   不读取缺乏可证明有效期的 v1/previous-channel 记录。首次升级后原会话重新选路一次，
   避免继承已无缓存收益的旧黏性。旧 `previous-channel:v1` 保持整数值形状，供其他策略使用，
   不作为健康门控恢复归属的来源。无新增 schema/data migration。
@@ -289,6 +312,11 @@ fork 改动，由用户决定。
   `internal/server/orchestrator/health_gate_session_test.go`（单次转移保留归属、连续 K 次迁移、归属熔断立即迁移、
   归属成功清零、失败与取消不写、流式仅完成后提交、粘性关闭不读写）、
   `internal/server/orchestrator/health_gate_selector_test.go`（跳过项、最后一试剔除、归属优先）。
+  `health_gate_product_test.go` 覆盖只有渠道 10 → 新增 15 → 新 thread 选 15，有效旧会话仍选 10，
+  空闲 6 分钟或 31 分钟后选 15，合法 1 小时声明仍有效时保持 10；
+  `session_owner_ttl_test.go` 覆盖最终出站断点及覆盖操作。另覆盖临时转移不续期、旧请求迟到
+  不改变新世代、旧键不继承及两级配置下 Redis 权威读写。空闲用绝对截止时间推进，旧
+  30 分钟物理过期用 Redis 模拟时钟验证。三包完整测试及归属三轮 race 检查通过；无新增 fixture。
 - 同步上游注意：在 `request_execution.go`、`candidates.go`、`biz/request.go` 中按策略分支
   改变粘性写入时机，为冲突高发点；上游改动粘性缓存或请求表结构时需逐条对照 R1–R8。
 
@@ -323,25 +351,34 @@ fork 改动，由用户决定。
 - 全量阶梯：输入总 tokens（含缓存）严格超过所填阈值时，全部计费项使用命中档位
   单价；支持多档，以及一次按基础价倍数填满整档后单独改价。填充倍数只是编辑操作，
   不作为另一项计费倍率存储。既有时间覆盖命中时仍优先整组替换价格。
+- Anthropic 官方目录导入：provider 为 `anthropic` 且基础价同时含输入价与写缓存价时，
+  追加 `one_hour` 写缓存变体，单价为输入价的 2 倍（十进制精确乘法）；每档阶梯按自己的
+  输入价计算。5 分钟写入使用基础写缓存价，不额外添加 `five_min`。其他 provider、缺任一
+  基础价时不推算；导入后可编辑或删除变体，已有模型不自动回填，需要时手动补价或重新导入。
+  该规则补足上游目录仅提供 5 分钟写缓存价的缺口，倍数依据 [Anthropic 官方定价](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#pricing)。
 - 编辑交互：新增计费项和缓存写入变体的价格留空，明确填写的零价保留；新增阶梯阈值
   留空且填写有效阈值前不能保存，已有阶梯照常回显。添加按钮显示「添加计费项」，
   四项齐全时禁用并显示「已添加全部计费项」，删除一项后恢复可用。
-- 目录选模修复：替换模型卡时同步重置价格及阶梯表单数组，无阶梯时明确清空数组；
-  避免数据已填入却不显示价格行、已有阶梯开关未开启，以及切换模型后残留旧档位。
+- 目录选模：切换模型时同步重置价格及阶梯表单数组，无阶梯时清空数组，价格行与阶梯开关
+  按已导入数据正确回显，不残留旧模型档位。
 - 兼容：旧模型卡价格在 JSON 读取时转换为完整价格，旧成本字段仅作只读摘要；明确
   清除后不会从旧摘要恢复。已有渠道价格、历史价格版本和旧逐项阶梯计算不变。
 - 渠道：既有自动补缺逻辑复制完整模型价格（含阶梯和缓存变体），不覆盖已有渠道价格；
   渠道引用、编辑及倍率衔接见「渠道标准价格引用与持久倍率」。
 - 提交：`93e5878e`（权威模型定价与全量阶梯）；`2eca7c59`（渠道完整价格引用、倍率衔接与阶梯填充交互）。
+  `bf37dae1`（Anthropic 官方目录一小时写缓存价）。
 - 代码：`frontend/src/features/models/components/models-price-editor.tsx`、
   `frontend/src/features/models/data/pricing.ts`、`frontend/src/components/model-price-editor.tsx`、
   `internal/objects/model.go`、`internal/objects/price.go`、`internal/server/biz/model.go`、
-  `internal/server/biz/cost_calc.go`。
+  `internal/server/biz/cost_calc.go`、`frontend/src/features/models/components/models-batch-create-dialog.tsx`；
+  定价说明见 `docs/{zh,en}/guides/cost-tracking.md`。
 - 迁移：无新增表字段或迁移；兼容既有数据库及缓存中的模型卡 JSON。已重新生成接口代码。
 - 测试与 fixture：`internal/objects/model_test.go`、`internal/objects/price_test.go`、
   `internal/server/biz/model_validation_test.go`、`frontend/src/features/models/pricing.test.mjs`，
-  覆盖旧价格兼容、全量阶梯校验、价格保存与清除、整档填充及零价与未填写价格的区分；
-  无新增 fixture。
+  覆盖旧价格兼容、全量阶梯校验、价格保存与清除、整档填充、零价与未填写价格的区分，以及
+  Anthropic 来源的一小时价格、各阶梯独立计算、其他来源与缺价时不推算；无新增 fixture。
+- 同步上游注意：上游若调整目录导入或提供独立一小时写缓存价，应核对 `priceFromCatalog`
+  并优先使用目录值，避免重复推算。
 
 ### API 密钥费用分析
 
@@ -359,8 +396,7 @@ fork 改动，由用户决定。
 
 ### API Key 自助用量页
 
-- 状态：已实现。提交：`58f73057`（`feat(self-usage): 新增 API Key 自助用量页`）；D12、D13 为 2026-09-28
-  修订，提交：`1c5509ae`（`feat(requests): 请求成本明细悬浮并对齐自助页请求日志`）。
+- 状态：已实现。相关提交：`58f73057`、`1c5509ae`。
 - 动机：只持有 API Key 的使用者无法查看自己的用量。普通推理 Key 可达的路由只有推理与模型列表
   （`internal/server/routes.go:170-259`）；上游 beta10 的 `apiKeyQuotaUsages` 只接受
   service_account 类型的 Key，需要 `read_api_keys`，可查同项目内隐私规则允许的非 personal Key，
@@ -398,7 +434,7 @@ fork 改动，由用户决定。
     由 Key 长度抵御）。认证成功后每个 Key 每分钟最多 60 次查询，查询计数表另计。两张计数表各上限 10000，
     进程内计数，多实例不共享。
   - D11 只统计 `source=api` 的请求，不含 Playground 与测试请求。
-  - D12 请求日志与管理端对齐（2026-09-28 用户确认）：请求日志复用管理端请求列表的共享单元格组件，
+  - D12 请求日志与管理端对齐：请求日志复用管理端请求列表的共享单元格组件，
     列依次为 ID（`#编号` + 请求原始状态徽章 + 流式 / 非流式徽章）、模型、Token（总计 / 输入 | 输出 /
     推理）、读缓存（数量与命中率）、写缓存（数量与写入率）、成本（悬浮明细见「请求成本明细悬浮」）、
     耗时（仅已完成请求；流式显示首字与总耗时，非流式显示总耗时）、创建时间；不再设单独的状态列与流式列。
@@ -492,8 +528,7 @@ fork 改动，由用户决定。
   - D2 管理端内容：分项、折算单价、阶梯与倍率。
   - D3 自助页内容：与管理端完全一致，含基础合计与倍率（用户确认，不采用 CCH 的隐藏做法）。
   - D4 行结构对齐：已定价的悬浮一律依次列分项、基础合计、倍率、合计，不因倍率取值增减行；1 倍也显示基础合计与
-    「×1」。合计行只显示最终金额，不再附删除线基础合计。自助页合并记录的倍率不一致时倍率显示「混合」。取代原
-    「倍率为 1 或查不到时不列倍率与基础合计」的做法。
+    「×1」。合计行只显示最终金额，无删除线基础合计。自助页合并记录的倍率不一致时倍率显示「混合」。
 - 规则：
   - R1 分项来源：只读已落库的 `usage_logs.cost_items`，不按当前价格重算。顺序为输入、输出、读缓存、
     写缓存（有 5m / 1h 变体时分行标注）、其他项（显示项目代码原名）；只列数量或金额大于 0 的项。
@@ -537,40 +572,12 @@ fork 改动，由用户决定。
 - 同步上游注意：上游若调整请求列表的 Token、缓存、成本、耗时列或 `CostItem` 类型，需同步到共享组件与
   `cost.graphql`；`graphql.go` 的 `AroundOperations` 注入与上游已有的操作钩子并列。
 
-### Anthropic 目录导入补 1 小时写缓存价
-
-- 状态：已实现。提交：`bf37dae1`（`feat(models): Anthropic 目录导入补 1 小时写缓存价`）。
-- 关联：「渠道强制 1 小时提示缓存」开启后写缓存 Token 集中落在 1 小时档，依赖本 topic 补的价格。
-- 动机：Anthropic 写缓存按输入价计费倍数：5 分钟 1.25×、1 小时 2×
-  （[官方 Pricing](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#pricing)）。
-  上游目录 PublicProviderConf 的 `cost` 只有一个 `cache_write`，Anthropic 来源填的是 5 分钟价
-  （如 `claude-sonnet-4-6` 为 3.75）；2026-09-29 扫描线上目录全部 8289 个模型，没有任何 1 小时写缓存字段。
-  导入后价格没有 `one_hour` 变体，`FindPromptWriteCacheVariantPricing`（`internal/objects/price.go:399-403`）
-  让 1 小时写入退回按写缓存基础价（即 5 分钟价）计费，少计 37.5%。
-- 已确认决策：
-  - D1 范围：只在从目录 provider `anthropic`（Anthropic 官方来源）导入时补；从 Bedrock、Vertex、
-    转售商等来源导入的 Claude 不补。
-  - D2 已导入的模型价格不回填，无 data migration；需要时手动添加 `one_hour` 变体或重新从目录选模导入。
-- 规则：
-  - R1 目录价格同时有输入价与写缓存价时，给写缓存项追加 `one_hour` 变体，单价 = 输入价 × 2（十进制精确乘法）；
-    缺任一项不补。不追加 `five_min` 变体，5 分钟写入仍用写缓存基础价。
-  - R2 全量阶梯：是否补由基础价格决定；补时每个阶梯按该阶梯自己的输入价同样追加，保证基础价与各阶梯
-    的变体集合一致（价格校验要求一致）。
-  - R3 只影响目录选模时生成的价格；导入后可在价格编辑器照常修改或删除该变体。
-- 代码：`frontend/src/features/models/data/pricing.ts`（`priceFromCatalog` 按来源补变体）、
-  `frontend/src/features/models/components/{models-action-dialog.tsx,models-batch-create-dialog.tsx}`（传入来源 provider）、
-  `docs/{zh,en}/guides/cost-tracking.md`。
-- 迁移：无 schema migration、data migration 与缓存键变化。
-- 测试：`frontend/src/features/models/pricing.test.mjs`（Anthropic 来源补 2× 输入价、阶梯按各自输入价、
-  其他来源不补、缺写缓存价不补）。
-- 同步上游注意：上游若改 `priceFromCatalog`，或目录开始提供 1 小时写缓存价，应改为直接读取目录值并移除本推算。
-
 ### 渠道强制 1 小时提示缓存
 
 - 状态：已实现。提交：`bb25b45a`（`feat(channels): 渠道强制 1 小时提示缓存`）、`6c9c764d`
   （`fix(requests): 1 小时缓存标志改为以计费为准`）。
-- 依赖：计费正确依赖「Anthropic 目录导入补 1 小时写缓存价」（或手动配置的 `one_hour` 变体）；未配置时 1 小时写入
-  按写缓存基础价计费。
+- 依赖：计费依赖「模型权威定价与全量阶梯」中的 Anthropic 官方目录一小时写缓存价，
+  或手动配置的 `one_hour` 变体；未配置时，一小时写入按写缓存基础价计费。
 - 动机：人与 agent 协作时，多个会话等待用户回复、或用户离开片刻，请求间隔常超过 5 分钟，5 分钟缓存过期后需按
   1.25× 重写全量前缀；1 小时缓存可命中并按 0.1× 计费。按当前用法，与用户对接的是 Claude 系模型，连续运行的
   子代理是 GPT，前者更容易遇到。AxonHub 目前原样转发客户端 TTL，自己补的断点不带 TTL（即 5 分钟，
@@ -628,8 +635,7 @@ fork 改动，由用户决定。
   平均输出速度；缓存命中率按缓存输入 Token 占输入 Token 的百分比计算，输入 Token
   为零时显示 0%。
 - 输出速度口径：输出 Token 只取 `completion_tokens`（其中已含 reasoning 与 audio），
-  与上游 beta8 起（`92f81b32`）的仪表盘吞吐一致。此前 fork 把三者相加，高估
-  reasoning 模型的速度，`62011e01` 修正。
+  与上游 beta8 起（`92f81b32`）的仪表盘吞吐一致，不重复累计 reasoning 与 audio。
 - 列顺序：排名、模型/渠道、请求数、Token 数、成功率、缓存命中率、平均 TTFB、
   平均输出速度、费用/Mtok、费用；表格不重复显示内部标题。
 - 排序：默认按费用降序。除排名外，各列通过无边框列头按钮在降序、升序和无序间
@@ -646,28 +652,6 @@ fork 改动，由用户决定。
 - 测试与 fixture：`internal/server/gql/analytics_helpers_test.go`、
   `frontend/src/features/analytics-date-range.test.mjs`、
   `scripts/e2e/fixtures/model-analytics.sql`。
-
-### 渠道 tab 按供应商聚合
-
-- 行为：渠道列表顶部 tab 按 `CHANNEL_TYPE_TO_PROVIDER` 把同一供应商的协议变体聚成
-  一组：`deepseek` / `deepseek_anthropic` 归入 DeepSeek，`moonshot` /
-  `moonshot_anthropic` / `moonshot_coding` 归入 Moonshot。标签与图标取自
-  `PROVIDER_CONFIGS`，tab 筛选使用该组实际类型列表而不是类型名前缀；未在映射中的
-  类型保留独立分组，不会消失。顺带补齐映射缺失的 `ollama_anthropic`。徽章列原本已
-  显示供应商，未改。
-- 动机：上游按下划线前缀折叠，且只在裸前缀类型同时存在时才折，导致
-  `moonshot_anthropic` + `moonshot_coding`、`opencode_go` + `opencode_go_anthropic`
-  各自成组，而 `github_copilot` 又被误并入 GitHub。
-- 同步上游注意：上游 `aa8e7c81`（beta8 起）也把 `ollama_anthropic` 映射到 ollama，
-  合并后为同一行，不再是 fork 差异。
-- 提交：`54fab437`（`feat(channels): 按供应商聚合渠道 tab`）。
-- 代码：`frontend/src/features/channels/utils/group-channel-types.ts`、
-  `frontend/src/features/channels/components/channels-type-tabs.tsx`、
-  `frontend/src/features/channels/index.tsx`、
-  `frontend/src/features/channels/data/config_channels.ts`。
-- 迁移：无。
-- 测试与 fixture：`frontend/src/features/channels/group-channel-types.test.mjs`、
-  `scripts/e2e/fixtures/channel-groups.sql`。
 
 ### 生图渠道拆分
 
@@ -698,12 +682,9 @@ fork 改动，由用户决定。
   同时保留 fork 的 `ch *biz.Channel` 与上游的 `responsesWebSocket`。编辑对话框的
   `settingsPatch` 与新建时 `mergeChannelSettingsForUpdate` 的参数中保留
   `primaryApiFormat`。
-- beta10 真机回归：上游列表查询改为按可见列裁剪字段
-  （`CHANNEL_QUERY_LIST_NODE_BASE_SELECTION`），fork 须在其中补
-  `settings { primaryApiFormat }`，否则徽章无后缀。对话框新增的 `initialRow` 同步
-  effect 与打开时的重置逻辑用上游 `getInitialApiFormatForChannel` 覆盖了初始化时选中的
-  图像格式，编辑生图渠道显示 Chat Completions 并会在保存时清掉标记。三处统一为
-  `getInitialApiFormatForRow`（`e18cc308`）。
+- 列表与编辑一致性：`CHANNEL_QUERY_LIST_NODE_BASE_SELECTION` 包含 `settings { primaryApiFormat }`，
+  供列表徽章与分组读取；编辑初始化、`initialRow` 同步与打开时重置统一使用
+  `getInitialApiFormatForRow`，正确回显图像格式，保存时保留生图标记。
 - 提交：`d6d17d00`（`feat(channels): 拆分生图渠道`）；`7fdbd2ae`（合入 beta10 时重接）；
   `e18cc308`（补回列表字段与编辑同步）。
 - 代码：`internal/objects/channel.go`、`internal/server/gql/axonhub.graphql`、
@@ -744,65 +725,31 @@ fork 改动，由用户决定。
 - 代码：`.github/workflows/docker-publish.yml`。
 - 迁移与测试：无。
 
-## 提前回补的上游 Feature
-
-### 模型目录后端热加载
-
-- 状态：已随 `v1.0.0-beta10` 合入上游版本，不再是 fork 差异。
-- 行为：模型页与渠道模型价格弹窗共用后端 `providersCatalog(filtered)`；后端从
-  PublicProviderConf 拉取并缓存，可在系统设置中修改上游 URL 与刷新间隔。
-- 上游来源：`4483c2e4`（PR #2263）。
-- 提交：`d6a605a1`（提前回补）；`7fdbd2ae`（合入上游版本）。
-- 合并处理：`catalog_filter.go`、`system.graphql`、`system.resolvers.go`、
-  `general-settings.tsx` 与两份 `providers.json` 快照直接取上游，上游为 fork 版本的
-  超集（含 `0d85ba60` 的 hy4 过滤修复）；`internal/ent/internal/schema.go` 由
-  `make generate` 重新生成，原 fork 适配无残留。
-- 已知差异：无。内嵌快照已随上游更新。
-
 ## Bugfix Topics
 
-### 健康门控新增渠道与会话重选
+### 渠道 tab 按供应商聚合
 
-- 问题：健康门控直接复用自适应综合评分时，即使新会话没有归属，权重 10 的旧渠道也可
-  因历史延迟分数胜过权重 15 的新渠道。旧会话则固定成功续期 30 分钟，包括临时转移到
-  别的渠道的成功；这与短缓存失效后按新配置重选的预期不一致。
-- 修正规则：健康过滤及模型关联优先级保留；仅健康门控组内排序改为硬可用性、渠道权重、
-  同权重综合评分依次比较。原会话只在明确的缓存保护期内优先，期满作为新会话重选。
-  具体租期、升级与故障迁移规则已同步到前述健康门控 feature topic。
-- 用户场景覆盖：只有旧渠道 10 → 新增 15 → 全新 thread 选 15；有效旧会话保持 10；
-  默认窗口内成功可续期，空闲 6 分钟或 31 分钟后选 15；合法 1 小时声明仍有效时保持 10。
-  覆盖跳过故障/硬不可用渠道、同权重分配、调试与生产排序一致、其他策略不变。
-- 验证：相同新会话测试用修复前 `load_balancer.go` overlay，生产与调试路径均出现
-  expected 15 / actual 10；修复后通过。biz/orchestrator/gql 完整测试及归属/健康门控
-  三轮 race 检查通过。空闲通过显式绝对截止时间推进，旧 30 分钟物理过期另用 Redis
-  模拟时钟验证，不依赖长时间 sleep。
-- 代码：`internal/server/orchestrator/load_balancer.go`、`health_gate_load_balancer.go`、
-  `health_gate_session.go`、`outbound.go`、`internal/server/biz/session_owner.go`。
-- 兼容：v2 会话键不导入旧无截止时间记录，升级后旧会话重新选路一次；其他策略的
-  `previous-channel:v1` 整数记录保留原形状。无 schema/data migration；无新增 fixture。
-  两级缓存配置下，健康门控归属单独使用 Redis 权威读写（未配置 Redis 则内存），避免
-  异步 L2→L1 回填把旧归属覆盖到已迁移的新归属；其他策略缓存模式不变。
-- 文档与界面：更新中英文负载均衡指南及系统策略说明，区分权重、关联优先级与有效期黏性。
-
-### 健康门控配置等待不可取消
-
-- 问题：`6298a0cb` 的配置 resolver 使用 `WithoutCancel`，且渠道观察锁在配置读取期间
-  持有；缓存/数据库阻塞时，请求取消不能退出，也会拖住同渠道其他模型的锁等待。
-- 行为：选路、请求准入和管理端状态读取沿用调用方 context；渠道观察锁改为可取消等待，
-  保留配置读取的串行顺序，避免旧配置覆盖新代次。取消后返回原 context 错误，不伪装成
-  渠道熔断或健康状态正常，也不应用失败读取产生的默认配置。
-- 收尾：尝试健康结果登记及会话/路由记录登记各使用独立 10 秒预算，允许客户端取消后
-  有界收尾；会话更新锁等待也遵守预算。健康结果登记超时只释放属于当前票据的探测占位，
-  不篡改新代次/新探测，不误记上游失败或恢复。
-- 代码：`internal/server/biz/health_gate.go`、`session_owner.go`、
-  `internal/server/orchestrator/health_gate_{load_balancer,selector,middleware,session}.go`、
-  `internal/server/gql/channel_health_gate.go` 及对应 resolver。
-- 验证：真实 SQLite 单连接池被占用时，配置读取在 120ms deadline 退出；同渠道另一模型
-  在 20ms deadline 退出锁等待，原请求退出后无需释放数据库连接即可继续读渠道状态。
-  biz/orchestrator/gql 完整测试及健康门控、会话归属三轮 race 检查通过。
-- 迁移：无 schema、data migration、GraphQL schema 或缓存序列化变化；测试调用迁移到
-  显式 context/error API，保留原健康状态机覆盖；无新增 fixture。
-- 同步上游：保留可取消观察顺序与代次校验；不能为退出超时直接漏掉探测占位释放。
+- 归属：修正上游已有渠道 tab 的分组与筛选；上游 `fa74d927`（PR #150）已提供 tab，
+  `ea31f440`（PR #1734）调整过前缀分组。此处替换错误的分组依据，不是新增渠道 tab 功能。
+- 行为：渠道列表顶部 tab 按 `CHANNEL_TYPE_TO_PROVIDER` 把同一供应商的协议变体聚成
+  一组：`deepseek` / `deepseek_anthropic` 归入 DeepSeek，`moonshot` /
+  `moonshot_anthropic` / `moonshot_coding` 归入 Moonshot。标签与图标取自
+  `PROVIDER_CONFIGS`，tab 筛选使用该组实际类型列表而不是类型名前缀；未在映射中的
+  类型保留独立分组，不会消失。顺带补齐映射缺失的 `ollama_anthropic`。徽章列原本已
+  显示供应商，未改。
+- 动机：上游按下划线前缀折叠，且只在裸前缀类型同时存在时才折，导致
+  `moonshot_anthropic` + `moonshot_coding`、`opencode_go` + `opencode_go_anthropic`
+  各自成组，而 `github_copilot` 又被误并入 GitHub。
+- 同步上游注意：上游 `aa8e7c81`（beta8 起）也把 `ollama_anthropic` 映射到 ollama，
+  合并后为同一行，不再是 fork 差异。
+- 提交：`54fab437`（`feat(channels): 按供应商聚合渠道 tab`）。
+- 代码：`frontend/src/features/channels/utils/group-channel-types.ts`、
+  `frontend/src/features/channels/components/channels-type-tabs.tsx`、
+  `frontend/src/features/channels/index.tsx`、
+  `frontend/src/features/channels/data/config_channels.ts`。
+- 迁移：无。
+- 测试与 fixture：`frontend/src/features/channels/group-channel-types.test.mjs`、
+  `scripts/e2e/fixtures/channel-groups.sql`。
 
 ### 透传预读队列循环等待
 
@@ -811,6 +758,7 @@ fork 改动，由用户决定。
 - 来源：上游 [#2150](https://github.com/looplj/axonhub/issues/2150)、
   [#2580](https://github.com/looplj/axonhub/pull/2580)。参考 #2580 的分阶段暂存方案，
   fork 增加原始事件预算，不直接采用无界 backlog；保留重试前事件隔离及接入后的背压。
+- 提交：`cbea376e`。
 - 行为：每次尝试在消费者接入前暂存最多 4096 个原始事件、64 MiB 的 data/type/id 字节，
   超限返回不可重试的 `ErrPreCommitBufferExceeded`，不暴露失败尝试的内容；接入时有序交付，
   重试重置释放旧暂存。合法的单个 32 MiB SSE 事件仍可通过原始字节预算。
@@ -823,6 +771,8 @@ fork 改动，由用户决定。
 
 ### 渠道测试受后台请求超时限制
 
+- 归属：上游已有渠道测试入口的通用超时与事务问题，慢聊天请求同样可触发；并非只属于
+  fork 生图渠道拆分功能。
 - 问题：渠道测试经 `/admin/graphql` 触发，该路由挂 `server.request_timeout`
   （默认 30s），正式 `/v1` 接口则用 `server.llm_request_timeout`（默认 600s）。
   生图上游约 40 秒返回时，测试在 30 秒被掐断并报 `context deadline exceeded`，
@@ -922,6 +872,8 @@ fork 改动，由用户决定。
 
 ### Provider 模型成本可为空
 
+- 归属：修正上游模型目录解析；上游 beta10 的 `providerModelSchema.cost` 仅允许缺省、
+  不接受 `null`，与 fork 的模型权威定价功能无关。
 - 行为：模型目录中的 `cost` 可以缺失或为 `null`，远程拉取和内嵌快照的 provider 数据均可解析；
   不改变渠道价格的存储格式。
 - 提交：`d4aa15c7`（`fix(models): 允许提供商成本为空`）。
@@ -945,14 +897,3 @@ fork 改动，由用户决定。
   `v1.0.0-beta9_test.go` 重名（`7fdbd2ae`）。
 - 测试：
   `internal/ent/migrate/datamigrate/v1.0.0-beta7-fork.1_test.go`。
-
-### 上游模型目录 schema 修复回补
-
-- 问题：PublicProviderConf 的 DeepSeek 模型把 `experimental` 字段改为裸布尔值，
-  `providersDataSchema.parse()` 抛错，`useProvidersData` 与 `useDevelopersData` 均静默回退到
-  内嵌的 `providers.json` 快照，导致模型页预设和渠道模型价格识别都停留在该快照。
-- 状态：已随 `v1.0.0-beta10` 合入上游版本（`7fdbd2ae`），内容与上游一致，无 fork 差异。
-- 上游来源：`6f729f7c`（PR #2305），原样 cherry-pick，无 fork 适配。
-- 提交：`8c978c6b`。
-- 代码：`frontend/src/features/models/data/providers.schema.ts`。
-- 迁移与测试：无迁移；无专用测试。
