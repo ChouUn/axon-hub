@@ -14,9 +14,7 @@ func healthGateBegin(t *testing.T, gate *biz.HealthGate, key biz.HealthGateKey, 
 	return ticket, ok
 }
 
-
 func healthGateFinish(t *testing.T, gate *biz.HealthGate, ticket biz.HealthGateTicket, resolve biz.HealthGateConfigResolver, outcome biz.HealthGateOutcome, info biz.HealthGateErrorInfo) {
 	t.Helper()
 	require.NoError(t, gate.Finish(t.Context(), ticket, resolve, outcome, info))
 }
-
