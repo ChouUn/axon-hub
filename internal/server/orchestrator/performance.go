@@ -245,7 +245,8 @@ func enqueueCompletedPerformance(ctx context.Context, state *PersistenceState) {
 		return
 	}
 
-	state.ChannelService.AsyncRecordPerformance(ctx, state.Perf)
+	perf := *state.Perf
+	state.ChannelService.AsyncRecordPerformance(ctx, &perf)
 }
 
 func (s *recordPerformanceStream) Err() error {
