@@ -519,7 +519,7 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
       enableHiding: true,
       cell: ({ row }) => {
         const log = row.original.usageLogs?.edges?.[0]?.node;
-        return <CostCell total={log?.totalCost ?? null} currencyCode={settings?.currencyCode ?? 'USD'} breakdown={log ? {
+        return <CostCell total={log?.totalCost ?? null} currencyCode={settings?.currencyCode ?? 'USD'} costPriceReferenceID={log?.costPriceReferenceID} breakdown={log ? {
           items: (log.costItems ?? []).map((item) => ({ itemCode: item.itemCode, variant: item.promptWriteCacheVariantCode ?? null, quantity: item.quantity, subtotal: item.subtotal, tiers: item.tierBreakdown ?? [] })),
           multiplier: log.costPriceMultiplier ?? 1,
         } : null} emptyLabel='-' />;

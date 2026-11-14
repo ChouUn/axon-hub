@@ -18,7 +18,10 @@ import (
 	"github.com/looplj/axonhub/internal/ent/channelmodelpriceversion"
 	"github.com/looplj/axonhub/internal/ent/enttest"
 	"github.com/looplj/axonhub/internal/ent/intercept"
+	"github.com/looplj/axonhub/internal/ent/model"
 	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/internal/server/biz"
+	"github.com/looplj/axonhub/llm"
 )
 
 func TestUsageLogCostPriceMultiplierBatchesVisibleRows(t *testing.T) {
@@ -159,4 +162,64 @@ func TestCostItemVariantCodeReturnsNullWhenUnset(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, objects.PromptWriteCacheVariantCode5Min, *set)
+}
+
+func TestUsageLogModelLibraryMultiplierSnapshot(t *testing.T) {
+	for _, value := range []string{"0.5", "0", "1"} {
+		t.Run(value, func(t *testing.T) {
+			client := enttest.NewEntClient(t, "sqlite3", "file:usage-fallback-snapshot?mode=memory&_fk=0")
+			t.Cleanup(func() { require.NoError(t, client.Close()) })
+			setupCtx := authz.WithTestBypass(ent.NewContext(context.Background(), client))
+			factor := decimal.RequireFromString(value)
+			client.Model.Create().SetDeveloper("test").SetModelID("provider:model").SetName("Fallback model").
+				SetIcon("test").SetGroup("test").SetSettings(&objects.ModelSettings{}).SetStatus(model.StatusEnabled).
+				SetModelCard(&objects.ModelCard{Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{
+					{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{
+						Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromInt(1)),
+					}},
+					{ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{
+						Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromInt(2)),
+					}},
+				}}}).SaveX(setupCtx)
+			ch := client.Channel.Create().SetType(channel.TypeOpenaiFake).SetName("fallback-snapshot").
+				SetCredentials(objects.ChannelCredentials{}).SetSupportedModels([]string{"provider:model"}).
+				SetDefaultTestModel("provider:model").SetStatus(channel.StatusEnabled).
+				SetSettings(&objects.ChannelSettings{ModelPriceMultiplier: &factor}).SaveX(setupCtx)
+			channels := biz.NewChannelServiceForTest(client)
+			t.Cleanup(channels.Stop)
+			built, err := channels.GetChannel(setupCtx, ch.ID)
+			require.NoError(t, err)
+			channels.SetEnabledChannelsForTest([]*biz.Channel{built})
+			service := biz.NewUsageLogService(client, biz.NewSystemService(biz.SystemServiceParams{Ent: client}), channels)
+			saved, err := service.CreateUsageLog(setupCtx, biz.CreateUsageLogParams{
+				RequestID: 1, ProjectID: 1, ChannelID: ch.ID, ActualModelID: "provider:model",
+				Usage: &llm.Usage{PromptTokens: 100, CompletionTokens: 200, TotalTokens: 300}, Source: "api", Format: "openai/chat_completions",
+			})
+			require.NoError(t, err)
+			client.Channel.UpdateOneID(ch.ID).
+				SetSettings(&objects.ChannelSettings{ModelPriceMultiplier: lo.ToPtr(decimal.NewFromInt(2))}).SaveX(setupCtx)
+			reloaded, err := channels.GetChannel(setupCtx, ch.ID)
+			require.NoError(t, err)
+			channels.SetEnabledChannelsForTest([]*biz.Channel{reloaded})
+			require.Equal(t, "2", reloaded.Settings.ModelPriceMultiplier.String())
+			log := client.UsageLog.GetX(setupCtx, saved.ID)
+			require.NotNil(t, log.TotalCost)
+			require.InDelta(t, decimal.RequireFromString("0.0005").Mul(factor).InexactFloat64(), *log.TotalCost, 1e-12)
+			loader, fire := newManualUsagePriceLoader(client)
+			ctx := context.WithValue(context.Background(), usagePriceLoaderKey{}, loader)
+			resolver := &usageLogResolver{Resolver: &Resolver{client: client}}
+			var multiplier *decimal.Decimal
+			var group errgroup.Group
+			group.Go(func() error {
+				var err error
+				multiplier, err = resolver.CostPriceMultiplier(ctx, log)
+				return err
+			})
+			waitForPendingUsagePrices(t, loader, 1)
+			(<-fire)()
+			require.NoError(t, group.Wait())
+			require.NotNil(t, multiplier)
+			require.True(t, multiplier.Equal(factor))
+		})
+	}
 }

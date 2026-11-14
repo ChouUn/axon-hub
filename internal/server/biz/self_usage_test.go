@@ -18,9 +18,11 @@ import (
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/channelmodelpriceversion"
 	"github.com/looplj/axonhub/internal/ent/enttest"
+	"github.com/looplj/axonhub/internal/ent/model"
 	"github.com/looplj/axonhub/internal/ent/project"
 	"github.com/looplj/axonhub/internal/ent/request"
 	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/llm"
 )
 
 type selfUsageFixture struct {
@@ -358,4 +360,51 @@ func TestSelfUsageRequestCostMergeAndMultiplier(t *testing.T) {
 	require.Nil(t, items[4].PromptWriteCacheVariantCode)
 	require.Equal(t, 7, items[4].Quantity)
 	require.NotContains(t, rows, other.ID)
+}
+
+func TestSelfUsageModelLibraryMultiplierSnapshot(t *testing.T) {
+	for _, value := range []string{"0.5", "0", "1"} {
+		t.Run(value, func(t *testing.T) {
+			f := newSelfUsageFixture(t, "UTC")
+			setupCtx := authz.WithTestBypass(f.ctx)
+			factor := decimal.RequireFromString(value)
+			createModelLibraryPriceEntry(t, setupCtx, f.client, "provider:model", model.StatusEnabled, objects.ModelCardCost{Input: 1, Output: 2})
+			ch := f.client.Channel.Create().SetType(channel.TypeOpenaiFake).SetName("fallback-snapshot").
+				SetCredentials(objects.ChannelCredentials{}).SetSupportedModels([]string{"provider:model"}).
+				SetDefaultTestModel("provider:model").SetStatus(channel.StatusEnabled).
+				SetSettings(&objects.ChannelSettings{ModelPriceMultiplier: &factor}).SaveX(setupCtx)
+			channels := NewChannelServiceForTest(f.client)
+			t.Cleanup(channels.Stop)
+			built, err := channels.GetChannel(setupCtx, ch.ID)
+			require.NoError(t, err)
+			channels.SetEnabledChannelsForTest([]*Channel{built})
+			service := NewUsageLogService(f.client, NewSystemService(SystemServiceParams{Ent: f.client}), channels)
+			req := f.request(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC), f.key.ID, f.project.ID,
+				request.SourceAPI, request.StatusCompleted, "provider:model")
+			_, err = service.CreateUsageLog(setupCtx, CreateUsageLogParams{
+				RequestID: req.ID, ProjectID: f.project.ID, APIKeyID: &f.key.ID, ChannelID: ch.ID, ActualModelID: "provider:model",
+				Usage: &llm.Usage{PromptTokens: 100, CompletionTokens: 200, TotalTokens: 300}, Source: "api", Format: "openai/chat_completions",
+			})
+			require.NoError(t, err)
+			f.client.Channel.UpdateOneID(ch.ID).
+				SetSettings(&objects.ChannelSettings{ModelPriceMultiplier: lo.ToPtr(decimal.NewFromInt(2))}).SaveX(setupCtx)
+			reloaded, err := channels.GetChannel(setupCtx, ch.ID)
+			require.NoError(t, err)
+			channels.SetEnabledChannelsForTest([]*Channel{reloaded})
+			require.Equal(t, "2", reloaded.Settings.ModelPriceMultiplier.String())
+			page, err := f.service.Requests(f.ctx, "2026-01-01", "2026-01-01", nil, "", 1, 20)
+			require.NoError(t, err)
+			require.Len(t, page.Items, 1)
+			row := page.Items[0]
+			require.Equal(t, req.ID, row.ID)
+			require.NotNil(t, row.Cost)
+			require.InDelta(t, decimal.RequireFromString("0.0005").Mul(factor).InexactFloat64(), *row.Cost, 1e-12)
+			require.NotNil(t, row.CostMultiplier)
+			require.Equal(t, factor.InexactFloat64(), *row.CostMultiplier)
+			require.False(t, row.CostMultiplierMixed)
+			require.Len(t, row.CostItems, 2)
+			require.InDelta(t, decimal.RequireFromString("0.0001").Mul(factor).InexactFloat64(), row.CostItems[0].Subtotal, 1e-12)
+			require.InDelta(t, decimal.RequireFromString("0.0004").Mul(factor).InexactFloat64(), row.CostItems[1].Subtotal, 1e-12)
+		})
+	}
 }

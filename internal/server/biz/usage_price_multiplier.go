@@ -11,16 +11,27 @@ import (
 	"github.com/looplj/axonhub/internal/ent/channelmodelpriceversion"
 )
 
-// LoadUsagePriceMultipliers reads historical price snapshots by reference ID.
+// LoadUsagePriceMultipliers reads fallback references and historical price snapshots.
 // The caller must first restrict usage logs to records visible to the requester;
 // this bypass grants access only to the matching version snapshots.
 func LoadUsagePriceMultipliers(ctx context.Context, client *ent.Client, referenceIDs []string) (map[string]decimal.Decimal, error) {
 	multipliers := make(map[string]decimal.Decimal, len(referenceIDs))
-	if len(referenceIDs) == 0 {
+	var versionReferences []string
+	for _, referenceID := range referenceIDs {
+		if multiplier, ok := modelLibraryPriceReferenceMultiplier(referenceID); ok {
+			multipliers[referenceID] = multiplier
+			continue
+		}
+		if versionReferences == nil {
+			versionReferences = make([]string, 0, len(referenceIDs))
+		}
+		versionReferences = append(versionReferences, referenceID)
+	}
+	if len(versionReferences) == 0 {
 		return multipliers, nil
 	}
 	versions, err := authz.RunWithSystemBypass(ctx, "usage-price-multipliers", func(ctx context.Context) ([]*ent.ChannelModelPriceVersion, error) {
-		return client.ChannelModelPriceVersion.Query().Where(channelmodelpriceversion.ReferenceIDIn(referenceIDs...)).Select(
+		return client.ChannelModelPriceVersion.Query().Where(channelmodelpriceversion.ReferenceIDIn(versionReferences...)).Select(
 			channelmodelpriceversion.FieldReferenceID, channelmodelpriceversion.FieldPrice,
 		).All(ctx)
 	})

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { isModelLibraryPriceReference } from '@/components/request-usage-cost-breakdown';
 import { JsonViewer } from '@/components/json-tree-view';
 import { useGeneralSettings } from '@/features/system/data/system';
 import { getTokenFromStorage } from '@/stores/authStore';
@@ -489,7 +490,7 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
           const cost = usage.totalCost ?? 0;
           // Cost resolved from the model library price because the channel had no
           // explicit price for this model (see computeUsageCost fallback).
-          const isModelLibraryPrice = (usage.costPriceReferenceID ?? '').startsWith('model_library:');
+          const isModelLibraryPrice = isModelLibraryPriceReference(usage.costPriceReferenceID);
 
           const promptCost = usage.costItems?.find((i: any) => i.itemCode === 'prompt_tokens')?.subtotal;
           const completionCost = usage.costItems?.find((i: any) => i.itemCode === 'completion_tokens')?.subtotal;

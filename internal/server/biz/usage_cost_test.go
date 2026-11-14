@@ -2,7 +2,9 @@ package biz
 
 import (
 	"context"
+	"regexp"
 	"testing"
+	"time"
 
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -11,7 +13,9 @@ import (
 	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/ent/channel"
+	"github.com/looplj/axonhub/internal/ent/channelmodelpriceversion"
 	"github.com/looplj/axonhub/internal/ent/enttest"
+	"github.com/looplj/axonhub/internal/ent/intercept"
 	"github.com/looplj/axonhub/internal/ent/model"
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/llm"
@@ -1199,4 +1203,214 @@ func TestModelLibraryPriceMemo_DoesNotCacheLookupErrors(t *testing.T) {
 	price, ok := channelService.resolveModelLibraryPrice(memoCtx, "m-err")
 	require.True(t, ok)
 	require.Equal(t, "2", price.Items[0].Pricing.UsagePerUnit.String())
+}
+
+func TestUsageCost_ModelLibraryChannelMultiplier(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		multiplier *decimal.Decimal
+		modelID    string
+		reference  string
+	}{
+		{name: "unset", modelID: "provider:model", reference: "model_library:provider:model"},
+		{name: "unit", multiplier: lo.ToPtr(decimal.NewFromInt(1)), modelID: "provider:model", reference: "model_library:provider:model"},
+		{name: "half", multiplier: lo.ToPtr(decimal.RequireFromString("0.5")), modelID: "provider:model", reference: "model_library@0.5:provider:model"},
+		{name: "zero", multiplier: lo.ToPtr(decimal.Zero), modelID: "provider:model", reference: "model_library@0:provider:model"},
+		{name: "suffix", multiplier: lo.ToPtr(decimal.RequireFromString("0.5")), modelID: "provider:model-high", reference: "model_library@0.5:provider:model-high"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := enttest.NewEntClient(t, "sqlite3", "file:fallback-multiplier?mode=memory&_fk=0")
+			t.Cleanup(func() { require.NoError(t, client.Close()) })
+			ctx := authz.WithTestBypass(ent.NewContext(context.Background(), client))
+			catalog := createModelLibraryPriceEntry(t, ctx, client, "provider:model", model.StatusEnabled, objects.ModelCardCost{
+				Input: 1, Output: 2, CacheRead: 0.25, CacheWrite: 1.25,
+			})
+			create := client.Channel.Create().SetType(channel.TypeOpenaiFake).SetName(tc.name).
+				SetSupportedModels([]string{tc.modelID}).SetDefaultTestModel(tc.modelID).
+				SetStatus(channel.StatusEnabled).SetCredentials(objects.ChannelCredentials{})
+			if tc.multiplier != nil {
+				create.SetSettings(&objects.ChannelSettings{ModelPriceMultiplier: tc.multiplier})
+			}
+			ch := create.SaveX(ctx)
+			system := NewSystemService(SystemServiceParams{Ent: client})
+			channels := NewChannelServiceForTest(client)
+			t.Cleanup(channels.Stop)
+			built, err := channels.GetChannel(ctx, ch.ID)
+			require.NoError(t, err)
+			channels.SetEnabledChannelsForTest([]*Channel{built})
+			service := NewUsageLogService(client, system, channels)
+			usage := &llm.Usage{
+				PromptTokens: 1000, CompletionTokens: 200, TotalTokens: 1200,
+				PromptTokensDetails: &llm.PromptTokensDetails{CachedTokens: 200, WriteCachedTokens: 100},
+			}
+			log, err := service.CreateUsageLog(ctx, CreateUsageLogParams{
+				RequestID: 1, ProjectID: 1, ChannelID: ch.ID, ActualModelID: tc.modelID,
+				Usage: usage, Source: "api", Format: "openai/chat_completions",
+			})
+			require.NoError(t, err)
+			factor := decimal.NewFromInt(1)
+			if tc.multiplier != nil {
+				factor = *tc.multiplier
+			}
+			require.NotNil(t, log.TotalCost)
+			require.InDelta(t, decimal.RequireFromString("0.001275").Mul(factor).InexactFloat64(), *log.TotalCost, 1e-12)
+			require.Equal(t, tc.reference, log.CostPriceReferenceID)
+			require.Len(t, log.CostItems, 4)
+			for i, expected := range []struct {
+				code     objects.PriceItemCode
+				quantity int64
+				subtotal string
+			}{
+				{objects.PriceItemCodeUsage, 700, "0.0007"},
+				{objects.PriceItemCodeCompletion, 200, "0.0004"},
+				{objects.PriceItemCodePromptCachedToken, 200, "0.00005"},
+				{objects.PriceItemCodeWriteCachedTokens, 100, "0.000125"},
+			} {
+				require.Equal(t, expected.code, log.CostItems[i].ItemCode)
+				require.Equal(t, expected.quantity, log.CostItems[i].Quantity)
+				require.True(t, log.CostItems[i].Subtotal.Equal(decimal.RequireFromString(expected.subtotal).Mul(factor)))
+			}
+			require.Nil(t, client.Model.GetX(ctx, catalog.ID).ModelCard.Price.Multiplier)
+		})
+	}
+}
+
+func TestUsageCost_ModelLibraryMemoKeepsChannelMultipliersSeparate(t *testing.T) {
+	client := enttest.NewEntClient(t, "sqlite3", "file:fallback-multiplier-memo?mode=memory&_fk=0")
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+	ctx := authz.WithTestBypass(ent.NewContext(context.Background(), client))
+	createModelLibraryPriceEntry(t, ctx, client, "model", model.StatusEnabled, objects.ModelCardCost{Input: 1, Output: 2})
+	channels := NewChannelServiceForTest(client)
+	t.Cleanup(channels.Stop)
+	var builtChannels []*Channel
+	for _, factor := range []string{"0.5", "2"} {
+		ch := client.Channel.Create().SetType(channel.TypeOpenaiFake).SetName(factor).
+			SetSupportedModels([]string{"model"}).SetDefaultTestModel("model").SetStatus(channel.StatusEnabled).
+			SetCredentials(objects.ChannelCredentials{}).
+			SetSettings(&objects.ChannelSettings{ModelPriceMultiplier: lo.ToPtr(decimal.RequireFromString(factor))}).SaveX(ctx)
+		built, err := channels.GetChannel(ctx, ch.ID)
+		require.NoError(t, err)
+		builtChannels = append(builtChannels, built)
+	}
+	channels.SetEnabledChannelsForTest(builtChannels)
+	service := NewUsageLogService(client, NewSystemService(SystemServiceParams{Ent: client}), channels)
+	modelQueries := 0
+	client.Intercept(intercept.Func(func(_ context.Context, query intercept.Query) error {
+		if query.Type() == ent.TypeModel {
+			modelQueries++
+		}
+		return nil
+	}))
+	memoCtx := WithModelLibraryPriceMemo(ctx)
+	for _, index := range []int{0, 1, 0} {
+		ch := builtChannels[index]
+		factor := *ch.Settings.ModelPriceMultiplier
+		usage := &llm.Usage{PromptTokens: 100, CompletionTokens: 200, TotalTokens: 300}
+		service.InjectUsageCost(memoCtx, ch.ID, "model", usage)
+		expected := decimal.RequireFromString("0.0005").Mul(factor).InexactFloat64()
+		require.NotNil(t, usage.Cost)
+		require.InDelta(t, expected, *usage.Cost, 1e-12)
+		log, err := service.CreateUsageLog(memoCtx, CreateUsageLogParams{
+			RequestID: 1, ProjectID: 1, ChannelID: ch.ID, ActualModelID: "model",
+			Usage: usage, Source: "api", Format: "openai/chat_completions",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, log.TotalCost)
+		require.InDelta(t, expected, *log.TotalCost, 1e-12)
+		require.Equal(t, modelLibraryPriceReferenceIDWithMultiplier("model", &factor), log.CostPriceReferenceID)
+	}
+	require.Equal(t, 1, modelQueries, "both channels and cost injection must share the model lookup")
+	price, found, cached := modelLibraryPriceMemoFromContext(memoCtx).get("model")
+	require.True(t, found)
+	require.True(t, cached)
+	require.Nil(t, price.Multiplier, "the memo must retain the unmodified standard price")
+}
+
+func TestModelLibraryPriceReferenceIDWithMultiplier(t *testing.T) {
+	for _, tc := range []struct {
+		multiplier *decimal.Decimal
+		expected   string
+	}{
+		{nil, "model_library:provider:model"},
+		{lo.ToPtr(decimal.NewFromInt(1)), "model_library:provider:model"},
+		{lo.ToPtr(decimal.RequireFromString("0.500")), "model_library@0.5:provider:model"},
+		{lo.ToPtr(decimal.Zero), "model_library@0:provider:model"},
+	} {
+		require.Equal(t, tc.expected, modelLibraryPriceReferenceIDWithMultiplier("provider:model", tc.multiplier))
+	}
+}
+
+func TestLoadUsagePriceMultipliersModelLibraryReferences(t *testing.T) {
+	for _, tc := range []struct {
+		reference string
+		expected  string
+	}{
+		{"model_library:model", "1"},
+		{"model_library:provider:model", "1"},
+		{"model_library@0.5:provider:model", "0.5"},
+		{"model_library@0:model", "0"},
+		{"model_library@2:model", "2"},
+		{"model_library@invalid:model", "1"},
+		{"model_library@:model", "1"},
+		{"model_library@-1:model", "1"},
+		{"model_library@0.5", "1"},
+		{"model_library@0.5:", "1"},
+	} {
+		// A nil client proves that fallback references never query price versions.
+		multipliers, err := LoadUsagePriceMultipliers(context.Background(), nil, []string{tc.reference})
+		require.NoError(t, err)
+		require.Equal(t, tc.expected, multipliers[tc.reference].String(), tc.reference)
+	}
+}
+
+func TestLoadUsagePriceMultipliersMixedReferences(t *testing.T) {
+	client := enttest.NewEntClient(t, "sqlite3", "file:fallback-multiplier-mixed?mode=memory&_fk=0")
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+	ctx := authz.WithTestBypass(context.Background())
+	ch := client.Channel.Create().SetType(channel.TypeOpenaiFake).SetName("mixed").
+		SetSupportedModels([]string{"model"}).SetDefaultTestModel("model").SetCredentials(objects.ChannelCredentials{}).SaveX(ctx)
+	price := client.ChannelModelPrice.Create().SetChannelID(ch.ID).SetModelID("model").
+		SetPrice(objects.ModelPrice{}).SetReferenceID("current").SaveX(ctx)
+	client.ChannelModelPriceVersion.Create().SetChannelID(ch.ID).SetChannelModelPriceID(price.ID).
+		SetModelID("model").SetReferenceID("snapshot").SetEffectiveStartAt(time.Now()).
+		SetStatus(channelmodelpriceversion.StatusArchived).
+		SetPrice(objects.ModelPrice{Multiplier: lo.ToPtr(decimal.RequireFromString("0.25"))}).SaveX(ctx)
+	queries := 0
+	client.Intercept(intercept.Func(func(_ context.Context, query intercept.Query) error {
+		if query.Type() == ent.TypeChannelModelPriceVersion {
+			queries++
+		}
+		return nil
+	}))
+	multipliers, err := LoadUsagePriceMultipliers(context.Background(), client, []string{
+		"snapshot", "model_library:model", "model_library@0.5:provider:model", "model_library@bad:model", "missing",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "0.25", multipliers["snapshot"].String())
+	require.Equal(t, "1", multipliers["model_library:model"].String())
+	require.Equal(t, "0.5", multipliers["model_library@0.5:provider:model"].String())
+	require.Equal(t, "1", multipliers["model_library@bad:model"].String())
+	require.NotContains(t, multipliers, "missing")
+	require.Equal(t, 1, queries)
+}
+
+func TestModelLibraryPriceReferenceCanonicalFormat(t *testing.T) {
+	frontendPattern := regexp.MustCompile(`^model_library(?:@(?:0|[1-9]\d*)(?:\.\d+)?)?:.+$`)
+	for _, tc := range []struct {
+		input     string
+		canonical string
+	}{
+		{"0", "0"},
+		{"0.5", "0.5"},
+		{"1", "1"},
+		{"1.25", "1.25"},
+		{"1e-24", "0.000000000000000000000001"},
+		{"1234567890123456789012345678901234567890", "1234567890123456789012345678901234567890"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			factor := decimal.RequireFromString(tc.input)
+			require.Equal(t, tc.canonical, factor.String())
+			require.Regexp(t, frontendPattern, modelLibraryPriceReferenceIDWithMultiplier("provider:model", &factor))
+		})
+	}
 }

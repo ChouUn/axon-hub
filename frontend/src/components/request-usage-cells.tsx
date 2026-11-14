@@ -1,10 +1,11 @@
+import { IconCoin } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getStatusColor } from '@/features/requests/components/help';
 import { extractNumberID } from '@/lib/utils';
 import { formatDuration } from '@/utils/format-duration';
-import { buildCostBreakdown, type CostBreakdown } from './request-usage-cost-breakdown';
+import { buildCostBreakdown, isModelLibraryPriceReference, type CostBreakdown } from './request-usage-cost-breakdown';
 
 export type { CostBreakdown, CostBreakdownItem } from './request-usage-cost-breakdown';
 
@@ -90,8 +91,8 @@ export function DurationCell({ status, stream, latencyMs, firstTokenLatencyMs }:
   );
 }
 
-export function CostCell({ total, currencyCode, breakdown, emptyLabel = '—' }: {
-  total: number | null; currencyCode: string; breakdown: CostBreakdown | null; emptyLabel?: string;
+export function CostCell({ total, currencyCode, breakdown, costPriceReferenceID, emptyLabel = '—' }: {
+  total: number | null; currencyCode: string; breakdown: CostBreakdown | null; costPriceReferenceID?: string | null; emptyLabel?: string;
 }) {
   const { t, i18n } = useTranslation();
   if (total == null) return <span className='font-mono text-xs'>{emptyLabel}</span>;
@@ -100,7 +101,22 @@ export function CostCell({ total, currencyCode, breakdown, emptyLabel = '—' }:
     t('currencies.format', { val, currency: currencyCode, locale, minimumFractionDigits, maximumFractionDigits });
   // Per-million unit prices below keep 2–6 decimals so sub-cent prices such as 0.0028 stay visible.
   const amount = money(total, 6);
-  if (!breakdown) return <span className='font-mono text-xs font-medium'>{amount}</span>;
+  const priceSourceMarker = isModelLibraryPriceReference(costPriceReferenceID) && (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className='inline-flex h-3.5 w-3.5 items-center justify-center text-amber-600 dark:text-amber-400'
+          tabIndex={0}
+          role='img'
+          aria-label={t('usageLogs.modelLibraryPriceHint')}
+        >
+          <IconCoin className='h-3.5 w-3.5' />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{t('usageLogs.modelLibraryPriceHint')}</TooltipContent>
+    </Tooltip>
+  );
+  if (!breakdown) return <span className='inline-flex items-center gap-1 font-mono text-xs font-medium'>{amount}{priceSourceMarker}</span>;
   const rows = buildCostBreakdown(total, breakdown);
   const itemLabel = (code: string) => {
     switch (code) {
@@ -112,6 +128,7 @@ export function CostCell({ total, currencyCode, breakdown, emptyLabel = '—' }:
     }
   };
   return (
+    <span className='inline-flex items-center gap-1'>
     <Tooltip>
       <TooltipTrigger asChild>
         <button type='button' className='cursor-help font-mono text-xs font-medium underline decoration-dotted underline-offset-2'>
@@ -148,5 +165,7 @@ export function CostCell({ total, currencyCode, breakdown, emptyLabel = '—' }:
         </div>
       </TooltipContent>
     </Tooltip>
+      {priceSourceMarker}
+    </span>
   );
 }

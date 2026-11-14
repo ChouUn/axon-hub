@@ -80,6 +80,41 @@ func modelLibraryPriceReferenceID(modelID string) string {
 	return modelLibraryPriceReferencePrefix + modelID
 }
 
+// modelLibraryPriceMultiplierReferencePrefix is the fork's multiplier-bearing
+// fallback format. Fallback prices have no price-version snapshot.
+const modelLibraryPriceMultiplierReferencePrefix = "model_library@"
+
+// modelLibraryPriceReferenceIDWithMultiplier snapshots the channel multiplier in
+// the fork's fallback reference because fallback has no price-version snapshot.
+func modelLibraryPriceReferenceIDWithMultiplier(modelID string, multiplier *decimal.Decimal) string {
+	if multiplier == nil || multiplier.Equal(decimal.NewFromInt(1)) {
+		return modelLibraryPriceReferenceID(modelID)
+	}
+	return modelLibraryPriceMultiplierReferencePrefix + multiplier.String() + ":" + modelID
+}
+
+// modelLibraryPriceReferenceMultiplier reads the fork's fallback multiplier
+// snapshot. Malformed fallback references retain the legacy unit multiplier.
+func modelLibraryPriceReferenceMultiplier(referenceID string) (decimal.Decimal, bool) {
+	one := decimal.NewFromInt(1)
+	if strings.HasPrefix(referenceID, modelLibraryPriceReferencePrefix) {
+		return one, true
+	}
+	encoded, ok := strings.CutPrefix(referenceID, modelLibraryPriceMultiplierReferencePrefix)
+	if !ok {
+		return one, false
+	}
+	value, modelID, ok := strings.Cut(encoded, ":")
+	if !ok || modelID == "" {
+		return one, true
+	}
+	multiplier, err := decimal.NewFromString(value)
+	if err != nil || multiplier.IsNegative() {
+		return one, true
+	}
+	return multiplier, true
+}
+
 // modelLibraryPriceModelIDCandidates returns the model ids to try, in order,
 // when resolving a model library price. The exact id is tried first, then the
 // base model with a known effort/tier suffix stripped (e.g.

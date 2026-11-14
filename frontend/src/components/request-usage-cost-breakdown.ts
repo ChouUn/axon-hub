@@ -22,6 +22,10 @@ const itemOrder: Record<string, number> = {
   prompt_write_cached_tokens: 3,
 };
 
+export function isModelLibraryPriceReference(referenceID: string | null | undefined): boolean {
+  return /^model_library(?:@(?:0|[1-9]\d*)(?:\.\d+)?)?:.+$/.test(referenceID ?? '');
+}
+
 export function buildCostBreakdown(total: number, breakdown: CostBreakdown) {
   const items: ItemRow[] = breakdown.items
     .filter((item) => item.quantity !== 0 || item.subtotal !== 0)

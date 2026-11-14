@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildCostBreakdown } from './request-usage-cost-breakdown.ts';
+import { buildCostBreakdown, isModelLibraryPriceReference } from './request-usage-cost-breakdown.ts';
 
 const item = (itemCode, quantity, subtotal, variant = null, tiers = []) => ({ itemCode, variant, quantity, subtotal, tiers });
 const breakdown = (items, multiplier = 1) => ({ items, multiplier });
@@ -48,4 +48,30 @@ test('only multi-segment tiers receive display rows and per-tier unit prices', (
     { upTo: 10, units: 10, subtotal: 0.5, unitPrice: 50_000 },
     { upTo: null, units: 20, subtotal: 2.5, unitPrice: 125_000 },
   ]);
+});
+
+test('recognizes model library references with optional channel multiplier snapshots', () => {
+  for (const reference of [
+    'model_library:gpt-5',
+    'model_library:provider:gpt-5',
+    'model_library@0:gpt-5',
+    'model_library@0.5:provider:gpt-5',
+    'model_library@2.75:gpt-5',
+    'model_library@1000000000000000000000000000000:gpt-5',
+  ]) {
+    assert.equal(isModelLibraryPriceReference(reference), true, reference);
+  }
+});
+
+test('rejects regular price references and malformed model library references', () => {
+  for (const reference of [
+    null, undefined, '', 'channel-price-version', 'model_library', 'model_library:',
+    'model_library_extra:gpt-5', 'other:model_library:gpt-5',
+    'model_library@gpt-5', 'model_library@:gpt-5', 'model_library@0.5:',
+    'model_library@-1:gpt-5', 'model_library@NaN:gpt-5', 'model_library@Infinity:gpt-5',
+    'model_library@1e3:gpt-5', 'model_library@01:gpt-5', 'model_library@.5:gpt-5',
+    'model_library@2.:gpt-5',
+  ]) {
+    assert.equal(isModelLibraryPriceReference(reference), false, String(reference));
+  }
 });
