@@ -24,6 +24,7 @@ import (
 // credentials, transport headers, and protocol-selection headers are never copied.
 var codexResponsesPassThroughHeaders = []string{
 	"X-Codex-Turn-Metadata",
+	"X-Codex-Turn-State",
 	"X-Codex-Window-Id",
 	"X-Client-Request-Id",
 	"X-Codex-Beta-Features",
@@ -115,7 +116,15 @@ func applyPassThroughRequestBody(outbound *PersistentOutboundTransformer, system
 			log.String("api_format", request.APIFormat),
 		)
 
-		body, err := mergePassThroughRequestBody(llmReq.RawRequest.Body, llmReq.APIFormat, llmReq.Model)
+		body, err := mergePassThroughRequestBodyWithPromptProtection(
+			llmReq.RawRequest.Body,
+			llmReq.APIFormat,
+			llmReq.Model,
+			outbound.state.PromptProtectionMaskRules,
+		)
+		if err == nil && outbound.state.PromptProtectionBodyCheck != nil {
+			err = outbound.state.PromptProtectionBodyCheck.validate(ctx, body)
+		}
 		if err != nil {
 			log.Warn(ctx, "failed to merge pass-through body, keeping outbound body",
 				log.String("channel", channel.Name),
@@ -247,6 +256,7 @@ func passThroughBodyNeedsModelPatch(apiFormat llm.APIFormat) bool {
 		llm.APIFormatOpenAIEmbedding,
 		llm.APIFormatOpenAIModeration,
 		llm.APIFormatOpenAIAlphaSearch,
+		llm.APIFormatOpenAIDecisions,
 		llm.APIFormatOpenAIImageGeneration,
 		llm.APIFormatOpenAIVideo,
 		llm.APIFormatJinaEmbedding,
@@ -258,7 +268,8 @@ func passThroughBodyNeedsModelPatch(apiFormat llm.APIFormat) bool {
 		// Image edits submitted as application/json carry a top-level model field.
 		// Multipart edit bodies never reach this point (passThroughBodySupported
 		// rejects them), so sjson patching only ever runs on JSON payloads.
-		llm.APIFormatOpenAIImageEdit:
+		llm.APIFormatOpenAIImageEdit,
+		llm.APIFormatTypeSafeSystemOne:
 		return true
 	default:
 		return false
@@ -301,8 +312,10 @@ func applyUserAgentPassThrough(outbound *PersistentOutboundTransformer, systemSe
 					request.Headers.Set("User-Agent", clientUA)
 				}
 			}
-		} else {
-			// Pass-through disabled: use AxonHub's default User-Agent
+		} else if request.Headers.Get("User-Agent") == "" {
+			// Pass-through disabled: use AxonHub's default User-Agent, unless the
+			// outbound transformer already set a provider-required one (e.g.
+			// GitHubCopilotChat on Copilot channels).
 			request.Headers.Set("User-Agent", "axonhub/1.0")
 		}
 
@@ -394,6 +407,9 @@ func captureRawProviderStream(outbound *PersistentOutboundTransformer, systemSer
 					rawStreamErr = fmt.Errorf("passthrough stream panic: %v", r)
 				} else if rawStreamErr == nil {
 					rawStreamErr = stream.Err()
+					if rawStreamErr == nil {
+						rawStreamErr = ctx.Err()
+					}
 				}
 
 				close(done)
@@ -437,6 +453,7 @@ func captureRawProviderStream(outbound *PersistentOutboundTransformer, systemSer
 					return
 				}
 
+				// Nothing drains rawStreamCh until the pass-through consumer attaches.
 				if held {
 					continue
 				}
@@ -488,15 +505,20 @@ func applyPassThroughStream(outbound *PersistentOutboundTransformer, systemServi
 
 		log.Debug(ctx, "applying pass-through stream",
 			log.String("channel", channel.Name),
+			log.Int("held_events", len(held)),
 		)
 
 		go func() {
 			defer func() {
-				if cause := recover(); cause != nil {
-					log.Warn(ctx, "pass-through pipeline drain panicked", log.Any("cause", cause))
+				if r := recover(); r != nil {
+					log.Warn(ctx, "pass-through pipeline drain goroutine panicked, recovering",
+						log.Any("panic", r),
+						log.String("channel", channel.Name),
+					)
 				}
 			}()
 			defer stream.Close()
+
 			for stream.Next() {
 				_ = stream.Current()
 			}
@@ -646,8 +668,11 @@ func (s *passThroughChannelStream) Err() error {
 			return nil
 		}
 	}
-	if s.errRef != nil {
+	if s.errRef != nil && *s.errRef != nil {
 		return *s.errRef
+	}
+	if s.ctx != nil {
+		return s.ctx.Err()
 	}
 
 	return nil

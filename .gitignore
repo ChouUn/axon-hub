@@ -8,6 +8,7 @@
 !*.*
 !Makefile
 !LICENSE
+!/NOTICE
 !Dockerfile
 !VERSION
 
@@ -171,3 +172,7 @@ config.schema.json
 deploy_dev.sh
 
 !.omp/config.yml
+docs/superpowers/
+docs/superpowers/**
+superpowers/
+superpowers/**

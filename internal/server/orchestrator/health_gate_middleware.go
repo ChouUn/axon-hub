@@ -202,11 +202,14 @@ func (s *healthGateStream) Close() error {
 			}
 			return
 		}
+		// StreamCompleted tracks the generation outcome. A provider-sent incomplete
+		// terminal (token limit, content filter) or cancellation is a valid response
+		// and is not a channel fault.
 		var outcome biz.HealthGateOutcome
 		switch {
-		case s.state.StreamCompleted:
+		case s.state.StreamCompleted || s.state.OutboundStreamTerminal == streamTerminalIncomplete:
 			outcome = biz.HealthGateOutcomeSuccess
-		case healthGateClientCanceled(s.ctx):
+		case healthGateClientCanceled(s.ctx) || s.state.OutboundStreamTerminal == streamTerminalCanceled:
 			outcome = biz.HealthGateOutcomeNeutral
 		case s.meaningful:
 			outcome = biz.HealthGateOutcomeUnstable

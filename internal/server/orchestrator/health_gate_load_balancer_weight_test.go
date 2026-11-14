@@ -15,8 +15,8 @@ import (
 	"github.com/looplj/axonhub/llm"
 )
 
-// Use the real scorers, with selection counts updated at selection time just
-// like ChannelService. Leave activity timestamps unset to avoid time decay.
+// Use the real scorers, with sliding-window selection counts updated at
+// selection time just like ChannelService.
 type healthGateWeightMetrics struct {
 	mockMetricsProvider
 }
@@ -35,7 +35,6 @@ func healthGateWeightStrategies(metrics ChannelMetricsProvider) []LoadBalanceStr
 		NewWeightRoundRobinStrategy(metrics),
 		NewLatencyAwareStrategy(metrics),
 		NewRateLimitAwareStrategy(NewChannelRequestTracker(), nil),
-		NewQuotaAwareStrategy(nil, &mockQuotaEnforcementSettingsProvider{}),
 	}
 }
 
@@ -98,6 +97,10 @@ func TestHealthGateSelector_NewSessionPrefersAddedHigherWeightWithRealScores(t *
 			// prefers 10 even without an owner, because its latency is excellent.
 			oldScore := healthGateWeightTotalScore(t, newCtx, selector.loadBalancer.strategies, old.Channel)
 			newScore := healthGateWeightTotalScore(t, newCtx, selector.loadBalancer.strategies, added.Channel)
+			// The initial selection raises the old count from 1 to 2:
+			// WRR = 150/(1+(2/0.1)/150), latency = 80*(1-10/3000), rate limit = 100.
+			require.InDelta(t, 150.0/(1+(2/0.1)/150)+80*(1-10.0/3000)+100, oldScore, 0.000001)
+			require.InDelta(t, 150+40+100, newScore, 0.000001)
 			require.Greater(t, oldScore, newScore)
 			scoreFirst := NewLoadBalancer(selector.policy, nil, selector.loadBalancer.strategies...)
 			scoreFirst.debug = mode.debug
@@ -178,7 +181,7 @@ func TestHealthGateSelector_AssociationPriorityPrecedesWeightTiers(t *testing.T)
 	}
 }
 
-func TestHealthGateLoadBalancer_WeightTiersRespectHardLimitsAndQuota(t *testing.T) {
+func TestHealthGateSelector_WeightTiersRespectRateLimitsAndQuota(t *testing.T) {
 	for _, debug := range []bool{false, true} {
 		for _, scenario := range []string{"rpm_exhausted", "cooldown", "quota_exhausted", "quota_warning_higher_weight", "quota_warning_equal_weight"} {
 			t.Run(map[bool]string{false: "production", true: "debug"}[debug]+"/"+scenario, func(t *testing.T) {
@@ -188,11 +191,8 @@ func TestHealthGateLoadBalancer_WeightTiersRespectHardLimitsAndQuota(t *testing.
 				high.Channel.OrderingWeight = 15
 				tracker := NewChannelRequestTracker()
 				quota := &mockQuotaStatusProvider{statuses: map[int]*biz.QuotaChannelStatus{}}
-				settings := &mockQuotaEnforcementSettingsProvider{settings: &biz.QuotaEnforcementSettings{
-					Enabled: true, Mode: biz.QuotaEnforcementModeDePrioritize,
-				}}
 				expectedID := low.Channel.ID
-				hard := true
+				hard := scenario == "rpm_exhausted" || scenario == "cooldown"
 				switch scenario {
 				case "rpm_exhausted":
 					rpm := int64(1)
@@ -203,31 +203,50 @@ func TestHealthGateLoadBalancer_WeightTiersRespectHardLimitsAndQuota(t *testing.
 				case "quota_exhausted":
 					quota.statuses[high.Channel.ID] = &biz.QuotaChannelStatus{Status: providerquotastatus.StatusExhausted}
 				case "quota_warning_higher_weight", "quota_warning_equal_weight":
-					hard = false
 					quota.statuses[high.Channel.ID] = &biz.QuotaChannelStatus{Status: providerquotastatus.StatusWarning, Ready: true}
-					if scenario == "quota_warning_higher_weight" {
-						expectedID = high.Channel.ID
-					} else {
+					expectedID = high.Channel.ID
+					if scenario == "quota_warning_equal_weight" {
 						high.Channel.OrderingWeight = low.Channel.OrderingWeight
 					}
 				}
 				metrics := &mockMetricsProvider{}
 				strategies := []LoadBalanceStrategy{
 					NewWeightRoundRobinStrategy(metrics), NewLatencyAwareStrategy(metrics),
-					NewRateLimitAwareStrategy(tracker, nil), NewQuotaAwareStrategy(quota, settings),
+					NewRateLimitAwareStrategy(tracker, nil),
 				}
 				ctx := context.Background()
 				highScore := healthGateWeightTotalScore(t, ctx, strategies, high.Channel)
 				lowScore := healthGateWeightTotalScore(t, ctx, strategies, low.Channel)
 				require.Equal(t, hard, isHardUnavailableScore(highScore))
 				require.False(t, isHardUnavailableScore(lowScore))
-				require.Greater(t, lowScore, highScore)
+				if hard {
+					require.Greater(t, lowScore, highScore)
+				} else {
+					require.Equal(t, lowScore, highScore, "quota state no longer contributes a load-balancing score")
+				}
 				for _, retries := range []int{0, 1} {
-					policy := &mockRetryPolicyProvider{policy: &biz.RetryPolicy{Enabled: true, MaxChannelRetries: retries}}
-					lb := NewLoadBalancer(policy, nil, strategies...).WithHealthGate(biz.NewHealthGate(nil))
-					lb.debug = debug
-					result := lb.Sort(ctx, []*ChannelModelsCandidate{high, low}, "alias", false)
-					require.Len(t, result, 1+retries)
+					now := time.Unix(1000, 0)
+					selector, _, policy := healthGateSelectorFixture(&now, []*ChannelModelsCandidate{high, low}, biz.TraceStickyDisabled, nil)
+					policy.MaxChannelRetries = retries
+					selector.loadBalancer.strategies = strategies
+					selector.loadBalancer.debug = debug
+					selector.quotaGate = NewQuotaRoutingGate(quota, biz.QuotaRoutingSettings{DefaultMode: objects.QuotaRoutingModeRemoveOnExhausted})
+					result, err := selector.Select(ctx, &llm.Request{Model: "alias"})
+					require.NoError(t, err)
+					expectedCount := 1 + retries
+					if scenario == "quota_exhausted" {
+						expectedCount = 1
+						require.Equal(t, 1, selector.quotaGate.DroppedCount())
+					}
+					require.Len(t, result, expectedCount)
+					if scenario == "quota_warning_equal_weight" {
+						// Equal weight and equal score leave the order unspecified; a warning only has to keep the channel routable.
+						require.Zero(t, selector.quotaGate.DroppedCount())
+						if retries == 1 {
+							require.ElementsMatch(t, []int{high.Channel.ID, low.Channel.ID}, []int{result[0].Channel.ID, result[1].Channel.ID})
+						}
+						continue
+					}
 					require.Equal(t, expectedID, result[0].Channel.ID)
 				}
 			})
@@ -248,22 +267,21 @@ func TestHealthGateLoadBalancer_OtherFourStrategiesKeepTheirOrdering(t *testing.
 				metrics := &mockMetricsProvider{metrics: map[int]*biz.AggregatedMetrics{old.Channel.ID: oldMetrics}}
 				policy := &mockRetryPolicyProvider{policy: &biz.RetryPolicy{Enabled: true, MaxChannelRetries: 1, LoadBalancerStrategy: strategy}}
 				rateLimit := NewRateLimitAwareStrategy(NewChannelRequestTracker(), nil)
-				quota := NewQuotaAwareStrategy(nil, &mockQuotaEnforcementSettingsProvider{})
 				var lb *LoadBalancer
 				expectedID := added.Channel.ID
 				switch strategy {
 				case biz.LoadBalancerStrategyAdaptive:
-					lb = NewLoadBalancer(policy, nil, NewErrorAwareStrategy(metrics), NewWeightRoundRobinStrategy(metrics), NewLatencyAwareStrategy(metrics), rateLimit, quota)
+					lb = NewLoadBalancer(policy, nil, NewErrorAwareStrategy(metrics), NewWeightRoundRobinStrategy(metrics), NewLatencyAwareStrategy(metrics), rateLimit)
 					expectedID = old.Channel.ID
 				case biz.LoadBalancerStrategyFailover:
-					lb = NewLoadBalancer(policy, nil, NewWeightStrategy(), NewRandomStrategy(), rateLimit, quota)
+					lb = NewLoadBalancer(policy, nil, NewWeightStrategy(), NewRandomStrategy(), rateLimit)
 				case biz.LoadBalancerStrategyCircuitBreaker:
-					lb = NewLoadBalancer(policy, nil, NewWeightStrategy(), NewModelAwareCircuitBreakerStrategy(biz.NewModelCircuitBreaker()), rateLimit, quota)
+					lb = NewLoadBalancer(policy, nil, NewWeightStrategy(), NewModelAwareCircuitBreakerStrategy(biz.NewModelCircuitBreaker()), rateLimit)
 				case biz.LoadBalancerStrategyRoundRobin:
 					// Equal counts retain input order even when the second channel
 					// has a higher weight: this mode disables the weight tie-breaker.
 					oldMetrics.RequestCount = 0
-					lb = NewLoadBalancer(policy, nil, NewRoundRobinStrategy(metrics), rateLimit, quota).
+					lb = NewLoadBalancer(policy, nil, NewRoundRobinStrategy(metrics), rateLimit).
 						WithoutWeightTieBreaker().WithRoundRobinHealthFilter(NewRoundRobinHealthStrategy(metrics))
 					expectedID = old.Channel.ID
 				}

@@ -32,6 +32,13 @@ func (s *LoadBalancedSelector) selectHealthGated(
 		return candidates, nil
 	}
 	decision, probeEligible := s.healthGateSessionDecision(ctx, stickyMode, policy)
+	stickyID := 0
+	if decision.sticky && decision.found {
+		stickyID = decision.owner.ChannelID
+	}
+	if s.quotaGate != nil {
+		candidates = s.quotaGate.Filter(ctx, candidates, req, stickyID)
+	}
 	var channelService *biz.ChannelService
 	if service, ok := lb.selectionTracker.(*biz.ChannelService); ok {
 		channelService = service

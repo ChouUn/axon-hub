@@ -10,6 +10,7 @@ import (
 
 	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/ent"
+	"github.com/looplj/axonhub/internal/ent/providerquotastatus"
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/llm"
@@ -88,6 +89,47 @@ func TestHealthGateSelector_FiltersModelsWithoutMutatingCandidates(t *testing.T)
 	require.Equal(t, []string{"format-broken", "format-working"}, first.modelAPIFormats)
 	require.Equal(t, "format-broken", first.APIFormat)
 	require.NotSame(t, first, result[0])
+}
+
+func TestHealthGateSelector_QuotaFilteringPrecedesHealthGate(t *testing.T) {
+	now := time.Unix(1000, 0)
+	exhausted := healthGateSelectorCandidate(1, 0, "exhausted")
+	available := healthGateSelectorCandidate(2, 1, "available")
+	previous := &fakePreviousChannelProvider{traceChannelIDs: map[int]int{10: exhausted.Channel.ID}}
+	selector, gate, policy := healthGateSelectorFixture(&now,
+		[]*ChannelModelsCandidate{exhausted, available}, biz.TraceStickyPreferPreviousChannel, previous)
+	openHealthGateModel(t, gate, policy, exhausted, "exhausted")
+	openHealthGateModel(t, gate, policy, available, "available")
+	selector.quotaGate = NewQuotaRoutingGate(&mockQuotaStatusProvider{statuses: map[int]*biz.QuotaChannelStatus{
+		exhausted.Channel.ID: quotaExhaustedStatus(),
+		available.Channel.ID: quotaRoutingStatus(providerquotastatus.StatusAvailable),
+	}}, biz.QuotaRoutingSettings{DefaultMode: objects.QuotaRoutingModeRemoveOnExhausted})
+	ctx := contexts.WithTrace(context.Background(), &ent.Trace{ID: 10})
+
+	result, err := selector.Select(ctx, &llm.Request{Model: "alias"})
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Equal(t, available.Channel.ID, result[0].Channel.ID)
+	require.True(t, result[0].healthGate.lastResort)
+	require.Equal(t, 1, selector.quotaGate.DroppedCount())
+	decision := result[0].healthGate.decision
+	require.Equal(t, []*ChannelModelsCandidate{available}, decision.candidates)
+	require.Empty(t, decision.record.Skipped, "quota-exhausted candidates never reach health inspection")
+	require.False(t, decision.ownerOpen, "a quota-filtered owner is absent rather than health-gated")
+}
+
+func TestHealthGateSelector_AllQuotaExhaustedReturnsEmpty(t *testing.T) {
+	now := time.Unix(1000, 0)
+	candidate := healthGateSelectorCandidate(1, 0, "model")
+	selector, _, _ := healthGateSelectorFixture(&now, []*ChannelModelsCandidate{candidate}, biz.TraceStickyDisabled, nil)
+	selector.quotaGate = NewQuotaRoutingGate(&mockQuotaStatusProvider{statuses: map[int]*biz.QuotaChannelStatus{
+		candidate.Channel.ID: quotaExhaustedStatus(),
+	}}, biz.QuotaRoutingSettings{DefaultMode: objects.QuotaRoutingModeRemoveOnExhausted})
+
+	result, err := selector.Select(context.Background(), &llm.Request{Model: "alias"})
+	require.NoError(t, err)
+	require.Empty(t, result)
+	require.Equal(t, 1, selector.quotaGate.DroppedCount())
 }
 
 func TestHealthGateSelector_StickyGateLeavesCacheUnchanged(t *testing.T) {

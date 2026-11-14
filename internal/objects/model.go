@@ -31,11 +31,14 @@ type ModelCardLimit struct {
 }
 
 type ModelCard struct {
-	Reasoning   ModelCardReasoning  `json:"reasoning"`
-	ToolCall    bool                `json:"toolCall"`
-	Temperature bool                `json:"temperature"`
-	Modalities  ModelCardModalities `json:"modalities"`
-	Vision      bool                `json:"vision"`
+	Reasoning ModelCardReasoning `json:"reasoning"`
+	// ReasoningEfforts lists the reasoning effort levels the model accepts, using the
+	// unified values from llm/reasoning.go. Nil means the levels are unknown.
+	ReasoningEfforts []string            `json:"reasoningEfforts"`
+	ToolCall         bool                `json:"toolCall"`
+	Temperature      bool                `json:"temperature"`
+	Modalities       ModelCardModalities `json:"modalities"`
+	Vision           bool                `json:"vision"`
 	// Price is authoritative. Keep null in JSON to distinguish an unpriced card
 	// from legacy cost-only persisted data, including old cache entries.
 	Price       *ModelPrice    `json:"price"`
@@ -147,6 +150,7 @@ const (
 	ModelAssociationConditionFieldPromptTokens        = "prompt_tokens"
 	ModelAssociationConditionFieldStream              = "stream"
 	ModelAssociationConditionFieldRequestFormat       = "request_format"
+	ModelAssociationConditionFieldReasoningEffort     = "reasoning_effort"
 	ModelAssociationConditionFieldDailyTime           = "daily_time"
 	ModelAssociationConditionFieldHasImage            = "has_image"
 	ModelAssociationConditionFieldHasVideo            = "has_video"

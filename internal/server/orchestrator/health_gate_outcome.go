@@ -38,7 +38,7 @@ func classifyHealthGateOutcome(ctx context.Context, err error) biz.HealthGateOut
 	if errors.Is(err, pipeline.ErrEmptyResponse) || errors.Is(err, pipeline.ErrEmptyStreamChunks) ||
 		errors.Is(err, pipeline.ErrEmptyAggregatedBody) || errors.Is(err, pipeline.ErrStreamFirstEventTimeout) ||
 		errors.Is(err, pipeline.ErrNonStreamResponseTimeout) || errors.Is(err, context.DeadlineExceeded) ||
-		isRetryableTransportError(err) {
+		IsUpstreamTransportError(err) {
 		return biz.HealthGateOutcomeFailure
 	}
 	var netErr net.Error

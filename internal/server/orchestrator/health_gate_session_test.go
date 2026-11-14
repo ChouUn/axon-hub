@@ -150,6 +150,26 @@ func TestHealthGateSession_ThreadOwnerPrecedence(t *testing.T) {
 	require.Equal(t, 2, selected[0].healthGate.decision.record.Owner.ChannelID)
 }
 
+func TestHealthGateSession_QuotaBackpressureUsesV2Owner(t *testing.T) {
+	f := newHealthGateSessionFixture(t)
+	ctx := contexts.WithTrace(f.ctx, &ent.Trace{ID: 11, ThreadID: 22})
+	setHealthGateSessionOwner(f.request, ctx, 0, 11, biz.SessionOwner{ChannelID: 1})
+	setHealthGateSessionOwner(f.request, ctx, 22, 0, biz.SessionOwner{ChannelID: 2})
+	previous, err := f.request.GetPreviousChannelID(ctx, 11)
+	require.NoError(t, err)
+	require.Equal(t, 1, previous, "the v1 trace cache names a different channel than the v2 thread owner")
+	f.selector.quotaGate = NewQuotaRoutingGate(&mockQuotaStatusProvider{statuses: map[int]*biz.QuotaChannelStatus{
+		2: quotaStickyOnlyStatus(),
+	}}, biz.QuotaRoutingSettings{DefaultMode: objects.QuotaRoutingModeBackpressure})
+
+	selected := f.selectCandidates(t, ctx)
+	require.Equal(t, []int{2, 1}, quotaRoutingIDs(selected))
+	require.True(t, selected[0].TraceSticky)
+	require.Equal(t, 2, selected[0].healthGate.decision.owner.ChannelID)
+	require.Len(t, selected[0].healthGate.decision.candidates, 2)
+	require.Zero(t, f.selector.quotaGate.DroppedCount())
+}
+
 func TestHealthGateSession_TemporaryThenConsecutiveMigration(t *testing.T) {
 	f := newHealthGateSessionFixture(t)
 	ctx := contexts.WithTrace(f.ctx, &ent.Trace{ID: 10, ThreadID: 20})
@@ -290,6 +310,50 @@ func TestHealthGateSession_StreamCommitsOnlyAfterTerminalClose(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	requireHealthGateSessionOwner(t, owner, selected[0].Channel.ID, 0, 5*time.Minute)
+}
+
+func TestHealthGateSession_ProviderTerminalWithoutCompletionIsNotChannelFault(t *testing.T) {
+	for _, tt := range []struct {
+		terminal    streamTerminalState
+		wantOutcome biz.HealthGateOutcome
+		wantOwner   bool
+	}{
+		{terminal: streamTerminalIncomplete, wantOutcome: biz.HealthGateOutcomeSuccess, wantOwner: true},
+		{terminal: streamTerminalCanceled, wantOutcome: biz.HealthGateOutcomeNeutral},
+	} {
+		t.Run(string(tt.terminal), func(t *testing.T) {
+			f := newHealthGateSessionFixture(t)
+			ctx := contexts.WithTrace(f.ctx, &ent.Trace{ID: 10, ThreadID: 20})
+			selected := f.selectCandidates(t, ctx)
+			state := &PersistenceState{
+				RoutingPolicy:    EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated},
+				CurrentCandidate: selected[0], RequestService: f.request,
+			}
+			tracker := withHealthGate(&PersistentOutboundTransformer{state: state}, f.gate, f.policy.HealthGateOrDefault())
+			_, err := tracker.OnOutboundRawRequest(ctx, &httpclient.Request{})
+			require.NoError(t, err)
+			wrapper, err := tracker.OnOutboundLlmStream(ctx, streams.SliceStream([]*llm.Response{}))
+			require.NoError(t, err)
+			require.NoError(t, tracker.finalize(ctx, nil, true))
+
+			// The provider ended the stream with a recognized terminal event that is
+			// not a completed generation, so StreamCompleted stays false.
+			state.OutboundStreamTerminal = tt.terminal
+			require.NoError(t, wrapper.Close())
+
+			require.Equal(t, tt.wantOutcome, tracker.lastOutcome)
+			// The fixture opens the gate after one counted failure.
+			cfg := biz.ResolveHealthGateConfig(f.policy.HealthGateOrDefault(), selected[0].Channel)
+			for _, snapshot := range healthGateSnapshot(t, f.gate, selected[0].Channel.ID, healthGateResolver(cfg)) {
+				require.Equal(t, biz.HealthGateStateHealthy, snapshot.State)
+				require.Zero(t, snapshot.ConsecutiveFailures)
+				require.Empty(t, snapshot.LastError)
+			}
+			_, found, err := f.request.GetSessionOwner(ctx, 20, 10)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantOwner, found)
+		})
+	}
 }
 
 func TestHealthGateSession_LateFormerOwnerCannotUndoMigration(t *testing.T) {

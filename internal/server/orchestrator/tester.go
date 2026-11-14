@@ -25,6 +25,8 @@ import (
 	"github.com/looplj/axonhub/llm/streams"
 	"github.com/looplj/axonhub/llm/transformer"
 	"github.com/looplj/axonhub/llm/transformer/openai"
+	"github.com/looplj/axonhub/llm/transformer/openai/decisions"
+	"github.com/looplj/axonhub/llm/transformer/typesafe"
 )
 
 const testChannelAPIKeysMaxConcurrency = 8
@@ -95,7 +97,28 @@ type TestChannelRequest struct {
 }
 
 // buildChannelTestRequest creates the request used by channel tests.
-func buildChannelTestRequest(model string, useStream bool, systemPrompt string, userPrompt string, responsesWebSocket bool) *llm.Request {
+func buildChannelTestRequest(model string, useStream bool, systemPrompt string, userPrompt string, responsesWebSocket bool, apiFormat llm.APIFormat) *llm.Request {
+	if apiFormat == llm.APIFormatOpenAIDecisions {
+		body := xjson.MustMarshal(map[string]any{
+			"model": model,
+			"input": userPrompt,
+			"questions": []map[string]any{{
+				"name":      "answer",
+				"type":      "predicate",
+				"predicate": "Is this a channel connectivity test?",
+			}},
+		})
+		return &llm.Request{
+			Model:       model,
+			RequestType: llm.RequestTypeDecisions,
+			APIFormat:   llm.APIFormatOpenAIDecisions,
+			Stream:      lo.ToPtr(false),
+			Decisions: &llm.DecisionsRequest{
+				Body: body,
+			},
+		}
+	}
+
 	req := &llm.Request{
 		Model: model,
 		Messages: []llm.Message{
@@ -122,6 +145,53 @@ func buildChannelTestRequest(model string, useStream bool, systemPrompt string, 
 	}
 
 	return req
+}
+
+func channelTestAPIFormat(channel *biz.Channel, model string) llm.APIFormat {
+	if channel != nil {
+		if channelUsesImageTest(channel.Settings) {
+			return llm.APIFormatOpenAIImageGeneration
+		}
+		endpoints := channel.ResolveEndpoints()
+		entry, ok := channel.GetModelEntries()[model]
+		if !ok {
+			entry = channel.GetDirectModelEntries()[model]
+		}
+		forced := forcedAPIFormatsForCandidate(channel, []biz.ChannelModelEntry{entry}, model)
+		if filtered := FilterEndpointsByAPIFormats(endpoints, forced); len(filtered) > 0 {
+			endpoints = filtered[:1]
+		}
+		for _, endpoint := range endpoints {
+			if endpoint.APIFormat == llm.APIFormatOpenAIDecisions.String() {
+				return llm.APIFormatOpenAIDecisions
+			}
+			if endpoint.APIFormat == llm.APIFormatTypeSafeSystemOne.String() {
+				return llm.APIFormatTypeSafeSystemOne
+			}
+		}
+	}
+	return llm.APIFormatOpenAIChatCompletion
+}
+
+func channelTestInbound(apiFormat llm.APIFormat) transformer.Inbound {
+	if apiFormat == llm.APIFormatOpenAIImageGeneration {
+		return openai.NewImageGenerationInboundTransformer()
+	}
+	if apiFormat == llm.APIFormatOpenAIDecisions {
+		return decisions.NewInboundTransformer()
+	}
+	return openai.NewInboundTransformer()
+}
+
+func parseDecisionsTestResponse(body []byte) (string, error) {
+	var response llm.DecisionsResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", fmt.Errorf("invalid Decisions response: %w", err)
+	}
+	if len(response.Answers) == 0 {
+		return "", fmt.Errorf("no answers in Decisions response")
+	}
+	return string(body), nil
 }
 
 // usesResponsesWebSocket reports whether a channel routes Responses requests over WebSocket.
@@ -171,12 +241,81 @@ func channelUsesImageTest(settings *objects.ChannelSettings) bool {
 	return objects.IsImageGenerationPrimary(settings)
 }
 
-func marshalChannelTestBody(settings *objects.ChannelSettings, model string, useStream bool, systemPrompt string, userPrompt string, responsesWebSocket bool) ([]byte, error) {
-	if channelUsesImageTest(settings) {
-		return json.Marshal(buildChannelTestImageRequest(model, userPrompt))
+func (processor *TestChannelOrchestrator) buildChannelTestInput(ctx context.Context, model string, useStream bool, systemPrompt, userPrompt string, responsesWebSocket bool, apiFormat llm.APIFormat) (transformer.Inbound, []byte, error) {
+	if apiFormat == llm.APIFormatOpenAIImageGeneration {
+		body, err := json.Marshal(buildChannelTestImageRequest(model, userPrompt))
+		return channelTestInbound(apiFormat), body, err
 	}
+	if apiFormat == llm.APIFormatTypeSafeSystemOne {
+		if useStream {
+			return nil, nil, fmt.Errorf("systemone does not support streaming")
+		}
+		// Protect role-scoped prompts before System One combines them into State.
+		prompts := buildChannelTestRequest(model, false, systemPrompt, userPrompt, false, llm.APIFormatOpenAIChatCompletion)
+		protected, err := processor.promptProtectionRuleService.Protect(ctx, prompts)
+		if err != nil {
+			return nil, nil, err
+		}
+		body, err := json.Marshal(struct {
+			llm.SystemOneRequest
 
-	return json.Marshal(buildChannelTestRequest(model, useStream, systemPrompt, userPrompt, responsesWebSocket))
+			Model string `json:"model"`
+		}{
+			Model: model,
+			SystemOneRequest: llm.SystemOneRequest{
+				State: lo.FromPtr(protected.Messages[0].Content.Content) + "\n\n" + lo.FromPtr(protected.Messages[1].Content.Content),
+				Questions: map[string]llm.SystemOneQuestion{
+					"connection": {Type: "noul", Instructions: "Does the state contain a test prompt?"},
+				},
+			},
+		})
+		return typesafe.NewSystemOneInboundTransformer(), body, err
+	}
+	request := buildChannelTestRequest(model, useStream, systemPrompt, userPrompt, responsesWebSocket, apiFormat)
+	body, err := json.Marshal(request)
+	return channelTestInbound(apiFormat), body, err
+}
+
+func channelTestResponseMessage(body []byte, apiFormat llm.APIFormat) (*string, error) {
+	if apiFormat == llm.APIFormatOpenAIImageGeneration {
+		response, err := xjson.To[llm.ImageResponse](body)
+		if err != nil {
+			return nil, err
+		}
+		if len(response.Data) == 0 {
+			return nil, fmt.Errorf("No image in response")
+		}
+		message := response.Data[0].RevisedPrompt
+		if message == "" {
+			message = fmt.Sprintf("generated %d image(s)", len(response.Data))
+		}
+		return &message, nil
+	}
+	if apiFormat == llm.APIFormatTypeSafeSystemOne {
+		response, err := xjson.To[llm.SystemOneResponse](body)
+		if err != nil {
+			return nil, err
+		}
+		if len(response.Answers) == 0 {
+			return nil, fmt.Errorf("no answers in System One response")
+		}
+		if _, ok := response.Answers["connection"]; !ok {
+			return nil, fmt.Errorf("no connection answer in System One response")
+		}
+		answers, err := json.Marshal(response.Answers)
+		if err != nil {
+			return nil, err
+		}
+		return lo.ToPtr(string(answers)), nil
+	}
+	response, err := xjson.To[llm.Response](body)
+	if err != nil {
+		return nil, err
+	}
+	if len(response.Choices) == 0 {
+		return nil, fmt.Errorf("No message in response")
+	}
+	return response.Choices[0].Message.Content.Content, nil
 }
 
 // TestChannelResult represents the result of a channel test.
@@ -201,12 +340,21 @@ func (processor *TestChannelOrchestrator) TestChannel(
 	if err != nil {
 		return nil, err
 	}
-
-	var inbound transformer.Inbound = openai.NewInboundTransformer()
-	if channelUsesImageTest(channel.Settings) {
-		inbound = openai.NewImageGenerationInboundTransformer()
+	testModel := lo.FromPtr(modelID)
+	if testModel == "" {
+		testModel = channel.DefaultTestModel
 	}
-
+	systemPrompt, userPrompt, err := processor.systemService.ChannelTestPrompts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	useStream := channel.Policies.Stream == objects.CapabilityPolicyRequire && !channelUsesImageTest(channel.Settings)
+	apiFormat := channelTestAPIFormat(channel, testModel)
+	inbound, body, err := processor.buildChannelTestInput(ctx, testModel, useStream, systemPrompt, userPrompt, usesResponsesWebSocket(channel), apiFormat)
+	if err != nil {
+		return nil, err
+	}
+	// Create ChatCompletionOrchestrator for this test request
 	chatProcessor := &ChatCompletionOrchestrator{
 		channelSelector: NewSpecifiedChannelSelector(processor.channelService, channelID),
 		RequestService:  processor.requestService,
@@ -227,22 +375,6 @@ func (processor *TestChannelOrchestrator) TestChannel(
 		circuitBreakerLoadBalancer: processor.loadBalancer,
 		channelLimiterManager:      processor.channelLimiterManager,
 		modelCircuitBreaker:        processor.modelCircuitBreaker,
-	}
-
-	testModel := lo.FromPtr(modelID)
-	if testModel == "" {
-		testModel = channel.DefaultTestModel
-	}
-	systemPrompt, userPrompt, err := processor.systemService.ChannelTestPrompts(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	useStream := channel != nil && channel.Policies.Stream == objects.CapabilityPolicyRequire && !channelUsesImageTest(channel.Settings)
-
-	body, err := marshalChannelTestBody(channel.Settings, testModel, useStream, systemPrompt, userPrompt, usesResponsesWebSocket(channel))
-	if err != nil {
-		return nil, err
 	}
 
 	// Measure latency
@@ -270,44 +402,29 @@ func (processor *TestChannelOrchestrator) TestChannel(
 	if rawResponse.ChatCompletionStream != nil {
 		return processor.handleStreamResponse(ctx, rawResponse.ChatCompletionStream, startTime)
 	}
-
-	latency := time.Since(startTime).Seconds()
-
-	return interpretTestChannelBody(rawResponse.ChatCompletion.Body, latency, channelUsesImageTest(channel.Settings))
-}
-
-func interpretTestChannelBody(body []byte, latency float64, image bool) (*TestChannelResult, error) {
-	if image {
-		imageResponse, err := xjson.To[llm.ImageResponse](body)
+	if apiFormat == llm.APIFormatOpenAIDecisions {
+		message, err := parseDecisionsTestResponse(rawResponse.ChatCompletion.Body)
 		if err != nil {
 			return &TestChannelResult{
-				Latency: latency,
-				Success: false,
+				Latency: time.Since(startTime).Seconds(),
 				Message: new(""),
-				Error:   new(err.Error()),
+				Error:   lo.ToPtr(err.Error()),
 			}, nil
-		}
-		if len(imageResponse.Data) == 0 {
-			return &TestChannelResult{
-				Latency: latency,
-				Success: false,
-				Message: new(""),
-				Error:   new("No image in response"),
-			}, nil
-		}
-		message := imageResponse.Data[0].RevisedPrompt
-		if message == "" {
-			message = fmt.Sprintf("generated %d image(s)", len(imageResponse.Data))
 		}
 		return &TestChannelResult{
-			Latency: latency,
+			Latency: time.Since(startTime).Seconds(),
 			Success: true,
 			Message: &message,
-			Error:   nil,
 		}, nil
 	}
 
-	response, err := xjson.To[llm.Response](body)
+	latency := time.Since(startTime).Seconds()
+
+	return interpretTestChannelBody(rawResponse.ChatCompletion.Body, latency, apiFormat)
+}
+
+func interpretTestChannelBody(body []byte, latency float64, apiFormat llm.APIFormat) (*TestChannelResult, error) {
+	responseMessage, err := channelTestResponseMessage(body, apiFormat)
 	if err != nil {
 		return &TestChannelResult{
 			Latency: latency,
@@ -317,19 +434,10 @@ func interpretTestChannelBody(body []byte, latency float64, image bool) (*TestCh
 		}, nil
 	}
 
-	if len(response.Choices) == 0 {
-		return &TestChannelResult{
-			Latency: latency,
-			Success: false,
-			Message: new(""),
-			Error:   new("No message in response"),
-		}, nil
-	}
-
 	return &TestChannelResult{
 		Latency: latency,
 		Success: true,
-		Message: response.Choices[0].Message.Content.Content,
+		Message: responseMessage,
 		Error:   nil,
 	}, nil
 }
@@ -470,6 +578,7 @@ func (processor *TestChannelOrchestrator) TestChannelAPIKeys(
 	}
 
 	useStream := ch.Policies.Stream == objects.CapabilityPolicyRequire && !channelUsesImageTest(ch.Settings)
+	apiFormat := channelTestAPIFormat(ch, testModel)
 	responsesWebSocket := usesResponsesWebSocket(ch)
 	systemPrompt, userPrompt, err := processor.systemService.ChannelTestPrompts(ctx)
 	if err != nil {
@@ -506,7 +615,7 @@ func (processor *TestChannelOrchestrator) TestChannelAPIKeys(
 			default:
 			}
 
-			result := processor.testSingleKey(groupCtx, ch, apiKey, testModel, useStream, responsesWebSocket, proxy, systemPrompt, userPrompt)
+			result := processor.testSingleKey(groupCtx, ch, apiKey, testModel, useStream, responsesWebSocket, proxy, systemPrompt, userPrompt, apiFormat)
 			_, isDisabled := disabledSet[apiKey]
 			result.Disabled = isDisabled
 			results[index] = result
@@ -569,6 +678,7 @@ func (processor *TestChannelOrchestrator) TestSingleAPIKey(
 	}
 
 	useStream := ch.Policies.Stream == objects.CapabilityPolicyRequire && !channelUsesImageTest(ch.Settings)
+	apiFormat := channelTestAPIFormat(ch, testModel)
 	responsesWebSocket := usesResponsesWebSocket(ch)
 	systemPrompt, userPrompt, err := processor.systemService.ChannelTestPrompts(ctx)
 	if err != nil {
@@ -580,7 +690,7 @@ func (processor *TestChannelOrchestrator) TestSingleAPIKey(
 		disabledSet[dk.Key] = struct{}{}
 	}
 
-	result := processor.testSingleKey(ctx, ch, key, testModel, useStream, responsesWebSocket, proxy, systemPrompt, userPrompt)
+	result := processor.testSingleKey(ctx, ch, key, testModel, useStream, responsesWebSocket, proxy, systemPrompt, userPrompt, apiFormat)
 	_, isDisabled := disabledSet[key]
 	result.Disabled = isDisabled
 
@@ -598,12 +708,17 @@ func (processor *TestChannelOrchestrator) testSingleKey(
 	proxy *httpclient.ProxyConfig,
 	systemPrompt string,
 	userPrompt string,
+	apiFormat llm.APIFormat,
 ) *TestAPIKeyResult {
 	keyPrefix := maskAPIKey(key)
 
-	var inbound transformer.Inbound = openai.NewInboundTransformer()
-	if channelUsesImageTest(ch.Settings) {
-		inbound = openai.NewImageGenerationInboundTransformer()
+	inbound, body, err := processor.buildChannelTestInput(ctx, testModel, useStream, systemPrompt, userPrompt, responsesWebSocket, apiFormat)
+	if err != nil {
+		return &TestAPIKeyResult{
+			KeyPrefix: keyPrefix,
+			Success:   false,
+			Error:     lo.ToPtr(err.Error()),
+		}
 	}
 
 	chatProcessor := &ChatCompletionOrchestrator{
@@ -630,17 +745,6 @@ func (processor *TestChannelOrchestrator) testSingleKey(
 		circuitBreakerLoadBalancer: processor.loadBalancer,
 		channelLimiterManager:      processor.channelLimiterManager,
 		modelCircuitBreaker:        processor.modelCircuitBreaker,
-	}
-
-	body, err := marshalChannelTestBody(ch.Settings, testModel, useStream, systemPrompt, userPrompt, responsesWebSocket)
-	if err != nil {
-		errMsg := err.Error()
-
-		return &TestAPIKeyResult{
-			KeyPrefix: keyPrefix,
-			Success:   false,
-			Error:     &errMsg,
-		}
 	}
 
 	startTime := time.Now()
@@ -674,9 +778,26 @@ func (processor *TestChannelOrchestrator) testSingleKey(
 			Error:     streamResult.Error,
 		}
 	}
+	if apiFormat == llm.APIFormatOpenAIDecisions {
+		_, err := parseDecisionsTestResponse(rawResponse.ChatCompletion.Body)
+		if err != nil {
+			errMsg := err.Error()
+			return &TestAPIKeyResult{
+				KeyPrefix: keyPrefix,
+				Success:   false,
+				Latency:   time.Since(startTime).Seconds(),
+				Error:     &errMsg,
+			}
+		}
+		return &TestAPIKeyResult{
+			KeyPrefix: keyPrefix,
+			Success:   true,
+			Latency:   time.Since(startTime).Seconds(),
+		}
+	}
 
 	latency := time.Since(startTime).Seconds()
-	interpreted, _ := interpretTestChannelBody(rawResponse.ChatCompletion.Body, latency, channelUsesImageTest(ch.Settings))
+	interpreted, _ := interpretTestChannelBody(rawResponse.ChatCompletion.Body, latency, apiFormat)
 
 	return &TestAPIKeyResult{
 		KeyPrefix: keyPrefix,

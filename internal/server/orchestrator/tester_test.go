@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -14,7 +15,7 @@ import (
 
 // TestBuildTestRequestUsesConfiguredPrompts verifies ordinary channel tests retain their configured prompts.
 func TestBuildTestRequestUsesConfiguredPrompts(t *testing.T) {
-	req := buildChannelTestRequest("test-model", true, "system prompt", "user prompt", false)
+	req := buildChannelTestRequest("test-model", true, "system prompt", "user prompt", false, llm.APIFormatOpenAIChatCompletion)
 
 	require.Equal(t, "test-model", req.Model)
 	require.Len(t, req.Messages, 2)
@@ -45,12 +46,12 @@ func TestChannelUsesImageTest(t *testing.T) {
 }
 
 func TestInterpretTestChannelBodyImage(t *testing.T) {
-	result, err := interpretTestChannelBody([]byte(`{"created":1,"data":[{"revised_prompt":"ok"}]}`), 0.5, true)
+	result, err := interpretTestChannelBody([]byte(`{"created":1,"data":[{"revised_prompt":"ok"}]}`), 0.5, llm.APIFormatOpenAIImageGeneration)
 	require.NoError(t, err)
 	require.True(t, result.Success)
 	require.Equal(t, "ok", *result.Message)
 
-	empty, err := interpretTestChannelBody([]byte(`{"created":1,"data":[]}`), 0.5, true)
+	empty, err := interpretTestChannelBody([]byte(`{"created":1,"data":[]}`), 0.5, llm.APIFormatOpenAIImageGeneration)
 	require.NoError(t, err)
 	require.False(t, empty.Success)
 	require.Equal(t, "No image in response", *empty.Error)
@@ -58,7 +59,7 @@ func TestInterpretTestChannelBodyImage(t *testing.T) {
 
 // TestBuildTestRequestUsesPingForResponsesWebSocket verifies WebSocket tests use a minimal compatible payload.
 func TestBuildTestRequestUsesPingForResponsesWebSocket(t *testing.T) {
-	req := buildChannelTestRequest("test-model", false, "system prompt", "user prompt", true)
+	req := buildChannelTestRequest("test-model", false, "system prompt", "user prompt", true, llm.APIFormatOpenAIChatCompletion)
 
 	require.Equal(t, "test-model", req.Model)
 	require.Len(t, req.Messages, 1)
@@ -66,6 +67,88 @@ func TestBuildTestRequestUsesPingForResponsesWebSocket(t *testing.T) {
 	require.Equal(t, responsesWebSocketTestPrompt, *req.Messages[0].Content.Content)
 	require.Nil(t, req.MaxCompletionTokens)
 	require.True(t, *req.Stream)
+}
+
+func TestBuildTestRequestUsesDecisionsFormat(t *testing.T) {
+	req := buildChannelTestRequest("gpt-6-luna", true, "ignored", "classify this", false, llm.APIFormatOpenAIDecisions)
+
+	require.Equal(t, llm.RequestTypeDecisions, req.RequestType)
+	require.Equal(t, llm.APIFormatOpenAIDecisions, req.APIFormat)
+	require.NotNil(t, req.Decisions)
+	require.False(t, *req.Stream)
+
+	var body struct {
+		Model     string            `json:"model"`
+		Input     string            `json:"input"`
+		Questions []json.RawMessage `json:"questions"`
+	}
+	require.NoError(t, json.Unmarshal(req.Decisions.Body, &body))
+	require.Equal(t, "gpt-6-luna", body.Model)
+	require.Equal(t, "classify this", body.Input)
+	require.Len(t, body.Questions, 1)
+}
+
+func TestChannelTestAPIFormatPrefersDecisionsEndpoint(t *testing.T) {
+	ch := &biz.Channel{Channel: &ent.Channel{
+		Endpoints: []objects.ChannelEndpoint{
+			{APIFormat: llm.APIFormatOpenAIChatCompletion.String()},
+			{APIFormat: llm.APIFormatOpenAIDecisions.String()},
+		},
+	}}
+
+	require.Equal(t, llm.APIFormatOpenAIDecisions, channelTestAPIFormat(ch, "gpt-6-luna"))
+}
+
+func TestChannelTestAPIFormatPrefersImagePrimary(t *testing.T) {
+	for _, endpoints := range [][]objects.ChannelEndpoint{
+		nil,
+		{
+			{APIFormat: llm.APIFormatOpenAIDecisions.String()},
+			{APIFormat: llm.APIFormatTypeSafeSystemOne.String()},
+			{APIFormat: llm.APIFormatOpenAIResponse.String(), Transport: objects.ChannelEndpointTransportWebSocket},
+		},
+	} {
+		ch := &biz.Channel{Channel: &ent.Channel{
+			Type:      channel.TypeOpenai,
+			Endpoints: endpoints,
+			Settings:  &objects.ChannelSettings{PrimaryAPIFormat: objects.PrimaryAPIFormatImageGeneration},
+		}}
+		require.Equal(t, llm.APIFormatOpenAIImageGeneration, channelTestAPIFormat(ch, "gpt-image-2"))
+	}
+}
+
+func TestParseDecisionsTestResponseRequiresAnswers(t *testing.T) {
+	message, err := parseDecisionsTestResponse([]byte(`{"model":"gpt-6-luna","answers":[{"name":"answer","probability":1}]}`))
+	require.NoError(t, err)
+	require.Contains(t, message, `"answers"`)
+
+	_, err = parseDecisionsTestResponse([]byte(`{"model":"gpt-6-luna","answers":[]}`))
+	require.EqualError(t, err, "no answers in Decisions response")
+}
+
+func TestChannelTestAPIFormatUsesModelProtocolPriority(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		formats []string
+		want    llm.APIFormat
+	}{
+		{"chat first", []string{llm.APIFormatOpenAIChatCompletion.String(), llm.APIFormatTypeSafeSystemOne.String()}, llm.APIFormatOpenAIChatCompletion},
+		{"systemone first", []string{llm.APIFormatTypeSafeSystemOne.String(), llm.APIFormatOpenAIChatCompletion.String()}, llm.APIFormatTypeSafeSystemOne},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ch := &biz.Channel{Channel: &ent.Channel{
+				Type:            channel.TypeOpenai,
+				SupportedModels: []string{"test-model"},
+				Endpoints:       []objects.ChannelEndpoint{{APIFormat: llm.APIFormatTypeSafeSystemOne.String(), Path: "/systemone"}},
+				Settings: &objects.ChannelSettings{
+					ExtraModelPrefix: "alias",
+					ModelProtocols:   []objects.ModelProtocol{{Model: "test-model", APIFormats: tt.formats}},
+				},
+			}}
+			require.Equal(t, tt.want, channelTestAPIFormat(ch, "test-model"))
+			require.Equal(t, tt.want, channelTestAPIFormat(ch, "alias/test-model"))
+		})
+	}
 }
 
 // TestUsesResponsesWebSocket verifies explicit and URL-inferred WebSocket transports.

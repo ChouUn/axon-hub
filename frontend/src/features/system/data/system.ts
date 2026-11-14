@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { graphqlRequest, GraphQLRequestError } from '@/gql/graphql';
 import { toast } from 'sonner';
-import { getTokenFromStorage } from '@/stores/authStore';
+import { getTokenFromStorage, useAuthStore } from '@/stores/authStore';
 import i18n from '@/lib/i18n';
 import { useErrorHandler } from '@/hooks/use-error-handler';
 import { usePermissions } from '@/hooks/usePermissions';
-import type { ProxyConfig } from '@/features/channels/data/schema';
+import type { ProxyConfig, APIKeyAutoDisableRule } from '@/features/channels/data/schema';
 import type { ModelAssociation } from '@/features/models/data/schema';
 
 // GraphQL queries and mutations
@@ -117,9 +117,14 @@ const RETRY_POLICY_QUERY = `
       }
       autoDisableChannel {
         enabled
-        statuses {
-          status
+        rules {
+          statusCodes
+          keywordPatterns
           times
+          action
+          disableDurationMinutes
+          disableUntilCron
+          disableUntilTimezone
         }
       }
     }
@@ -320,9 +325,9 @@ export interface GcCleanupPreviewItem {
   retentionDays: number;
 }
 
-export interface AutoDisableChannelStatus {
-  status: number;
-  times: number;
+export interface AutoDisableChannel {
+  enabled: boolean;
+  rules: APIKeyAutoDisableRule[];
 }
 
 export interface WebhookHeader {
@@ -348,11 +353,6 @@ export interface WebhookSubscription {
 export interface WebhookNotifierConfig {
   targets: WebhookTarget[];
   subscriptions: WebhookSubscription[];
-}
-
-export interface AutoDisableChannel {
-  enabled: boolean;
-  statuses: AutoDisableChannelStatus[];
 }
 
 export interface HealthGatePolicy {
@@ -393,14 +393,9 @@ export interface UpstreamErrorPolicy {
   customMessage: string;
 }
 
-export interface AutoDisableChannelStatusInput {
-  status: number;
-  times: number;
-}
-
 export interface AutoDisableChannelInput {
   enabled?: boolean;
-  statuses?: AutoDisableChannelStatusInput[];
+  rules?: APIKeyAutoDisableRule[];
 }
 
 export interface RetryPolicyInput {
@@ -608,6 +603,7 @@ export function useRetryPolicy() {
 
 export function useUpdateRetryPolicy() {
   const queryClient = useQueryClient();
+  const { handleError } = useErrorHandler();
 
   return useMutation({
     mutationFn: async (input: RetryPolicyInput) => {
@@ -618,8 +614,8 @@ export function useUpdateRetryPolicy() {
       queryClient.invalidateQueries({ queryKey: ['retryPolicy'] });
       toast.success(i18n.t('common.success.systemUpdated'));
     },
-    onError: () => {
-      toast.error(i18n.t('common.errors.systemUpdateFailed'));
+    onError: (error) => {
+      handleError(error, i18n.t('common.errors.systemUpdateFailed'));
     },
   });
 }
@@ -1608,11 +1604,19 @@ export interface UpdateUserAgentPassThroughSettingsInput {
   enabled: boolean;
 }
 
-export function useUserAgentPassThroughSettings() {
+function useSystemSettingsQueryIdentity() {
+  const { hasSystemScope } = usePermissions();
+  const authUserId = useAuthStore((state) => state.auth.user?.id ?? null);
+  return { authUserId, canReadSystemSettings: hasSystemScope('read_settings') };
+}
+
+export function useUserAgentPassThroughSettings(options?: { enabled?: boolean }) {
   const { handleError } = useErrorHandler();
+  const { authUserId, canReadSystemSettings } = useSystemSettingsQueryIdentity();
 
   return useQuery({
-    queryKey: ['userAgentPassThroughSettings'],
+    queryKey: ['userAgentPassThroughSettings', authUserId ?? 'signed-out', canReadSystemSettings],
+    enabled: (options?.enabled ?? true) && canReadSystemSettings,
     queryFn: async () => {
       try {
         const data = await graphqlRequest<{ userAgentPassThroughSettings: UserAgentPassThroughSettings }>(
@@ -1670,11 +1674,13 @@ export interface UpdatePassThroughSettingsInput {
   enabled: boolean;
 }
 
-export function usePassThroughSettings() {
+export function usePassThroughSettings(options?: { enabled?: boolean }) {
   const { handleError } = useErrorHandler();
+  const { authUserId, canReadSystemSettings } = useSystemSettingsQueryIdentity();
 
   return useQuery({
-    queryKey: ['passThroughSettings'],
+    queryKey: ['passThroughSettings', authUserId ?? 'signed-out', canReadSystemSettings],
+    enabled: (options?.enabled ?? true) && canReadSystemSettings,
     queryFn: async () => {
       try {
         const data = await graphqlRequest<{ passThroughSettings: PassThroughSettings }>(PASS_THROUGH_SETTINGS_QUERY);
@@ -1764,47 +1770,42 @@ export function useUpdateUsageCostInjectionSettings() {
   });
 }
 
-const QUOTA_ENFORCEMENT_SETTINGS_QUERY = `
-  query QuotaEnforcementSettings {
-    quotaEnforcementSettings {
-      enabled
-      mode
-      allowedChannelIDs
+const QUOTA_ROUTING_SETTINGS_QUERY = `
+  query QuotaRoutingSettings {
+    quotaRoutingSettings {
+      defaultMode
     }
   }
 `;
 
-const UPDATE_QUOTA_ENFORCEMENT_SETTINGS_MUTATION = `
-  mutation UpdateQuotaEnforcementSettings($input: UpdateQuotaEnforcementSettingsInput!) {
-    updateQuotaEnforcementSettings(input: $input)
+const UPDATE_QUOTA_ROUTING_SETTINGS_MUTATION = `
+  mutation UpdateQuotaRoutingSettings($input: UpdateQuotaRoutingSettingsInput!) {
+    updateQuotaRoutingSettings(input: $input)
   }
 `;
 
-export type QuotaEnforcementMode = 'EXHAUSTED_ONLY' | 'DE_PRIORITIZE';
+export type QuotaRoutingMode = 'IGNORE_QUOTA' | 'REMOVE_ON_EXHAUSTED' | 'BACKPRESSURE';
 
-export interface QuotaEnforcementSettings {
-  enabled: boolean;
-  mode: QuotaEnforcementMode;
-  allowedChannelIDs: string[];
+export interface QuotaRoutingSettings {
+  defaultMode: QuotaRoutingMode;
 }
 
-export interface UpdateQuotaEnforcementSettingsInput {
-  enabled?: boolean;
-  mode?: QuotaEnforcementMode;
-  allowedChannelIDs?: string[];
+export interface UpdateQuotaRoutingSettingsInput {
+  defaultMode?: QuotaRoutingMode;
 }
 
-export function useQuotaEnforcementSettings() {
+export function useQuotaRoutingSettings() {
   const { handleError } = useErrorHandler();
   const { hasSystemScope } = usePermissions();
+  const { authUserId, canReadSystemSettings } = useSystemSettingsQueryIdentity();
 
   return useQuery({
-    queryKey: ['quotaEnforcementSettings'],
+    queryKey: ['quotaRoutingSettings', authUserId ?? 'signed-out', canReadSystemSettings],
     enabled: hasSystemScope('read_settings'),
     queryFn: async () => {
       try {
-        const data = await graphqlRequest<{ quotaEnforcementSettings: QuotaEnforcementSettings }>(QUOTA_ENFORCEMENT_SETTINGS_QUERY);
-        return data.quotaEnforcementSettings;
+        const data = await graphqlRequest<{ quotaRoutingSettings: QuotaRoutingSettings }>(QUOTA_ROUTING_SETTINGS_QUERY);
+        return data.quotaRoutingSettings;
       } catch (error) {
         handleError(error, i18n.t('common.errors.internalServerError'));
         throw error;
@@ -1813,16 +1814,16 @@ export function useQuotaEnforcementSettings() {
   });
 }
 
-export function useUpdateQuotaEnforcementSettings() {
+export function useUpdateQuotaRoutingSettings() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: UpdateQuotaEnforcementSettingsInput) => {
-      const data = await graphqlRequest<{ updateQuotaEnforcementSettings: boolean }>(UPDATE_QUOTA_ENFORCEMENT_SETTINGS_MUTATION, { input });
-      return data.updateQuotaEnforcementSettings;
+    mutationFn: async (input: UpdateQuotaRoutingSettingsInput) => {
+      const data = await graphqlRequest<{ updateQuotaRoutingSettings: boolean }>(UPDATE_QUOTA_ROUTING_SETTINGS_MUTATION, { input });
+      return data.updateQuotaRoutingSettings;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['quotaEnforcementSettings'] });
+      queryClient.invalidateQueries({ queryKey: ['quotaRoutingSettings'] });
       toast.success(i18n.t('common.success.systemUpdated'));
     },
     onError: () => {

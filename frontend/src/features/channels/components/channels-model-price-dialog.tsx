@@ -390,6 +390,7 @@ function ChannelPriceDialog({ channel, onClose }: { channel: Channel; onClose: (
     >
       <DialogContent
         ref={setDialogContent}
+        data-testid='channel-price-dialog'
         className='flex h-[95dvh] max-h-[95dvh] w-[96vw] flex-col gap-3 overflow-hidden p-4 sm:max-w-6xl'
       >
         <DialogHeader className='shrink-0'>
@@ -472,7 +473,7 @@ function ChannelPriceDialog({ channel, onClose }: { channel: Channel; onClose: (
               </div>
               <p className='text-muted-foreground text-xs md:col-span-4'>{t('price.apply.referenceHint')}</p>
             </fieldset>
-            <div ref={priceListRef} className='min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-2'>
+            <div ref={priceListRef} data-testid='price-list' className='min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-2'>
               {!initialized && (
                 <p role='status' className='text-muted-foreground py-8 text-center'>
                   {t(currentPricing.isError ? 'price.apply.loadFailed' : 'common.loading')}
@@ -515,7 +516,7 @@ function ChannelPriceDialog({ channel, onClose }: { channel: Channel; onClose: (
             </div>
             <DialogFooter className='shrink-0 gap-2 border-t pt-3 sm:justify-between'>
               <div className='flex flex-wrap gap-2'>
-                <Button type='button' variant='outline' size='sm' disabled={busy} onClick={addPrice}>
+                <Button type='button' variant='outline' size='sm' data-testid='price-add-button' disabled={busy} onClick={addPrice}>
                   <IconPlus size={14} />
                   {t('price.addPrice')}
                 </Button>

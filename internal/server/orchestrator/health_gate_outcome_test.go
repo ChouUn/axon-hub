@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -41,6 +43,16 @@ func TestHealthGateOutcome_Boundaries(t *testing.T) {
 		{"response timeout", pipeline.ErrNonStreamResponseTimeout, biz.HealthGateOutcomeFailure},
 		{"deadline", context.DeadlineExceeded, biz.HealthGateOutcomeFailure},
 		{"network", &net.DNSError{Err: "failed"}, biz.HealthGateOutcomeFailure},
+		{"EOF", io.EOF, biz.HealthGateOutcomeFailure},
+		{"unexpected EOF", io.ErrUnexpectedEOF, biz.HealthGateOutcomeFailure},
+		{"incomplete stream", ErrStreamIncomplete, biz.HealthGateOutcomeFailure},
+		{"incomplete LLM stream", llm.ErrStreamIncomplete, biz.HealthGateOutcomeFailure},
+		{"connection reset", syscall.ECONNRESET, biz.HealthGateOutcomeFailure},
+		{"broken pipe", syscall.EPIPE, biz.HealthGateOutcomeFailure},
+		{"bad request joined with EOF", errors.Join(&httpclient.Error{StatusCode: 400}, io.EOF), biz.HealthGateOutcomeNeutral},
+		{"bad request joined with network reset", errors.Join(&llm.ResponseError{StatusCode: 400}, syscall.ECONNRESET), biz.HealthGateOutcomeFailure},
+		{"rate limit joined with EOF", errors.Join(&httpclient.Error{StatusCode: 429}, io.EOF), biz.HealthGateOutcomeNeutral},
+		{"other client error", &httpclient.Error{StatusCode: 409}, biz.HealthGateOutcomeNeutral},
 		{"unknown local", errors.New("local conversion"), biz.HealthGateOutcomeNeutral},
 		{"canceled", context.Canceled, biz.HealthGateOutcomeNeutral},
 	}

@@ -7,6 +7,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCompareVersionsOrdersNumericPrereleases(t *testing.T) {
+	ordered := []string{
+		"v0.4.0",
+		"v1.0.0-beta6",
+		"v1.0.0-beta7",
+		"v1.0.0-beta7-fork.1",
+		"v1.0.0-beta7-fork.5",
+		"v1.0.0-beta8",
+		"v1.0.0-beta9",
+		"v1.0.0-beta9-unstable.20260720",
+		"v1.0.0-beta10",
+		"v1.0.0-beta10-fork.1",
+		"v1.0.0-beta10-fork.2",
+		"v1.0.0-beta10-fork.7",
+		"v1.0.0-beta11",
+		"v1.0.0-beta11-fork.1",
+		"v1.0.0-beta12",
+		"v1.0.0-rc1",
+		"v1.0.0-rc1-fork.1",
+		"v1.0.0-rc2",
+		"v1.0.0-rc.3",
+		"v1.0.0-rc.3-fork.1",
+		"v1.0.0-rc.4",
+		"v1.0.0-rc.4-fork.1",
+		"v1.0.0",
+	}
+
+	for i := 1; i < len(ordered); i++ {
+		result, err := CompareVersions(ordered[i-1], ordered[i])
+		require.NoError(t, err)
+		require.Negativef(t, result, "%s should sort before %s", ordered[i-1], ordered[i])
+		reverse, err := CompareVersions(ordered[i], ordered[i-1])
+		require.NoError(t, err)
+		require.Positivef(t, reverse, "%s should sort after %s", ordered[i], ordered[i-1])
+	}
+}
+
 func TestIsNewerVersion(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -132,6 +169,60 @@ func TestIsNewerVersion(t *testing.T) {
 			name:    "beta sequence is newer",
 			current: "v1.0.0-beta5",
 			latest:  "v1.0.0-beta6",
+			want:    true,
+		},
+		{
+			name:    "beta counter crosses ten boundary",
+			current: "v1.0.0-beta9",
+			latest:  "v1.0.0-beta10",
+			want:    true,
+		},
+		{
+			name:    "beta counter crosses ten boundary in reverse",
+			current: "v1.0.0-beta10",
+			latest:  "v1.0.0-beta9",
+			want:    false,
+		},
+		{
+			name:    "beta counter crosses hundred boundary",
+			current: "v1.0.0-beta99",
+			latest:  "v1.0.0-beta100",
+			want:    true,
+		},
+		{
+			name:    "dotted beta counter crosses ten boundary",
+			current: "v1.0.0-beta.9",
+			latest:  "v1.0.0-beta.10",
+			want:    true,
+		},
+		{
+			name:    "glued and dotted beta counters are equivalent",
+			current: "v1.0.0-beta10",
+			latest:  "v1.0.0-beta.10",
+			want:    false,
+		},
+		{
+			name:    "rc counter crosses ten boundary",
+			current: "v1.0.0-rc9",
+			latest:  "v1.0.0-rc10",
+			want:    true,
+		},
+		{
+			name:    "unstable build of the same beta outranks the beta",
+			current: "v1.0.0-beta10",
+			latest:  "v1.0.0-beta10-unstable.20260907",
+			want:    true,
+		},
+		{
+			name:    "unstable build precedes the next beta",
+			current: "v1.0.0-beta9-unstable.20260907",
+			latest:  "v1.0.0-beta10",
+			want:    true,
+		},
+		{
+			name:    "stable release outranks its beta",
+			current: "v1.0.0-beta10",
+			latest:  "v1.0.0",
 			want:    true,
 		},
 		{
@@ -346,10 +437,66 @@ func TestSelectLatestGitHubRelease(t *testing.T) {
 		require.Equal(t, "v1.0.0-beta4", got)
 	})
 
+	t.Run("selects the highest beta across the ten boundary", func(t *testing.T) {
+		got, err := selectLatestGitHubRelease([]GitHubRelease{
+			{TagName: "v1.0.0-beta9", Prerelease: true, PublishedAt: now.Add(-96 * time.Hour)},
+			{TagName: "v1.0.0-beta10", Prerelease: true, PublishedAt: now.Add(-24 * time.Hour)},
+		}, true, now)
+		require.NoError(t, err)
+		require.Equal(t, "v1.0.0-beta10", got)
+	})
+
 	t.Run("returns an error when no release is eligible", func(t *testing.T) {
 		_, err := selectLatestGitHubRelease([]GitHubRelease{
 			{TagName: "v1.0.0-beta6", PublishedAt: now.Add(-time.Hour)},
 		}, false, now)
 		require.EqualError(t, err, "no eligible release found")
+	})
+}
+
+func TestCompareVersions(t *testing.T) {
+	tests := []struct {
+		name string
+		a    string
+		b    string
+		want int
+	}{
+		{name: "equal", a: "v1.0.0", b: "v1.0.0", want: 0},
+		{name: "major", a: "v2.0.0", b: "v1.0.0", want: 1},
+		{name: "minor", a: "v1.1.0", b: "v1.2.0", want: -1},
+		{name: "patch", a: "v1.0.2", b: "v1.0.1", want: 1},
+		{name: "beta below ten", a: "v1.0.0-beta5", b: "v1.0.0-beta6", want: -1},
+		{name: "beta across ten", a: "v1.0.0-beta10", b: "v1.0.0-beta9", want: 1},
+		{name: "beta across hundred", a: "v1.0.0-beta100", b: "v1.0.0-beta99", want: 1},
+		{name: "glued equals dotted", a: "v1.0.0-beta10", b: "v1.0.0-beta.10", want: 0},
+		{name: "padded counter equals bare counter", a: "v1.0.0-beta010", b: "v1.0.0-beta10", want: 0},
+		{name: "long counters do not overflow", a: "v1.0.0-beta99999999999999999999", b: "v1.0.0-beta99999999999999999998", want: 1},
+		{name: "bare name precedes counter", a: "v1.0.0-beta", b: "v1.0.0-beta1", want: -1},
+		{name: "alpha precedes beta", a: "v1.0.0-alpha10", b: "v1.0.0-beta1", want: -1},
+		{name: "beta precedes rc", a: "v1.0.0-beta10", b: "v1.0.0-rc1", want: -1},
+		{name: "stable outranks beta", a: "v1.0.0", b: "v1.0.0-beta10", want: 1},
+		{name: "build metadata ignored", a: "v1.0.0+build.2", b: "v1.0.0+build.1", want: 0},
+		{name: "missing v prefix", a: "1.0.0-beta10", b: "v1.0.0-beta9", want: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := CompareVersions(tt.a, tt.b)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got, "CompareVersions(%q, %q)", tt.a, tt.b)
+
+			// The comparison must be antisymmetric.
+			reverse, err := CompareVersions(tt.b, tt.a)
+			require.NoError(t, err)
+			require.Equal(t, -tt.want, reverse, "CompareVersions(%q, %q)", tt.b, tt.a)
+		})
+	}
+
+	t.Run("reports invalid versions", func(t *testing.T) {
+		_, err := CompareVersions("invalid", "v1.0.0")
+		require.Error(t, err)
+
+		_, err = CompareVersions("v1.0.0", "")
+		require.Error(t, err)
 	})
 }
