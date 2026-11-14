@@ -437,6 +437,7 @@ func (processor *ChatCompletionOrchestrator) Process(ctx context.Context, reques
 			result.EventStream = httpclient.WithResponseHeaders(preserveDeliveryCapabilities(source, accepted), httpclient.GetResponseHeaders(source))
 			continuation = nil
 		}
+		result.EventStream = healthGateTracker.wrapResponseStream(ctx, result.EventStream)
 		return ChatCompletionResult{
 			Route:                         route,
 			ChatCompletion:                nil,

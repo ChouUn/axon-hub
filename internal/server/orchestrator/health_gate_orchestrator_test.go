@@ -3,7 +3,9 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -70,6 +72,59 @@ func healthGateServerError() error {
 
 func healthGateResponse() *httpclient.Response {
 	return &httpclient.Response{StatusCode: 200, Body: buildMockOpenAIResponse("completion", "gpt-4", "hello", 1, 2), Headers: http.Header{"Content-Type": {"application/json"}}}
+}
+
+func TestHealthGateOrchestrator_StreamCompletionCommitsAfterInboundClose(t *testing.T) {
+	ctx, client := setupTest(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl-health\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"}}]}\n\n"+
+			"data: {\"id\":\"chatcmpl-health\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"+
+			"data: {\"id\":\"chatcmpl-health\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n"+
+			"data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+	ch := createTestChannel(t, ctx, client)
+	passThrough := false
+	ch, err := ch.Update().SetBaseURL(upstream.URL).SetSettings(&objects.ChannelSettings{PassThroughBody: &passThrough}).Save(ctx)
+	require.NoError(t, err)
+	processCtx, processor, gate := healthGateOrchestratorFixture(t, ctx, client, httpclient.NewHttpClientWithClient(upstream.Client()), ch)
+	policy := processor.SystemService.RetryPolicyOrDefault(processCtx)
+	policy.TraceStickyMode = biz.TraceStickyPreferPreviousChannel
+	require.NoError(t, processor.SystemService.SetRetryPolicy(processCtx, policy))
+	processCtx = contexts.WithTrace(processCtx, &ent.Trace{ID: 10, ThreadID: 20})
+	result, err := processor.Process(processCtx, buildTestRequest("gpt-4", "hello", true))
+	require.NoError(t, err)
+	require.NotNil(t, result.ChatCompletionStream)
+	defer result.ChatCompletionStream.Close()
+	boundary, ok := result.ChatCompletionStream.(streams.DeliveryBoundary)
+	require.True(t, ok)
+	terminal := NewStreamTerminalTracker(1)
+	var delivered strings.Builder
+	for result.ChatCompletionStream.Next() {
+		event := result.ChatCompletionStream.Current()
+		require.NoError(t, boundary.Deliver(processCtx, func() (bool, error) {
+			_, err := delivered.Write(event.Data)
+			return terminal.Observe(event), err
+		}))
+	}
+	require.NoError(t, result.ChatCompletionStream.Err())
+	require.Contains(t, delivered.String(), "hello")
+	_, found, err := processor.RequestService.GetSessionOwner(processCtx, 20, 10)
+	require.NoError(t, err)
+	require.False(t, found, "ownership must wait for final inbound completion")
+	require.NoError(t, result.ChatCompletionStream.Close())
+	rows, err := client.Request.Query().All(processCtx)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.EqualValues(t, "completed", rows[0].Status)
+	cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), &biz.Channel{Channel: ch})
+	view := healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: ch.ID, ActualModel: "gpt-4"}, healthGateResolver(cfg))
+	require.Equal(t, biz.HealthGateStateHealthy, view.State, "provider completion must be healthy after inbound delivery finalizes")
+	owner, found, err := processor.RequestService.GetSessionOwner(processCtx, 20, 10)
+	require.NoError(t, err)
+	require.True(t, found)
+	requireHealthGateSessionOwner(t, owner, ch.ID, 0, 5*time.Minute)
 }
 
 func TestHealthGateOrchestrator_OpensAndSkipsBrokenChannel(t *testing.T) {
@@ -393,7 +448,7 @@ func TestHealthGateOrchestrator_StreamInternalTimeoutIsFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tracker.finalize(context.Background(), nil, true))
 	cancel(pipeline.ErrStreamFirstEventTimeout)
-	require.NoError(t, wrapper.Close())
+	closeHealthGateStreamFixture(t, timeoutCtx, tracker, wrapper)
 	cfg := biz.ResolveHealthGateConfig(policy, candidate.Channel)
 	require.Equal(t, biz.HealthGateStateOpen, healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: 1, ActualModel: "model"}, healthGateResolver(cfg)).State)
 }

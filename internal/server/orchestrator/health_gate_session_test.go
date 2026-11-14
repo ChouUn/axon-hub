@@ -99,8 +99,9 @@ func (f *healthGateSessionFixture) finish(t *testing.T, ctx context.Context, tra
 		require.NoError(t, tracker.finalize(ctx, nil, true))
 		if success {
 			state.StreamCompleted = true
+			state.Perf = &biz.PerformanceRecord{RequestCompleted: true, Success: true}
 		}
-		require.NoError(t, streamWrapper.Close())
+		closeHealthGateStreamFixture(t, ctx, tracker, streamWrapper)
 	} else if success {
 		require.NoError(t, tracker.finalize(ctx, nil, false))
 	} else {
@@ -304,7 +305,8 @@ func TestHealthGateSession_StreamCommitsOnlyAfterTerminalClose(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, found)
 	state.StreamCompleted = true
-	require.NoError(t, wrapper.Close())
+	state.Perf = &biz.PerformanceRecord{RequestCompleted: true, Success: true}
+	closeHealthGateStreamFixture(t, ctx, tracker, wrapper)
 	require.False(t, tracker.active)
 	owner, found, err := f.request.GetSessionOwner(ctx, 20, 10)
 	require.NoError(t, err)
@@ -347,7 +349,7 @@ func TestHealthGateSession_ProviderTerminalWithoutCompletionIsNotChannelFault(t 
 			if tt.cancelBeforeClose {
 				cancel()
 			}
-			require.NoError(t, wrapper.Close())
+			closeHealthGateStreamFixture(t, ctx, tracker, wrapper)
 
 			require.Equal(t, tt.wantOutcome, tracker.lastOutcome)
 			// The fixture opens the gate after one counted failure.

@@ -1,9 +1,15 @@
 package orchestrator
 
 import (
-	"github.com/looplj/axonhub/internal/server/biz"
-	"github.com/stretchr/testify/require"
+	"context"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/looplj/axonhub/internal/server/biz"
+	"github.com/looplj/axonhub/llm"
+	"github.com/looplj/axonhub/llm/streams"
+	"github.com/looplj/axonhub/llm/transformer/openai"
 )
 
 func healthGateBegin(t *testing.T, gate *biz.HealthGate, key biz.HealthGateKey, resolve biz.HealthGateConfigResolver, probe, lastResort bool) (biz.HealthGateTicket, bool) {
@@ -30,4 +36,11 @@ func healthGateSnapshot(t *testing.T, gate *biz.HealthGate, channelID int, resol
 	snapshot, err := gate.Snapshot(t.Context(), channelID, resolve)
 	require.NoError(t, err)
 	return snapshot
+}
+
+func closeHealthGateStreamFixture(t *testing.T, ctx context.Context, tracker *healthGateAttemptTracker, stream streams.Stream[*llm.Response]) {
+	t.Helper()
+	raw, err := openai.NewInboundTransformer().TransformStream(ctx, stream)
+	require.NoError(t, err)
+	require.NoError(t, tracker.wrapResponseStream(ctx, raw).Close())
 }

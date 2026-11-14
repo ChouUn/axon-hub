@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -131,7 +132,7 @@ func TestHealthGateStream_CanceledContextPreservesUpstreamFailure(t *testing.T) 
 			require.NoError(t, tracker.finalize(ctx, nil, true))
 			require.True(t, tracker.active, "stream results are recorded only on close")
 			cancel()
-			require.NoError(t, wrapper.Close())
+			closeHealthGateStreamFixture(t, ctx, tracker, wrapper)
 			require.False(t, tracker.active)
 			require.Equal(t, tt.wantOutcome, tracker.lastOutcome)
 			cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), candidate.Channel)
@@ -184,10 +185,11 @@ func TestHealthGateStream_PassThroughHTTPClientCancellationIsNeutral(t *testing.
 	result, err := process(ctx, anthropicPreReadRequest())
 	require.NoError(t, err)
 	require.NotNil(t, result.EventStream)
-	defer result.EventStream.Close()
 	require.True(t, state.PassThroughApplied)
 	require.NotNil(t, state.RawStreamQueue, "the raw pass-through producer must be active")
 	require.NoError(t, tracker.finalize(ctx, nil, true))
+	result.EventStream = tracker.wrapResponseStream(ctx, result.EventStream)
+	defer result.EventStream.Close()
 	sawContent := false
 	for result.EventStream.Next() {
 		if event := result.EventStream.Current(); event.Type == "content_block_delta" {
@@ -207,6 +209,7 @@ func TestHealthGateStream_PassThroughHTTPClientCancellationIsNeutral(t *testing.
 	}, 5*time.Second, time.Millisecond, "pass-through upstream did not stop after client cancellation")
 	require.ErrorIs(t, streamErr, context.Canceled, "actual upstream error: %T: %v", streamErr, streamErr)
 	require.False(t, IsUpstreamTransportError(streamErr), "actual upstream error: %T: %v", streamErr, streamErr)
+	require.NoError(t, result.EventStream.Close())
 	require.Eventually(t, func() bool {
 		tracker.mu.Lock()
 		defer tracker.mu.Unlock()
@@ -253,7 +256,7 @@ func TestHealthGateStream_CanceledContextPreservesFailedTerminal(t *testing.T) {
 			require.NoError(t, wrapper.Err(), "a provider failure terminal need not carry a transport error")
 			require.NoError(t, tracker.finalize(ctx, nil, true))
 			cancel()
-			require.NoError(t, wrapper.Close())
+			closeHealthGateStreamFixture(t, ctx, tracker, wrapper)
 			cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), candidate.Channel)
 			snapshots := healthGateSnapshot(t, gate, candidate.Channel.ID, healthGateResolver(cfg))
 			require.Len(t, snapshots, 1)
@@ -275,21 +278,29 @@ type healthGateCloseAfterContextMiddleware struct {
 }
 
 func (m *healthGateCloseAfterContextMiddleware) OnOutboundLlmStream(ctx context.Context, stream streams.Stream[*llm.Response]) (streams.Stream[*llm.Response], error) {
-	return &healthGateCloseAfterContextStream{Stream: stream, ctx: ctx, observed: m.observed}, nil
+	closeCtx := ctx
+	if owner := streamLifecycleFromContext(ctx); owner != nil {
+		closeCtx = owner.downstream
+	}
+	return &healthGateCloseAfterContextStream{Stream: stream, ctx: closeCtx, observed: m.observed}, nil
 }
 
 type healthGateCloseAfterContextStream struct {
 	streams.Stream[*llm.Response]
 	ctx      context.Context
 	observed chan error
+	once     sync.Once
+	closeErr error
 }
 
 func (s *healthGateCloseAfterContextStream) Close() error {
-	// Hold only background cleanup: the raw HTTP response can finish normally.
-	<-s.ctx.Done()
-	err := s.Stream.Close()
-	s.observed <- s.ctx.Err()
-	return err
+	s.once.Do(func() {
+		// Hold only background cleanup: the raw HTTP response can finish normally.
+		<-s.ctx.Done()
+		s.closeErr = s.Stream.Close()
+		s.observed <- s.ctx.Err()
+	})
+	return s.closeErr
 }
 
 func TestHealthGateStream_PassThroughHTTPCompletionCommitsOwnerAfterHandlerReturn(t *testing.T) {
@@ -332,26 +343,38 @@ func TestHealthGateStream_PassThroughHTTPCompletionCommitsOwnerAfterHandlerRetur
 	)
 	handlerResult := make(chan error, 1)
 	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := contexts.WithTrace(r.Context(), &ent.Trace{ID: 10, ThreadID: 20})
+		requestCtx := contexts.WithTrace(r.Context(), &ent.Trace{ID: 10, ThreadID: 20})
+		owner, ctx := newStreamLifecycle(requestCtx)
 		result, err := process(ctx, anthropicPreReadRequest())
 		if err != nil {
+			go owner.Close()
 			handlerResult <- err
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		defer result.EventStream.Close()
 		if err := tracker.finalize(ctx, nil, true); err != nil {
 			handlerResult <- err
 			return
 		}
+		result.EventStream = tracker.wrapResponseStream(ctx, result.EventStream)
+		defer func() {
+			go func() { _ = result.EventStream.Close() }()
+		}()
+		boundary := result.EventStream.(streams.DeliveryBoundary)
+		terminal := NewStreamTerminalTracker(1)
 		w.Header().Set("Content-Type", "text/event-stream")
 		for result.EventStream.Next() {
 			event := result.EventStream.Current()
-			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, event.Data); err != nil {
+			if err := boundary.Deliver(requestCtx, func() (bool, error) {
+				if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, event.Data); err != nil {
+					return false, err
+				}
+				w.(http.Flusher).Flush()
+				return terminal.Observe(event), nil
+			}); err != nil {
 				handlerResult <- err
 				return
 			}
-			w.(http.Flusher).Flush()
 		}
 		handlerResult <- result.EventStream.Err()
 	}))

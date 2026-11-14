@@ -34,6 +34,9 @@ type healthGateAttemptTracker struct {
 	lastResort  bool
 	decision    *healthGateRequestDecision
 	committed   bool
+	rawStream   streams.Stream[*httpclient.StreamEvent]
+	stream      *healthGateStream
+	attemptErr  error
 }
 
 func withHealthGate(outbound *PersistentOutboundTransformer, gate *biz.HealthGate, policy biz.HealthGatePolicy) *healthGateAttemptTracker {
@@ -76,6 +79,9 @@ func (m *healthGateAttemptTracker) OnOutboundRawRequest(ctx context.Context, req
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.rawStream = nil
+	m.stream = nil
+	m.attemptErr = nil
 	if m.active && m.key == key {
 		return request, nil
 	}
@@ -117,6 +123,9 @@ func (m *healthGateAttemptTracker) OnOutboundRawError(ctx context.Context, err e
 	if m.active {
 		m.lastOutcome = classifyHealthGateOutcome(ctx, err)
 		m.lastInfo = healthGateErrorInfo(err)
+		if IsUpstreamTransportError(err) {
+			m.attemptErr = err
+		}
 	}
 }
 
@@ -127,11 +136,24 @@ func healthGateErrorInfo(err error) biz.HealthGateErrorInfo {
 	return biz.HealthGateErrorInfo{Message: ExtractErrorMessage(err), StatusCode: ExtractStatusCodeFromError(err)}
 }
 
+func (m *healthGateAttemptTracker) OnOutboundRawStream(_ context.Context, stream streams.Stream[*httpclient.StreamEvent]) (streams.Stream[*httpclient.StreamEvent], error) {
+	if m.enabled() {
+		m.mu.Lock()
+		m.rawStream = stream
+		m.mu.Unlock()
+	}
+	return stream, nil
+}
+
 func (m *healthGateAttemptTracker) OnOutboundLlmStream(ctx context.Context, stream streams.Stream[*llm.Response]) (streams.Stream[*llm.Response], error) {
 	if !m.enabled() {
 		return stream, nil
 	}
-	return &healthGateStream{stream: stream, ctx: ctx, tracker: m, state: m.outbound.state}, nil
+	observed := &healthGateStream{stream: stream, ctx: ctx}
+	m.mu.Lock()
+	m.stream = observed
+	m.mu.Unlock()
+	return observed, nil
 }
 
 // finalize is called after Process. A delivered stream is finalized only on Close.
@@ -159,6 +181,26 @@ func (m *healthGateAttemptTracker) finalize(ctx context.Context, err error, stre
 		// empty bodies); use its classification when it carries new information.
 		m.lastOutcome = classifyHealthGateOutcome(ctx, err)
 		m.lastInfo = healthGateErrorInfo(err)
+		state := m.outbound.state
+		passThroughStream := state.RawStreamQueue != nil || (state.PassThroughApplied && state.LlmRequest != nil && state.LlmRequest.Stream != nil && *state.LlmRequest.Stream)
+		if healthGateClientCanceled(ctx) && passThroughStream {
+			upstreamErr := m.attemptErr
+			if upstreamErr == nil {
+				upstreamErr = err
+			}
+			if m.rawStream != nil {
+				if rawErr := m.rawStream.Err(); IsUpstreamTransportError(rawErr) {
+					upstreamErr = rawErr
+				}
+			}
+			if IsUpstreamTransportError(upstreamErr) {
+				m.lastOutcome = biz.HealthGateOutcomeFailure
+				if m.stream != nil && m.stream.meaningful {
+					m.lastOutcome = biz.HealthGateOutcomeUnstable
+				}
+				m.lastInfo = healthGateErrorInfo(upstreamErr)
+			}
+		}
 	}
 	failure := m.lastResort && m.lastOutcome == biz.HealthGateOutcomeFailure
 	m.finishActive(ctx)
@@ -169,14 +211,13 @@ func (m *healthGateAttemptTracker) finalize(ctx context.Context, err error, stre
 	return err
 }
 
-//nolint:containedctx // The original request context identifies client cancellation.
+//nolint:containedctx // The execution context retains lifecycle and timeout provenance.
 type healthGateStream struct {
 	stream     streams.Stream[*llm.Response]
 	ctx        context.Context
-	tracker    *healthGateAttemptTracker
-	state      *PersistenceState
 	meaningful bool
 	once       sync.Once
+	closeErr   error
 }
 
 func (s *healthGateStream) Next() bool { return s.stream.Next() }
@@ -190,51 +231,8 @@ func (s *healthGateStream) Current() *llm.Response {
 }
 
 func (s *healthGateStream) Close() error {
-	var closeErr error
 	s.once.Do(func() {
-		closeErr = s.stream.Close()
-		m := s.tracker
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		if !m.active {
-			if m.committed {
-				m.finishSession(s.ctx, false)
-			}
-			return
-		}
-		streamErr := s.stream.Err()
-		if streamErr == nil {
-			streamErr = closeErr
-		}
-		// Pass-through closes this stream from a background drain after the handler
-		// has returned and canceled the request context. A provider failure terminal
-		// or transport failure still belongs to the channel after that cancellation.
-		clientCanceled := healthGateClientCanceled(s.ctx) &&
-			s.state.OutboundStreamTerminal != streamTerminalFailed && !IsUpstreamTransportError(streamErr)
-		// StreamCompleted tracks the generation outcome. A provider-sent incomplete
-		// terminal (token limit, content filter) or cancellation is a valid response
-		// and is not a channel fault. Session ownership follows the request outcome
-		// instead: an incomplete stream is persisted as a failed request.
-		var outcome biz.HealthGateOutcome
-		switch {
-		case s.state.StreamCompleted || s.state.OutboundStreamTerminal == streamTerminalIncomplete:
-			outcome = biz.HealthGateOutcomeSuccess
-		case clientCanceled || s.state.OutboundStreamTerminal == streamTerminalCanceled:
-			outcome = biz.HealthGateOutcomeNeutral
-		case s.meaningful:
-			outcome = biz.HealthGateOutcomeUnstable
-		default:
-			outcome = biz.HealthGateOutcomeFailure
-		}
-		m.lastOutcome = outcome
-		if streamErr == nil && (outcome == biz.HealthGateOutcomeFailure || outcome == biz.HealthGateOutcomeUnstable) {
-			streamErr = ErrStreamIncomplete
-		}
-		m.lastInfo = healthGateErrorInfo(streamErr)
-		if m.committed {
-			m.finishActive(s.ctx)
-			m.finishSession(s.ctx, s.state.StreamCompleted)
-		}
+		s.closeErr = s.stream.Close()
 	})
-	return closeErr
+	return s.closeErr
 }

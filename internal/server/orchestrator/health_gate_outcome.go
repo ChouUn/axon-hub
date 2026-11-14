@@ -18,6 +18,12 @@ func healthGatePipelineTimeout(ctx context.Context) bool {
 }
 
 func healthGateClientCanceled(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	if owner := streamLifecycleFromContext(ctx); owner != nil {
+		return owner.downstream.Err() != nil || (owner.shutdown != nil && owner.shutdown.Err() != nil)
+	}
 	return ctx != nil && ctx.Err() != nil && !healthGatePipelineTimeout(ctx)
 }
 
@@ -50,4 +56,35 @@ func classifyHealthGateOutcome(ctx context.Context, err error) biz.HealthGateOut
 		return biz.HealthGateOutcomeFailure
 	}
 	return biz.HealthGateOutcomeNeutral
+}
+
+func classifyHealthGateStreamOutcome(ctx context.Context, state *PersistenceState, terminal streamTerminalState, meaningful bool, streamErr, deliveryErr error) biz.HealthGateOutcome {
+	interrupted := func() biz.HealthGateOutcome {
+		if meaningful {
+			return biz.HealthGateOutcomeUnstable
+		}
+		return biz.HealthGateOutcomeFailure
+	}
+	switch terminal {
+	case streamTerminalCompleted, streamTerminalIncomplete:
+		return biz.HealthGateOutcomeSuccess
+	case streamTerminalCanceled:
+		return biz.HealthGateOutcomeNeutral
+	case streamTerminalFailed:
+		return interrupted()
+	case streamTerminalNone:
+	}
+	// Performance completion is upstream generation evidence, including validated
+	// aggregation without a wire terminal. It is independent of downstream delivery.
+	if state.CleanEOFCompletionEvidence || (state.Perf != nil && state.Perf.RequestCompleted && state.Perf.Success) {
+		return biz.HealthGateOutcomeSuccess
+	}
+	if IsUpstreamTransportError(streamErr) || healthGatePipelineTimeout(ctx) {
+		return interrupted()
+	}
+	if healthGateClientCanceled(ctx) || deliveryErr != nil ||
+		(streamLifecycleFromContext(ctx) == nil && errors.Is(streamErr, context.Canceled)) {
+		return biz.HealthGateOutcomeNeutral
+	}
+	return interrupted()
 }
