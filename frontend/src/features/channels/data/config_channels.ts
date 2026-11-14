@@ -33,6 +33,7 @@ import {
   AiHubMix,
   OpenCode,
   Groq,
+  Cloudflare,
 } from '@lobehub/icons';
 import { AtlasCloudIcon } from '../components/atlas-cloud-icon';
 import { CommandCodeIcon } from '../components/commandcode-icon';
@@ -42,6 +43,7 @@ import { TypeSafeIcon } from '../components/typesafe-icon';
 import { NanoGPTIcon } from '../components/nanogpt-icon';
 import { BURNCLOUD_DEFAULT_MODELS } from './burncloud-models';
 import { ApiFormat, ChannelType } from './schema';
+import { isSuggestedModel } from '../../models/data/model-suggestions';
 
 export const OPENAI_CHAT_COMPLETIONS: ApiFormat = 'openai/chat_completions';
 export const OPENAI_RESPONSES: ApiFormat = 'openai/responses';
@@ -220,7 +222,7 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
   minimax: {
     channelType: 'minimax',
     baseURL: 'https://api.minimaxi.com/v1',
-    defaultModels: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'],
+    defaultModels: ['MiniMax-M3.1-Flash', 'MiniMax-M3'],
     apiFormat: OPENAI_CHAT_COMPLETIONS,
     color: 'bg-red-100 text-red-800 border-red-200',
     icon: Minimax,
@@ -228,7 +230,7 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
   minimax_anthropic: {
     channelType: 'minimax_anthropic',
     baseURL: 'https://api.minimaxi.com/anthropic',
-    defaultModels: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'],
+    defaultModels: ['MiniMax-M3.1-Flash', 'MiniMax-M3'],
     apiFormat: ANTHROPIC_MESSAGES,
     color: 'bg-red-100 text-red-800 border-red-200',
     icon: Minimax,
@@ -717,6 +719,21 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
     color: 'bg-blue-100 text-blue-800 border-blue-200',
     icon: TypeSafeIcon,
   },
+  cloudflare: {
+    channelType: 'cloudflare',
+    baseURL: 'https://api.cloudflare.com/client/v4/accounts/<account_id>/ai',
+    // Only models the default endpoints (chat completions + embeddings) can
+    // serve: decision models need the System One endpoint and a model protocol
+    // pin, so they are added by hand instead of being preset here.
+    defaultModels: [
+      '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+      '@cf/meta/llama-3.1-8b-instruct',
+      '@cf/baai/bge-m3',
+    ],
+    apiFormat: OPENAI_CHAT_COMPLETIONS,
+    color: 'bg-orange-100 text-orange-800 border-orange-200',
+    icon: Cloudflare,
+  },
   github: {
     channelType: 'github',
     baseURL: 'https://models.github.ai/inference',
@@ -949,7 +966,7 @@ export const getDefaultBaseURL = (channelType: ChannelType): string => {
  * Get default models for a channel type
  */
 export const getDefaultModels = (channelType: ChannelType): string[] => {
-  return CHANNEL_CONFIGS[channelType]?.defaultModels || [];
+  return (CHANNEL_CONFIGS[channelType]?.defaultModels || []).filter(isSuggestedModel);
 };
 
 /**
@@ -986,6 +1003,7 @@ export type Provider =
   | 'bailian'
   | 'jina'
   | 'typesafe'
+  | 'cloudflare'
   | 'github'
   | 'github_copilot'
   | 'cerebras'
@@ -1055,6 +1073,7 @@ export const CHANNEL_TYPE_TO_PROVIDER: Record<ChannelType, Provider> = {
   moonshot_coding: 'moonshot',
   jina: 'jina',
   typesafe: 'typesafe',
+  cloudflare: 'cloudflare',
   github: 'github',
   github_copilot: 'github_copilot',
   codex: 'codex',

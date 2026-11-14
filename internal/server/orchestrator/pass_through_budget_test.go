@@ -29,10 +29,21 @@ func TestPassThroughAnthropicStream_RawBudget(t *testing.T) {
 		count int
 		data  string
 	}{
-		{name: "filtered event count", count: maxRawPreReadEvents + 1, data: `{"type":"ping"}`},
-		{name: "filtered event bytes", count: 4, data: `{"type":"ping","padding":"` + strings.Repeat("x", maxRawPreReadBytes/4) + `"}`},
+		{name: "filtered event count", count: maxRawPreAttachEvents + 1, data: `{"type":"ping"}`},
+		{name: "filtered event bytes", count: 4, data: `{"type":"ping","padding":"` + strings.Repeat("x", maxRawPreAttachBytes/4) + `"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "filtered event bytes" {
+				backlog := &rawStreamBacklog{}
+				for range tc.count - 1 {
+					held, err := backlog.hold(&httpclient.StreamEvent{Type: "ping", Data: []byte(tc.data)})
+					require.NoError(t, err)
+					require.True(t, held)
+				}
+				_, err := backlog.hold(&httpclient.StreamEvent{Type: "ping", Data: []byte(tc.data)})
+				require.ErrorIs(t, err, pipeline.ErrPreCommitBufferExceeded)
+			}
+
 			// Given: filtered raw pings exceed a pre-attachment budget.
 			events := make([]*httpclient.StreamEvent, 0, tc.count+9)
 			data := []byte(tc.data)
@@ -74,7 +85,7 @@ func TestRawStreamBacklog_ExactBudgets(t *testing.T) {
 	t.Run("count", func(t *testing.T) {
 		for _, overflow := range []bool{false, true} {
 			backlog := &rawStreamBacklog{}
-			for range maxRawPreReadEvents {
+			for range maxRawPreAttachEvents {
 				held, err := backlog.hold(&httpclient.StreamEvent{})
 				require.NoError(t, err)
 				require.True(t, held)
@@ -90,14 +101,14 @@ func TestRawStreamBacklog_ExactBudgets(t *testing.T) {
 				continue
 			}
 			require.NoError(t, err)
-			require.Len(t, events, maxRawPreReadEvents)
+			require.Len(t, events, maxRawPreAttachEvents)
 			held, err := backlog.hold(&httpclient.StreamEvent{})
 			require.NoError(t, err)
 			require.False(t, held)
 		}
 	})
 	t.Run("bytes include type and ID", func(t *testing.T) {
-		event := &httpclient.StreamEvent{Type: "ping", LastEventID: "1", Data: make([]byte, maxRawPreReadBytes-5)}
+		event := &httpclient.StreamEvent{Type: "ping", LastEventID: "1", Data: make([]byte, maxRawPreAttachBytes-5)}
 		for _, overflow := range []bool{false, true} {
 			backlog := &rawStreamBacklog{}
 			_, err := backlog.hold(event)
@@ -116,6 +127,30 @@ func TestRawStreamBacklog_ExactBudgets(t *testing.T) {
 			require.Len(t, events, 1)
 		}
 	})
+}
+
+func TestRawStreamQueue_BlocksLargeLiveEventsUntilConsumerReads(t *testing.T) {
+	// Given: the pass-through consumer is attached but has stopped reading.
+	backlog := &rawStreamBacklog{attached: true}
+	queue := newRawStreamQueue(backlog)
+	for range 64 {
+		require.NoError(t, queue.enqueue(context.Background(), &httpclient.StreamEvent{}))
+	}
+	event := &httpclient.StreamEvent{Data: make([]byte, 16*1024*1024)}
+
+	// When: a live producer queues an event larger than the pre-attachment limit.
+	result := make(chan error, 1)
+	go func() { result <- queue.enqueue(context.Background(), event) }()
+
+	// Then: the bounded queue applies backpressure instead of dropping it.
+	select {
+	case err := <-result:
+		t.Fatalf("enqueue completed before consumer read: %v", err)
+	default:
+	}
+	_, ok := <-queue.ch
+	require.True(t, ok)
+	require.NoError(t, <-result)
 }
 
 func TestPassThroughAnthropicStream_HTTPRetryIsolation(t *testing.T) {

@@ -969,7 +969,7 @@ export function ModelsAssociationDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent ref={dialogContentRef} className='flex h-[90vh] max-h-[800px] w-full max-w-full flex-col sm:max-w-6xl'>
+      <DialogContent ref={dialogContentRef} className='flex h-[90vh] max-h-[800px] w-full max-w-full flex-col overflow-hidden sm:max-w-6xl'>
         <DialogHeader className='shrink-0 text-left'>
           <DialogTitle className='text-lg sm:text-xl'>
             {isDeveloperMode ? t('models.dialogs.developerAssociation.title') : t('models.dialogs.association.title')}

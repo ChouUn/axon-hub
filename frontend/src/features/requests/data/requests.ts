@@ -101,6 +101,7 @@ function buildRequestsQuery(permissions: { canViewApiKeys: boolean; canViewChann
                   totalCost
                   costPriceMultiplier
                   costItems { itemCode promptWriteCacheVariantCode quantity subtotal tierBreakdown { upTo units subtotal } }
+                  costPriceReferenceID
                 }
               }
             }
@@ -187,6 +188,7 @@ function buildRequestDetailQuery(permissions: { canViewApiKeys: boolean; canView
                   totalCost
                   costPriceMultiplier
                   costItems { itemCode promptWriteCacheVariantCode quantity subtotal tierBreakdown { upTo units subtotal } }
+                  costPriceReferenceID
                 }
             }
           }

@@ -14,6 +14,7 @@ import {
 } from './data/analytics';
 import { APIKeyAnalyticsFilterBar } from './components/api-key-analytics-filter-bar';
 import { APIKeyAnalyticsTable } from './components/api-key-analytics-table';
+import { analyticsDateRangeToTimestamps, getAnalyticsCalendarDate } from './utils/date-range';
 
 export default function APIKeyAnalyticsPage() {
   const { t } = useTranslation();
@@ -23,6 +24,7 @@ export default function APIKeyAnalyticsPage() {
   const [templateIDs, setTemplateIDs] = useState<string[]>([]);
   const { data: generalSettings } = useGeneralSettings();
   const { data: metadata } = useAnalyticsMetadata();
+  const timezone = generalSettings?.timezone || 'UTC';
   const {
     data: templates = [],
     isLoading: isTemplatesLoading,
@@ -30,11 +32,10 @@ export default function APIKeyAnalyticsPage() {
   } = useAnalyticsAPIKeyTemplates();
   const filter = useMemo<AnalyticsFilter>(
     () => ({
-      startTime,
-      endTime,
+      ...analyticsDateRangeToTimestamps({ startTime, endTime }, timezone),
       templateIDs: templateIDs.length > 0 ? templateIDs : undefined,
     }),
-    [endTime, startTime, templateIDs]
+    [endTime, startTime, templateIDs, timezone]
   );
   const {
     data: stats = [],
@@ -69,8 +70,8 @@ export default function APIKeyAnalyticsPage() {
       </p>
 
       <APIKeyAnalyticsFilterBar
-        earliestDate={metadata?.earliestDate}
-        timezone={generalSettings?.timezone || 'UTC'}
+        earliestDate={metadata?.earliestTime ? getAnalyticsCalendarDate(new Date(metadata.earliestTime), timezone) : null}
+        timezone={timezone}
         startTime={startTime}
         endTime={endTime}
         templateIDs={templateIDs}

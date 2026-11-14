@@ -23,6 +23,7 @@ import { DEVELOPER_IDS, DEVELOPER_ICONS } from '../data/constants';
 import { useCreateModel, useUpdateModel } from '../data/models';
 import { createPriceValidationSchema, priceFromCatalog } from '../data/pricing';
 import { useDevelopersData } from '../data/providers';
+import { isSuggestedModel, withMiniMaxFlash } from '../data/model-suggestions';
 import { type Provider, type ProviderModel, resolveVision } from '../data/providers.schema';
 import { REASONING_EFFORTS, deriveReasoningEfforts } from '../data/reasoning-efforts';
 import {
@@ -78,7 +79,7 @@ export function ModelsActionDialog() {
       .map(([key, provider]: [string, Provider]) => ({
         id: key,
         name: provider.display_name || provider.name,
-        models: provider.models || [],
+        models: withMiniMaxFlash(provider.models || [], key),
       }));
   }, [developersData]);
 
@@ -104,10 +105,12 @@ export function ModelsActionDialog() {
   }, [getDeveloperLabel]);
 
   const modelIdOptions = useMemo(() => {
-    return selectedProviderModels.map((m: ProviderModel) => ({
-      value: m.id,
-      label: m.id,
-    }));
+    return selectedProviderModels
+      .filter((model) => isSuggestedModel(model.id))
+      .map((m: ProviderModel) => ({
+        value: m.id,
+        label: m.id,
+      }));
   }, [selectedProviderModels]);
 
   const iconOptions = useMemo(() => {

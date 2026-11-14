@@ -3,7 +3,9 @@ package biz
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"text/template"
@@ -14,6 +16,7 @@ import (
 	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/internal/server/biz/provider_quota"
 	"github.com/looplj/axonhub/llm/httpclient"
 )
 
@@ -22,7 +25,18 @@ const EventChannelAutoDisabled = "channel.auto_disabled"
 const (
 	EventChannelHealthGateOpened    = "channel.health_gate_opened"
 	EventChannelHealthGateRecovered = "channel.health_gate_recovered"
+
+	EventProviderQuotaWarning   = "provider.quota.warning"
+	EventProviderQuotaExhausted = "provider.quota.exhausted"
+	EventProviderQuotaRecovered = "provider.quota.recovered"
 )
+
+// QuotaEventSeverity maps quota status-change events to their webhook severity.
+var QuotaEventSeverity = map[string]string{
+	EventProviderQuotaWarning:   "warning",
+	EventProviderQuotaExhausted: "critical",
+	EventProviderQuotaRecovered: "info",
+}
 
 const (
 	defaultWebhookMethod    = http.MethodPost
@@ -39,6 +53,20 @@ type ChannelAutoDisabledEvent struct {
 	Threshold       int
 	ActualCount     int
 	Reason          string
+	OccurredAt      time.Time
+}
+
+type QuotaStatusChangedEvent struct {
+	ChannelID       int
+	ChannelName     string
+	ChannelProvider string // ch.Type.String()
+	ChannelBaseURL  string
+	ChannelStatus   string  // ch.Status.String()
+	PreviousStatus  string  // raw previous state before the save ("available"|"warning"|"exhausted"|"unknown"); transition logic used the last known non-unknown status
+	NewStatus       string  // "warning"|"exhausted"|"available"
+	UsageRatio      float64 // overall usage ratio; -1 when not derivable
+	NextResetAt     string  // RFC3339, "" when nil
+	Limits          []string
 	OccurredAt      time.Time
 }
 
@@ -70,6 +98,16 @@ type WebhookRenderContext struct {
 		Reason      string `json:"reason"`
 		OpenUntil   string `json:"open_until"`
 	} `json:"trigger"`
+
+	Quota struct {
+		PreviousStatus        string   `json:"previous_status"`
+		NewStatus             string   `json:"new_status"`
+		UsageRatio            float64  `json:"usage_ratio"`
+		UsagePercent          int      `json:"usage_percent"`
+		NextResetAt           string   `json:"next_reset_at"`
+		Limits                []string `json:"limits"`
+		WarningThresholdRatio float64  `json:"warning_threshold_ratio"`
+	} `json:"quota"`
 }
 
 type WebhookNotifier struct {
@@ -147,6 +185,51 @@ func (n *WebhookNotifier) notifyChannelHealthGate(ctx context.Context, eventName
 		renderCtx.Trigger.ActualCount = transition.ProbeSuccesses
 	}
 	n.notify(ctx, eventName, renderCtx, transition.At)
+}
+
+func (n *WebhookNotifier) NotifyProviderQuotaWarning(ctx context.Context, event QuotaStatusChangedEvent) {
+	n.notifyProviderQuotaEvent(ctx, EventProviderQuotaWarning, event)
+}
+
+func (n *WebhookNotifier) NotifyProviderQuotaExhausted(ctx context.Context, event QuotaStatusChangedEvent) {
+	n.notifyProviderQuotaEvent(ctx, EventProviderQuotaExhausted, event)
+}
+
+func (n *WebhookNotifier) NotifyProviderQuotaRecovered(ctx context.Context, event QuotaStatusChangedEvent) {
+	n.notifyProviderQuotaEvent(ctx, EventProviderQuotaRecovered, event)
+}
+
+func (n *WebhookNotifier) notifyProviderQuotaEvent(ctx context.Context, eventName string, event QuotaStatusChangedEvent) {
+	log.Info(ctx, "notify provider quota status change",
+		log.Int("channel_id", event.ChannelID),
+		log.String("event", eventName),
+		log.String("previous_status", event.PreviousStatus),
+		log.String("new_status", event.NewStatus),
+	)
+
+	usagePercent := 0
+	if event.UsageRatio >= 0 {
+		usagePercent = int(math.Round(event.UsageRatio * 100))
+	}
+
+	renderCtx := WebhookRenderContext{
+		Event:    eventName,
+		Severity: QuotaEventSeverity[eventName],
+	}
+	renderCtx.Channel.ID = event.ChannelID
+	renderCtx.Channel.Name = event.ChannelName
+	renderCtx.Channel.Provider = event.ChannelProvider
+	renderCtx.Channel.BaseURL = event.ChannelBaseURL
+	renderCtx.Channel.Status = event.ChannelStatus
+	renderCtx.Quota.PreviousStatus = event.PreviousStatus
+	renderCtx.Quota.NewStatus = event.NewStatus
+	renderCtx.Quota.UsageRatio = event.UsageRatio
+	renderCtx.Quota.UsagePercent = usagePercent
+	renderCtx.Quota.NextResetAt = event.NextResetAt
+	renderCtx.Quota.Limits = event.Limits
+	renderCtx.Quota.WarningThresholdRatio = provider_quota.WarningThresholdRatio
+
+	n.notify(ctx, eventName, renderCtx, event.OccurredAt)
 }
 
 // notify renders and delivers one event to every subscribed target.
@@ -288,12 +371,24 @@ func renderWebhookHeaders(headers []objects.HeaderEntry, renderCtx WebhookRender
 	return result, nil
 }
 
+// webhookTemplateFuncs makes values render as compact JSON so the default
+// body template stays valid JSON (e.g. "limits": {{.Quota.Limits | json}}).
+var webhookTemplateFuncs = template.FuncMap{
+	"json": func(v any) string {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "null"
+		}
+		return string(b)
+	},
+}
+
 func renderWebhookTemplate(value string, renderCtx WebhookRenderContext) (string, error) {
 	if !strings.Contains(value, "{{") || !strings.Contains(value, "}}") {
 		return value, nil
 	}
 
-	tmpl, err := template.New("webhook").Funcs(template.FuncMap{}).Parse(value)
+	tmpl, err := template.New("webhook").Funcs(webhookTemplateFuncs).Parse(value)
 	if err != nil {
 		return "", err
 	}

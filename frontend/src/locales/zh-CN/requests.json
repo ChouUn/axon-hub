@@ -41,6 +41,7 @@
   "requests.columns.readCache": "读缓存",
   "requests.columns.writeCache": "写缓存",
   "requests.columns.cacheHitRate": "{{rate}}% 命中",
+  "requests.columns.cacheRate": "缓存：{{rate}}%",
   "requests.columns.writeCacheRate": "{{rate}}% 写入",
   "requests.costBreakdown.title": "计费详情",
   "requests.costBreakdown.upTo": "≤{{upTo}}",

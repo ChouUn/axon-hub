@@ -19,28 +19,29 @@ import (
 type Handlers struct {
 	fx.In
 
-	Graphql          *gql.GraphqlHandler
-	OpenAPIGraphql   *openapi.GraphqlHandler
-	SelfUsageGraphql *selfusage.GraphqlHandler
-	OpenAI           *api.OpenAIHandlers
-	Doubao           *api.DoubaoHandlers
-	Anthropic        *api.AnthropicHandlers
-	Gemini           *api.GeminiHandlers
-	AiSDK            *api.AiSDKHandlers
-	Playground       *api.PlaygroundHandlers
-	System           *api.SystemHandlers
-	Auth             *api.AuthHandlers
-	Invitation       *api.InvitationHandlers
-	Jina             *api.JinaHandlers
-	TypeSafe         *api.TypeSafeHandlers
-	Codex            *api.CodexHandlers
-	XAI              *api.XAIHandlers
-	ClaudeCode       *api.ClaudeCodeHandlers
-	Antigravity      *api.AntigravityHandlers
-	Copilot          *api.CopilotHandlers
-	RequestContent   *api.RequestContentHandlers
-	OIDC             *api.OIDCHandlers
-	RequestPreview   *api.RequestPreviewHandlers
+	Graphql            *gql.GraphqlHandler
+	OpenAPIGraphql     *openapi.GraphqlHandler
+	SelfUsageGraphql   *selfusage.GraphqlHandler
+	OpenAI             *api.OpenAIHandlers
+	Doubao             *api.DoubaoHandlers
+	Anthropic          *api.AnthropicHandlers
+	Gemini             *api.GeminiHandlers
+	AiSDK              *api.AiSDKHandlers
+	Playground         *api.PlaygroundHandlers
+	System             *api.SystemHandlers
+	Auth               *api.AuthHandlers
+	Invitation         *api.InvitationHandlers
+	Jina               *api.JinaHandlers
+	TypeSafe           *api.TypeSafeHandlers
+	Codex              *api.CodexHandlers
+	CodexCompatibility *api.CodexCompatibilityHandlers
+	XAI                *api.XAIHandlers
+	ClaudeCode         *api.ClaudeCodeHandlers
+	Antigravity        *api.AntigravityHandlers
+	Copilot            *api.CopilotHandlers
+	RequestContent     *api.RequestContentHandlers
+	OIDC               *api.OIDCHandlers
+	RequestPreview     *api.RequestPreviewHandlers
 }
 
 type Services struct {
@@ -183,6 +184,8 @@ func SetupRoutes(server *Server, handlers Handlers, client *ent.Client, services
 
 		openAPIGroup.POST("/webhook/echo", handlers.System.WebhookEcho)
 	}
+
+	registerCodexRoutes(server, handlers, services)
 
 	selfServiceGroup := server.Group(
 		"/self-service",

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/looplj/axonhub/internal/server/safeguards"
 	"github.com/looplj/axonhub/internal/tracing"
 )
 
@@ -99,6 +100,8 @@ type Config struct {
 	// admin console. It replaces RequestTimeout for that operation only, because
 	// image generation tests can outlive the ordinary admin request budget.
 	ChannelTestTimeout time.Duration `conf:"channel_test_timeout" yaml:"channel_test_timeout" json:"channel_test_timeout"`
+
+	Safeguards safeguards.Config `conf:"safeguards" yaml:"safeguards" json:"safeguards"`
 
 	SSEKeepAlive SSEKeepAlive `conf:"sse_keep_alive" yaml:"sse_keep_alive" json:"sse_keep_alive"`
 

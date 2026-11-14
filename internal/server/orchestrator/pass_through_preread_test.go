@@ -100,7 +100,7 @@ func TestPassThroughPreReadAnthropic(t *testing.T) {
 }
 
 func TestPassThroughPreReadSkippedEventsAreBounded(t *testing.T) {
-	process := anthropicPreReadPipeline(t, &mockExecutor{streamEvents: anthropicPreReadEvents(maxRawPreReadEvents, true)})
+	process := anthropicPreReadPipeline(t, &mockExecutor{streamEvents: anthropicPreReadEvents(maxRawPreAttachEvents, true)})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	result, err := process(ctx, anthropicPreReadRequest())
@@ -113,14 +113,23 @@ func TestPassThroughPreReadOverflowBeforeAttachment(t *testing.T) {
 	// Signature is meaningful and below the raw limit. Hold attachment until the
 	// producer has read ahead beyond that limit, after pre-read already succeeded.
 	process := anthropicPreReadPipeline(t,
-		&mockExecutor{streamEvents: anthropicPreReadEvents(maxRawPreReadEvents-5, true)},
+		&mockExecutor{streamEvents: anthropicPreReadEvents(maxRawPreAttachEvents-5, true)},
 		func(state *PersistenceState) pipeline.Middleware {
 			return pipeline.OnInboundRawStream("wait-for-producer", func(ctx context.Context, stream streams.Stream[*httpclient.StreamEvent]) (streams.Stream[*httpclient.StreamEvent], error) {
-				select {
-				case <-state.RawStreamDone:
-					return stream, nil
-				case <-ctx.Done():
-					return nil, ctx.Err()
+				ticker := time.NewTicker(time.Millisecond)
+				defer ticker.Stop()
+				for {
+					state.RawStreamBacklog.mu.Lock()
+					failed := state.RawStreamBacklog.err != nil
+					state.RawStreamBacklog.mu.Unlock()
+					if failed {
+						return stream, nil
+					}
+					select {
+					case <-ticker.C:
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
 				}
 			})
 		},

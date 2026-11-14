@@ -128,7 +128,12 @@ export function mergeChannelSettingsForUpdate(
     rateLimit: pick('rateLimit', existing?.rateLimit ?? null),
     retryableStatusCodes: pick('retryableStatusCodes', existing?.retryableStatusCodes ?? []),
     retryableErrorPatterns: pick('retryableErrorPatterns', existing?.retryableErrorPatterns ?? []),
+    maxSingleChannelRetries: pick('maxSingleChannelRetries', existing?.maxSingleChannelRetries ?? null),
+
+    responseTimeout: pick('responseTimeout', existing?.responseTimeout ?? null),
     modelProtocols: pick('modelProtocols', existing?.modelProtocols ?? []),
+apiKeyStrategy: pick('apiKeyStrategy', existing?.apiKeyStrategy ?? null),
+    apiKeyRoundRobinSwitchAfter: pick('apiKeyRoundRobinSwitchAfter', existing?.apiKeyRoundRobinSwitchAfter ?? null),
     providerQuota: pick('providerQuota', existing?.providerQuota ?? null),
     primaryApiFormat: pick('primaryApiFormat', existing?.primaryApiFormat ?? ''),
     quotaRoutingMode: pick('quotaRoutingMode', existing?.quotaRoutingMode ?? undefined),

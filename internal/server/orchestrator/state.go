@@ -31,9 +31,10 @@ type PersistenceState struct {
 	Proxy *httpclient.ProxyConfig
 
 	// OriginalModel is the model after API key profile mapping, used for channel selection
-	OriginalModel string
-	RawRequest    *httpclient.Request
-	LlmRequest    *llm.Request
+	OriginalModel         string
+	RawRequest            *httpclient.Request
+	LlmRequest            *llm.Request
+	ResponsesContinuation *responsesContinuation
 
 	// OriginalRequestStream stores the client's original stream intent before any
 	// candidate-specific forcing to provider-side streaming happens.
@@ -66,17 +67,23 @@ type PersistenceState struct {
 	// success: it must not trigger channel failure counts or auto-disable rules.
 	Perf *biz.PerformanceRecord
 
-	// StreamCompleted tracks a successful generation outcome, not channel health.
+	// StreamCompleted reports a completed generation delivered successfully downstream.
+	// Inbound finalization combines the terminal outcome with delivery acknowledgement.
 	// A recognized incomplete terminal keeps this false and is persisted as Failed
-	// on both request and execution, even though Perf.Success is true. This does
-	// not turn a valid protocol response (such as finish_reason=length) into an
-	// HTTP/stream error for the client.
+	// on both request and execution, even though Perf.Success is true.
 	StreamCompleted bool
+
+	// DeliveryAcknowledged is set only after the downstream semantic boundary is
+	// written successfully. AccountingFinal is independent from delivery and
+	// usage values; downstream finalization owns when to publish either state.
+	DeliveryAcknowledged bool
+	AccountingFinal      bool
+	AccountingSourceEnd  llm.SourceEndReason
 
 	// OutboundStreamTerminal preserves the provider outcome across protocol
 	// conversion, which may replace an abnormal terminal event with a generic stop.
-	// Request/execution status and channel health intentionally interpret this
-	// outcome differently, as described by StreamCompleted and Perf above.
+	// Delivery and request/execution status are tracked separately from provider
+	// outcome and channel health; an incomplete terminal may still be healthy.
 	OutboundStreamTerminal streamTerminalState
 	// CleanEOFCompletionEvidence is set only by a protocol transformer after it
 	// has exhausted a clean source and emitted validated terminal evidence.
@@ -92,10 +99,15 @@ type PersistenceState struct {
 	// once the pass-through consumer is attached; earlier events are held on
 	// RawStreamBacklog.
 	RawStreamCh chan *httpclient.StreamEvent
-	// RawStreamBacklog retains bounded pre-read events until the consumer attaches.
+
+	// RawStreamQueue owns aggregate count and byte accounting for raw events
+	// retained after the pass-through consumer attaches.
+	RawStreamQueue *rawStreamQueue
+
+	// RawStreamBacklog holds the current attempt's raw provider stream events until
+	// applyPassThroughStream attaches the pass-through consumer, so the pipeline can
+	// pre-read the attempt without the fan-out goroutine blocking on RawStreamCh.
 	RawStreamBacklog *rawStreamBacklog
-	// RawStreamDone publishes the producer's final error without a cancellation race.
-	RawStreamDone <-chan struct{}
 
 	// RawStreamErrRef points to the current attempt's local error variable used by the
 	// captureRawProviderStream fan-out goroutine. Using a per-attempt pointer (instead of
@@ -107,6 +119,7 @@ type PersistenceState struct {
 	// captureRawProviderStream. Must be called in PrepareForRetry and NextChannel so the
 	// abandoned goroutine exits promptly and releases its upstream HTTP connection.
 	RawStreamCancel context.CancelFunc
+	RawStreamDetach context.CancelFunc
 
 	// PassThroughApplied records whether the inbound request body was substituted during pass-through.
 	PassThroughApplied bool

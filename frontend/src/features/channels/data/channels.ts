@@ -138,12 +138,20 @@ const CREATE_CHANNEL_MUTATION = `
         passThroughUserAgent
         passThroughBody
         forceOneHourPromptCache
+        responseTimeout {
+          mode
+          streamFirstEventTimeoutSeconds
+          nonStreamResponseTimeoutSeconds
+        }
         retryableStatusCodes
+        apiKeyStrategy
+        apiKeyRoundRobinSwitchAfter
         retryableErrorPatterns {
           pattern
           regex
         }
         primaryApiFormat
+        maxSingleChannelRetries
         modelProtocols {
           model
           apiFormats
@@ -233,12 +241,20 @@ const DUPLICATE_CHANNEL_MUTATION = `
         passThroughUserAgent
         passThroughBody
         forceOneHourPromptCache
+        responseTimeout {
+          mode
+          streamFirstEventTimeoutSeconds
+          nonStreamResponseTimeoutSeconds
+        }
         retryableStatusCodes
+        apiKeyStrategy
+        apiKeyRoundRobinSwitchAfter
         retryableErrorPatterns {
           pattern
           regex
         }
         primaryApiFormat
+        maxSingleChannelRetries
         modelProtocols {
           model
           apiFormats
@@ -328,12 +344,20 @@ const BULK_CREATE_CHANNELS_MUTATION = `
         passThroughUserAgent
         passThroughBody
         forceOneHourPromptCache
+        responseTimeout {
+          mode
+          streamFirstEventTimeoutSeconds
+          nonStreamResponseTimeoutSeconds
+        }
         retryableStatusCodes
+        apiKeyStrategy
+        apiKeyRoundRobinSwitchAfter
         retryableErrorPatterns {
           pattern
           regex
         }
         primaryApiFormat
+        maxSingleChannelRetries
         modelProtocols {
           model
           apiFormats
@@ -366,9 +390,8 @@ const BULK_CREATE_CHANNELS_MUTATION = `
   }
 `;
 
-const UPDATE_CHANNEL_MUTATION = `
-  mutation UpdateChannel($id: ID!, $input: UpdateChannelInput!) {
-    updateChannel(id: $id, input: $input) {
+const CHANNEL_FIELDS_FRAGMENT = `
+  fragment ChannelMutationFields on Channel {
       id
       type
       createdAt
@@ -423,12 +446,20 @@ const UPDATE_CHANNEL_MUTATION = `
         passThroughUserAgent
         passThroughBody
         forceOneHourPromptCache
+        responseTimeout {
+          mode
+          streamFirstEventTimeoutSeconds
+          nonStreamResponseTimeoutSeconds
+        }
         retryableStatusCodes
+        apiKeyStrategy
+        apiKeyRoundRobinSwitchAfter
         retryableErrorPatterns {
           pattern
           regex
         }
         primaryApiFormat
+        maxSingleChannelRetries
         modelProtocols {
           model
           apiFormats
@@ -458,6 +489,23 @@ const UPDATE_CHANNEL_MUTATION = `
         baseURL
         transport
       }
+  }
+`;
+
+const UPDATE_CHANNEL_MUTATION = `${CHANNEL_FIELDS_FRAGMENT}
+  mutation UpdateChannel($id: ID!, $input: UpdateChannelInput!) {
+    updateChannel(id: $id, input: $input) {
+      ...ChannelMutationFields
+    }
+  }
+`;
+
+// Server-side settings patch: absent fields keep their stored values, so the
+// caller does not need to refetch and re-submit the whole settings object.
+const UPDATE_CHANNEL_SETTINGS_MUTATION = `${CHANNEL_FIELDS_FRAGMENT}
+  mutation UpdateChannelSettings($id: ID!, $input: UpdateChannelSettingsInput!) {
+    updateChannelSettings(id: $id, input: $input) {
+      ...ChannelMutationFields
     }
   }
 `;
@@ -643,12 +691,20 @@ const BULK_IMPORT_CHANNELS_MUTATION = `
           passThroughUserAgent
           passThroughBody
           forceOneHourPromptCache
+          responseTimeout {
+            mode
+            streamFirstEventTimeoutSeconds
+            nonStreamResponseTimeoutSeconds
+          }
           retryableStatusCodes
+          apiKeyStrategy
+          apiKeyRoundRobinSwitchAfter
           retryableErrorPatterns {
             pattern
             regex
           }
           primaryApiFormat
+          maxSingleChannelRetries
           modelProtocols {
             model
             apiFormats
@@ -875,12 +931,20 @@ const BULK_UPDATE_CHANNEL_ORDERING_MUTATION = `
           passThroughUserAgent
           passThroughBody
           forceOneHourPromptCache
+          responseTimeout {
+            mode
+            streamFirstEventTimeoutSeconds
+            nonStreamResponseTimeoutSeconds
+          }
           retryableStatusCodes
+          apiKeyStrategy
+          apiKeyRoundRobinSwitchAfter
           retryableErrorPatterns {
             pattern
             regex
           }
           primaryApiFormat
+          maxSingleChannelRetries
           modelProtocols {
             model
             apiFormats
@@ -1066,6 +1130,11 @@ const CHANNEL_QUERY_FULL_NODE_SELECTION = `
           credentials {
             apiKey
             apiKeys
+            vertexApiKeys {
+              projectID
+              apiKey
+              region
+            }
             gcp {
               region
               projectID
@@ -1134,6 +1203,11 @@ const CHANNEL_QUERY_FULL_NODE_SELECTION = `
             passThroughUserAgent
             passThroughBody
             forceOneHourPromptCache
+            responseTimeout {
+              mode
+              streamFirstEventTimeoutSeconds
+              nonStreamResponseTimeoutSeconds
+            }
             rateLimit {
               rpm
               tpm
@@ -1142,11 +1216,14 @@ const CHANNEL_QUERY_FULL_NODE_SELECTION = `
               queueTimeoutMs
             }
             retryableStatusCodes
+            apiKeyStrategy
+            apiKeyRoundRobinSwitchAfter
             retryableErrorPatterns {
               pattern
               regex
             }
             primaryApiFormat
+            maxSingleChannelRetries
             modelProtocols {
               model
               apiFormats
@@ -1619,6 +1696,14 @@ async function updateChannelRequest(id: string, input: UpdateChannelInput): Prom
   return channelSchema.parse(data.updateChannel);
 }
 
+async function updateChannelSettingsRequest(id: string, patch: Partial<ChannelSettings>): Promise<Channel> {
+  const data = await graphqlRequest<{ updateChannelSettings: Channel }>(UPDATE_CHANNEL_SETTINGS_MUTATION, {
+    id,
+    input: patch,
+  });
+  return channelSchema.parse(data.updateChannelSettings);
+}
+
 async function fetchLatestChannel(channelID: string): Promise<Channel> {
   const data = await graphqlRequest<{ queryChannels: ChannelConnection }>(QUERY_CHANNELS_QUERY, {
     input: {
@@ -1683,6 +1768,19 @@ export interface UpdateChannelSettingsMutationInput {
  * Updates one settings patch against the latest server snapshot. Mutations for
  * the same channel are serialized so a stale dialog cannot overwrite a patch
  * that was committed immediately before it.
+ *
+ * Without other channel fields, the patch is sent to the server-side
+ * updateChannelSettings mutation, which merges it onto the stored settings
+ * under an expected-version guard: no refetch round trip, no risk of a stale
+ * client snapshot wiping settings the caller did not touch, and concurrent
+ * settings-only edits no longer replace each other. When other channel
+ * fields are included, they must be committed atomically with the settings
+ * patch (e.g. endpoints together with model protocol overrides), so the
+ * combined update goes through updateChannel with a client-side merge onto
+ * the latest snapshot. Patches that carry an explicit null meant to clear a
+ * stored value also take that path: the GraphQL patch input cannot
+ * distinguish null from absence, so the null clear must be applied by the
+ * client-side merge.
  */
 export function useUpdateChannelSettings() {
   const queryClient = useQueryClient();
@@ -1692,9 +1790,24 @@ export function useUpdateChannelSettings() {
   return useMutation({
     mutationFn: ({ id, patch, input }: UpdateChannelSettingsMutationInput) =>
       enqueueChannelSettingsUpdate(id, async () => {
+        // Settings-only edits go through the server-side patch mutation, which
+        // merges under an expected-version guard and retries on conflict. An
+        // input object with no channel fields (callers may pass an empty
+        // object after pruning fields) is settings-only too.
+        const hasChannelFields = Object.values(input ?? {}).some((value) => value !== undefined);
+        // The GraphQL patch input cannot distinguish an explicit null from an
+        // absent field, so patches that use null to clear a stored value
+        // (e.g. rateLimit: null, providerQuota: null) must keep the
+        // clear-capable full-update path, where the client-side merge applies
+        // the null.
+        const hasExplicitNullClear = Object.values(patch ?? {}).some((value) => value === null);
+        if (!hasChannelFields && !hasExplicitNullClear) {
+          return updateChannelSettingsRequest(id, patch);
+        }
+
         const latest = await fetchLatestChannel(id);
         return updateChannelRequest(id, {
-          ...input,
+          ...input!,
           settings: mergeChannelSettingsForUpdate(latest.settings, patch),
         });
       }),
@@ -2275,7 +2388,14 @@ export function useFetchModels() {
   const { handleError } = useErrorHandler();
 
   return useMutation({
-    mutationFn: async (input: { channelType: string; baseURL: string; apiKey?: string; channelID?: string }) => {
+    mutationFn: async (input: {
+      channelType: string;
+      baseURL: string;
+      apiKey?: string;
+      projectID?: string;
+      region?: string;
+      channelID?: string;
+    }) => {
       try {
         const data = await graphqlRequest<{
           fetchModels: {

@@ -186,7 +186,7 @@ func TestHealthGateStream_PassThroughHTTPClientCancellationIsNeutral(t *testing.
 	require.NotNil(t, result.EventStream)
 	defer result.EventStream.Close()
 	require.True(t, state.PassThroughApplied)
-	require.NotNil(t, state.RawStreamDone, "the raw pass-through producer must be active")
+	require.NotNil(t, state.RawStreamQueue, "the raw pass-through producer must be active")
 	require.NoError(t, tracker.finalize(ctx, nil, true))
 	sawContent := false
 	for result.EventStream.Next() {
@@ -198,12 +198,13 @@ func TestHealthGateStream_PassThroughHTTPClientCancellationIsNeutral(t *testing.
 	require.True(t, sawContent, "the client must receive output before disconnecting")
 	require.NoError(t, ctx.Err())
 	cancel()
-	select {
-	case <-state.RawStreamDone:
-	case <-time.After(5 * time.Second):
-		t.Fatal("pass-through upstream did not stop after client cancellation")
-	}
-	streamErr := *state.RawStreamErrRef
+	var streamErr error
+	require.Eventually(t, func() bool {
+		state.RawStreamQueue.backlog.mu.Lock()
+		defer state.RawStreamQueue.backlog.mu.Unlock()
+		streamErr = *state.RawStreamErrRef
+		return streamErr != nil
+	}, 5*time.Second, time.Millisecond, "pass-through upstream did not stop after client cancellation")
 	require.ErrorIs(t, streamErr, context.Canceled, "actual upstream error: %T: %v", streamErr, streamErr)
 	require.False(t, IsUpstreamTransportError(streamErr), "actual upstream error: %T: %v", streamErr, streamErr)
 	require.Eventually(t, func() bool {
