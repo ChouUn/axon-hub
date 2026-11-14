@@ -299,6 +299,9 @@ func (ts *InboundPersistentStream) Close() error {
 	if ts.lifecycle != nil {
 		_ = ts.stream.Close()
 		ts.lifecycle.Close()
+		if ts.state.rawStreamDrainDone != nil {
+			<-ts.state.rawStreamDrainDone
+		}
 	}
 
 	ts.stateMu.Lock()

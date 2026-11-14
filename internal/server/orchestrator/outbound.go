@@ -994,6 +994,7 @@ func (p *PersistentOutboundTransformer) resetPassThroughStreamState() {
 	p.state.RawStreamQueue = nil
 	p.state.RawStreamDetach = nil
 	p.state.RawStreamErrRef = nil
+	p.state.rawStreamDrainDone = nil
 }
 
 // NextChannel moves to the next available candidate for retry.

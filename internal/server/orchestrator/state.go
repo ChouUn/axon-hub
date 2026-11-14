@@ -121,6 +121,9 @@ type PersistenceState struct {
 	RawStreamCancel context.CancelFunc
 	RawStreamDetach context.CancelFunc
 
+	// rawStreamDrainDone publishes completion of the converted pass-through consumer.
+	rawStreamDrainDone <-chan struct{}
+
 	// PassThroughApplied records whether the inbound request body was substituted during pass-through.
 	PassThroughApplied bool
 }

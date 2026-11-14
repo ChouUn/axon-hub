@@ -681,6 +681,7 @@ func applyPassThroughStream(outbound *PersistentOutboundTransformer, systemServi
 
 		observer := streamLifecycleFromContext(ctx)
 		drainDone := make(chan struct{})
+		outbound.state.rawStreamDrainDone = drainDone
 		go func() {
 			defer close(drainDone)
 			if observer == nil {
