@@ -314,15 +314,19 @@ func TestHealthGateSession_StreamCommitsOnlyAfterTerminalClose(t *testing.T) {
 
 func TestHealthGateSession_ProviderTerminalWithoutCompletionIsNotChannelFault(t *testing.T) {
 	for _, tt := range []struct {
-		terminal    streamTerminalState
-		wantOutcome biz.HealthGateOutcome
+		terminal          streamTerminalState
+		wantOutcome       biz.HealthGateOutcome
+		cancelBeforeClose bool
 	}{
 		{terminal: streamTerminalIncomplete, wantOutcome: biz.HealthGateOutcomeSuccess},
 		{terminal: streamTerminalCanceled, wantOutcome: biz.HealthGateOutcomeNeutral},
+		{terminal: streamTerminalIncomplete, wantOutcome: biz.HealthGateOutcomeSuccess, cancelBeforeClose: true},
+		{terminal: streamTerminalCanceled, wantOutcome: biz.HealthGateOutcomeNeutral, cancelBeforeClose: true},
 	} {
-		t.Run(string(tt.terminal), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/canceled=%t", tt.terminal, tt.cancelBeforeClose), func(t *testing.T) {
 			f := newHealthGateSessionFixture(t)
-			ctx := contexts.WithTrace(f.ctx, &ent.Trace{ID: 10, ThreadID: 20})
+			ctx, cancel := context.WithCancel(contexts.WithTrace(f.ctx, &ent.Trace{ID: 10, ThreadID: 20}))
+			defer cancel()
 			expected := setHealthGateSessionOwner(f.request, ctx, 20, 10, biz.SessionOwner{ChannelID: 1, ConsecutiveFailovers: 1})
 			selected := f.selectCandidates(t, ctx)
 			require.Equal(t, 1, selected[0].Channel.ID)
@@ -340,6 +344,9 @@ func TestHealthGateSession_ProviderTerminalWithoutCompletionIsNotChannelFault(t 
 			// The provider ended the stream with a recognized terminal event that is
 			// not a completed generation, so StreamCompleted stays false.
 			state.OutboundStreamTerminal = tt.terminal
+			if tt.cancelBeforeClose {
+				cancel()
+			}
 			require.NoError(t, wrapper.Close())
 
 			require.Equal(t, tt.wantOutcome, tracker.lastOutcome)
@@ -352,7 +359,7 @@ func TestHealthGateSession_ProviderTerminalWithoutCompletionIsNotChannelFault(t 
 			}
 			// The request did not complete, so the owner keeps its lease and
 			// failover count: success on the owner would reset and renew both.
-			owner, found, err := f.request.GetSessionOwner(ctx, 20, 10)
+			owner, found, err := f.request.GetSessionOwner(context.WithoutCancel(ctx), 20, 10)
 			require.NoError(t, err)
 			require.True(t, found)
 			require.Equal(t, expected, owner)

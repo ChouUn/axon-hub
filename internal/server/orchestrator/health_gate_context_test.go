@@ -6,11 +6,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/looplj/axonhub/internal/contexts"
+	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
@@ -216,4 +219,177 @@ func TestHealthGateStream_PassThroughHTTPClientCancellationIsNeutral(t *testing.
 	require.Zero(t, snapshots[0].ConsecutiveFailures)
 	require.Empty(t, snapshots[0].LastError)
 	require.Nil(t, snapshots[0].LastErrorAt)
+}
+
+func TestHealthGateStream_CanceledContextPreservesFailedTerminal(t *testing.T) {
+	for _, output := range []bool{false, true} {
+		t.Run(fmt.Sprintf("output=%t", output), func(t *testing.T) {
+			now := time.Unix(1000, 0)
+			candidate := healthGateSelectorCandidate(1, 0, "model")
+			_, gate, policy := healthGateSelectorFixture(&now, []*ChannelModelsCandidate{candidate}, biz.TraceStickyDisabled, nil)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			state := &PersistenceState{
+				RoutingPolicy:    EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated},
+				CurrentCandidate: candidate,
+			}
+			tracker := withHealthGate(&PersistentOutboundTransformer{state: state}, gate, policy.HealthGateOrDefault())
+			_, err := tracker.OnOutboundRawRequest(ctx, &httpclient.Request{})
+			require.NoError(t, err)
+			var responses []*llm.Response
+			if output {
+				text := "hello"
+				responses = append(responses, &llm.Response{Choices: []llm.Choice{{
+					Delta: &llm.Message{Content: llm.MessageContent{Content: &text}},
+				}}})
+			}
+			wrapper, err := tracker.OnOutboundLlmStream(ctx, &healthGateErrorStream{Stream: streams.SliceStream(responses)})
+			require.NoError(t, err)
+			for wrapper.Next() {
+				_ = wrapper.Current()
+			}
+			state.OutboundStreamTerminal = streamTerminalFailed
+			require.NoError(t, wrapper.Err(), "a provider failure terminal need not carry a transport error")
+			require.NoError(t, tracker.finalize(ctx, nil, true))
+			cancel()
+			require.NoError(t, wrapper.Close())
+			cfg := biz.ResolveHealthGateConfig(policy.HealthGateOrDefault(), candidate.Channel)
+			snapshots := healthGateSnapshot(t, gate, candidate.Channel.ID, healthGateResolver(cfg))
+			require.Len(t, snapshots, 1)
+			if output {
+				require.Equal(t, biz.HealthGateStateUnstable, snapshots[0].State)
+				require.Zero(t, snapshots[0].ConsecutiveFailures)
+			} else {
+				require.Equal(t, biz.HealthGateStateOpen, snapshots[0].State)
+				require.Equal(t, 1, snapshots[0].ConsecutiveFailures)
+			}
+			require.NotEmpty(t, snapshots[0].LastError)
+		})
+	}
+}
+
+type healthGateCloseAfterContextMiddleware struct {
+	pipeline.DummyMiddleware
+	observed chan error
+}
+
+func (m *healthGateCloseAfterContextMiddleware) OnOutboundLlmStream(ctx context.Context, stream streams.Stream[*llm.Response]) (streams.Stream[*llm.Response], error) {
+	return &healthGateCloseAfterContextStream{Stream: stream, ctx: ctx, observed: m.observed}, nil
+}
+
+type healthGateCloseAfterContextStream struct {
+	streams.Stream[*llm.Response]
+	ctx      context.Context
+	observed chan error
+}
+
+func (s *healthGateCloseAfterContextStream) Close() error {
+	// Hold only background cleanup: the raw HTTP response can finish normally.
+	<-s.ctx.Done()
+	err := s.Stream.Close()
+	s.observed <- s.ctx.Err()
+	return err
+}
+
+func TestHealthGateStream_PassThroughHTTPCompletionCommitsOwnerAfterHandlerReturn(t *testing.T) {
+	f := newHealthGateSessionFixture(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range anthropicPreReadEvents(0, false) {
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, event.Data); err != nil {
+				return
+			}
+		}
+		w.(http.Flusher).Flush()
+	}))
+	defer upstream.Close()
+	provider, err := anthropic.NewOutboundTransformer(upstream.URL, "test-key")
+	require.NoError(t, err)
+	observed := make(chan error, 1)
+	var state *PersistenceState
+	var tracker *healthGateAttemptTracker
+	process := anthropicPreReadPipeline(t, httpclient.NewHttpClientWithClient(upstream.Client()),
+		func(current *PersistenceState) pipeline.Middleware {
+			state = current
+			state.RequestService = f.request
+			state.RoutingPolicy.LoadBalancerStrategy = biz.LoadBalancerStrategyHealthGated
+			state.ChannelModelsCandidates[0].Channel.Outbound = provider
+			f.selector.wrapped.(*staticChannelSelector).candidates = state.ChannelModelsCandidates
+			return pipeline.OnLlmRequest("select-session-owner", func(ctx context.Context, req *llm.Request) (*llm.Request, error) {
+				candidates, err := f.selector.Select(ctx, req)
+				state.ChannelModelsCandidates = candidates
+				return req, err
+			})
+		},
+		func(current *PersistenceState) pipeline.Middleware {
+			tracker = withHealthGate(&PersistentOutboundTransformer{state: current}, f.gate, f.policy.HealthGateOrDefault())
+			return tracker
+		},
+		func(*PersistenceState) pipeline.Middleware {
+			return &healthGateCloseAfterContextMiddleware{observed: observed}
+		},
+	)
+	handlerResult := make(chan error, 1)
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := contexts.WithTrace(r.Context(), &ent.Trace{ID: 10, ThreadID: 20})
+		result, err := process(ctx, anthropicPreReadRequest())
+		if err != nil {
+			handlerResult <- err
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer result.EventStream.Close()
+		if err := tracker.finalize(ctx, nil, true); err != nil {
+			handlerResult <- err
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for result.EventStream.Next() {
+			event := result.EventStream.Current()
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, event.Data); err != nil {
+				handlerResult <- err
+				return
+			}
+			w.(http.Flusher).Flush()
+		}
+		handlerResult <- result.EventStream.Err()
+	}))
+	defer gateway.Close()
+	clientCtx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(clientCtx, http.MethodPost, gateway.URL, strings.NewReader(string(anthropicPreReadRequest().Body)))
+	require.NoError(t, err)
+	response, err := gateway.Client().Do(req)
+	require.NoError(t, err)
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	require.Contains(t, string(body), "event: message_stop")
+	require.NoError(t, clientCtx.Err(), "the client received the full response without canceling")
+	select {
+	case err := <-handlerResult:
+		require.NoError(t, err)
+	case <-clientCtx.Done():
+		t.Fatal("HTTP handler did not finish")
+	}
+	select {
+	case err := <-observed:
+		require.ErrorIs(t, err, context.Canceled)
+		t.Logf("background health close observed request context: %v", err)
+	case <-clientCtx.Done():
+		t.Fatal("background close did not observe handler context cancellation")
+	}
+	require.Eventually(t, func() bool {
+		tracker.mu.Lock()
+		defer tracker.mu.Unlock()
+		return !tracker.active
+	}, 5*time.Second, time.Millisecond, "background health recording must finish")
+	require.True(t, state.PassThroughApplied)
+	require.True(t, state.StreamCompleted)
+	owner, found, err := f.request.GetSessionOwner(f.ctx, 20, 10)
+	require.NoError(t, err)
+	t.Logf("completed=%t, session owner found=%t, channel=%d", state.StreamCompleted, found, owner.ChannelID)
+	require.True(t, found, "a completed response must establish ownership even when handler cleanup canceled its context")
+	requireHealthGateSessionOwner(t, owner, state.CurrentCandidate.Channel.ID, 0, 5*time.Minute)
 }
