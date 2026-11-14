@@ -169,3 +169,5 @@ config.schema.json
 .ace-tool/
 .omx/
 deploy_dev.sh
+
+!.omp/config.yml
