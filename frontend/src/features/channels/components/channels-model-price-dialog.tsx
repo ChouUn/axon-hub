@@ -43,7 +43,8 @@ function createFormSchema(t: (key: string) => string) {
           modelId: z.string().min(1, t('price.validation.modelRequired')),
           price: modelPriceInputSchema.superRefine((price, ctx) => {
             const result = priceSchema.safeParse(price);
-            if (!result.success) result.error.issues.forEach((issue) => ctx.addIssue(issue));
+            if (!result.success)
+              result.error.issues.forEach(({ message, path }) => ctx.addIssue({ code: 'custom', message, path }));
             else if (!result.data) ctx.addIssue({ code: 'custom', message: t('price.validation.itemsRequired'), path: ['items'] });
           }),
         })
