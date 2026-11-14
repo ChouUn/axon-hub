@@ -38,8 +38,9 @@
 
 - `system_version` 曾被误抬到 `v1.0.0-beta8` 的存量实例不需要手工回拨：
   - 上游 data migration `v1.0.0-beta9` 覆盖了 fork data migration `v1.0.0-beta7-fork.1` 的清理。
-  - 版本比较修复（`6c07e14e`，见[迁移器](migrator.md)）后，部署 fork 的发布版本 `v1.0.0-beta10-fork.N`
-    会正常抬高 `system_version`。
+  - 版本比较按数值排序预发布号后（见
+    [上游 v1.0.0-beta11 同步记录](../../reports/upstream-sync-v1.0.0-beta11.md)的「迁移器版本比较」），
+    部署 fork 的发布版本 `v1.0.0-beta10-fork.N` 会正常抬高 `system_version`。
 
 ## 实现与维护
 

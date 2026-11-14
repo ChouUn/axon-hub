@@ -26,6 +26,10 @@
 - 本仓库不使用 OpenSpec：doc-writing 归入 spec 的行为契约 MUST 写在所属功能的文档
   （`docs/<模块>/feats/`）中，并保留已有的 D、R 编号。
 
+## 部署
+
+- 本 fork 的部署主要使用 PostgreSQL。
+
 ## 数据库迁移兼容性
 
 - `internal/ent/migrate/migrations/`（schema migration）和
@@ -34,7 +38,7 @@
 - NEVER 复用上游迁移版本，也 NEVER 假定看似未使用的版本号已经被 fork 保留。
 - 每个 fork data migration MUST 使用 `v1.0.0-<上游基线>-fork.N` 形式、能明确表明 fork 归属的
   版本标识（例如 `v1.0.0-beta10-fork.1`）。
-- 版本顺序以 `datamigrate.parseComparableVersion` 的数值感知比较为准：原生 semver 会把
+- 版本顺序以 `biz.CompareVersions` 的数值感知比较为准：原生 semver 会把
   `v1.0.0-beta10` 排在 `v1.0.0-beta9` 之前。MUST 验证新迁移与周边上游迁移版本的顺序，并在 `NewMigrator` 中
   按对应的执行顺序注册。
 - 已发布的迁移不可变。需要修正时新增幂等迁移，NEVER 修改既有迁移的行为或版本号。

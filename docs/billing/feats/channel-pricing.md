@@ -51,7 +51,9 @@
 
 ### 实现与维护
 
-- 提交：`2eca7c59`（渠道标准价格引用、持久倍率与价格编辑交互）。
+- 提交：
+  - `2eca7c59`（渠道标准价格引用、持久倍率与价格编辑交互）
+  - `0af05bef`（价格对话框转发校验错误的类型修正）
 - 代码：
   - `frontend/src/features/channels/components/channels-model-price-dialog.tsx`
   - `frontend/src/components/model-price-editor.tsx`

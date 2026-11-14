@@ -20,7 +20,7 @@
     - 可查同项目内隐私规则允许的非 personal Key。
     - 只返回已配额度的 profile。
   - 管理端的 Key 统计与请求列表需要用户 JWT。按项目授权后可见项目内非 personal Key 及本人的
-    personal Key，项目 owner 权限更宽（`internal/scopes/rule_user_project_scope_requests.go:19-22`）。
+    personal Key，项目 owner 权限更宽（`internal/scopes/rule_user_project_scope_requests.go:17-19`）。
 - 要覆盖的场景：拿到 Key 的人自己能看到用了多少、花了多少、哪些请求失败，不需要管理员账号，
   也看不到别人的数据。
 
@@ -127,14 +127,14 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - 独立公开路由，不经管理端登录。提供登出。中英文界面。
   - 页面使用独立的 Key 认证状态、请求与错误处理，不附加管理端 JWT 与项目上下文，
     不清除或改写管理端登录。管理端的全局 401 处理会清除管理登录并跳转 `/sign-in`
-    （`frontend/src/main.tsx:59-64`、`frontend/src/gql/graphql.ts:96-101,139-143`）。
+    （`frontend/src/main.tsx:82-87`、`frontend/src/gql/graphql.ts:103-111,147-155`）。
   - 认证失败只清除本页 Key 并回到本页登录。
   - 根布局的管理端查询与命令菜单不在本页触发。
   - Key 只存于本页的 sessionStorage 与内存，不进入管理端 `authStore`、localStorage 或 URL。
   - 登出或换 Key 时清除旧查询缓存。
 - R8 元数据：页面查询接口随结果提供系统币种与时区，不要求 `read_settings`，不暴露其他系统设置。
   管理端 `useGeneralSettings` 需要 `read_settings`
-  （`frontend/src/features/system/data/system.ts:1128-1149`）。
+  （`frontend/src/features/system/data/system.ts:1124-1145`）。
 - R9 查询开销：
   - 时间跨度由后端校验，不超过 90 天。
   - 过滤条件为 Key ID、项目 ID 与 `source=api` 等值加 UTC 半开时间范围，时区换算只用于分桶。

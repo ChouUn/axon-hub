@@ -28,7 +28,8 @@
 - 测试脱离请求取消：控制台断开后，测试仍跑到结束或超时。
 - `http.Server` 的 `WriteTimeout` 取 `request_timeout`、`llm_request_timeout` 与该值三者的最大值。
 - 设为 `0` 时保持上游行为。
-- GraphQL 事务中间件对三个 mutation 按字段跳过事务。
+- GraphQL 事务中间件对三个测试 mutation 按字段跳过事务。
+  上游按操作名跳过的 `bulkImportChannels` 并入同一份字段列表。
 
 ## 边界
 

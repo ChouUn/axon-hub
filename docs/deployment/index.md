@@ -7,4 +7,3 @@
 > Maintain: living — 持续更新，保持内容有效
 
 - [Docker 镜像发布到 fork 仓库](feats/docker-publish.md)
-- [迁移器](feats/migrator.md)

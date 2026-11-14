@@ -20,11 +20,12 @@
 - [渠道](channels/index.md)：从 AxonHub 到渠道上游，包括渠道的配置、列表与测试，发往渠道上游的请求处理，以及供应商模型目录。
 - [用量与分析](usage/index.md)：仪表盘分析和 API Key 自助用量页。
 - [计费](billing/index.md)：模型与渠道的价格、倍率，以及请求成本的展示。
-- [部署](deployment/index.md)：镜像构建与发布，以及升级时的 data migration。
+- [部署](deployment/index.md)：镜像构建与发布。
 
 ## 上游同步
 
 - [上游 v1.0.0-beta10 同步记录](reports/upstream-sync-v1.0.0-beta10.md)
+- [上游 v1.0.0-beta11 同步记录](reports/upstream-sync-v1.0.0-beta11.md)
 
 ## 外部项目对照
 

@@ -26,6 +26,9 @@ description: "新增或实质修改 fork 改动、同步上游 release 时的维
 - [ ] MUST 逐项阅读各功能文档，并对照上游在相关代码路径和行为上的变化。
 - [ ] MUST 同时核对 schema migration、data migration 及其版本顺序。
 - [ ] MUST 报告语义重叠、兼容性变化和迁移冲突，NEVER 只依赖 Git 冲突判断。
+- [ ] 判断一项行为是否属于 fork 改动前，MUST 先查清它由谁引入（如 `git log -S`）：
+  - fork 有意改过的行为才算 fork 改动。
+  - fork 只是继承上游旧行为的，上游改了就跟随上游。
 - [ ] 涉及保留、调整或删除 fork 改动时，MUST 先取得用户决定。
 - [ ] MUST 按最终实现更新功能文档中的事实、路径和相关提交。
 - [ ] MUST 在 `docs/reports/` 新增本次同步记录，并挂到 `docs/index.md` 的「上游同步」。

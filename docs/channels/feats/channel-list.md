@@ -86,6 +86,7 @@
   - `d6d17d00`（`feat(channels): 拆分生图渠道`）
   - `7fdbd2ae`（合入上游 `v1.0.0-beta10` 时重接）
   - `e18cc308`（补回列表字段与编辑同步）
+  - `eaef7c06`（合入上游 `v1.0.0-beta11` 时重接渠道测试）
 - 实现约束：
   - 选中图像格式后切换供应商时，类型须由 `getBaseChannelTypeForProvider` 推导。
     `getChannelTypeForApiFormat` 对图像格式恒为 undefined，否则表单 `type` 与 baseURL 停在上一家。
@@ -96,10 +97,12 @@
 - 与上游 `v1.0.0-beta10` 的接合：
   - `getApiFormatsForProvider` 上游已委托给 `protocol-options.ts`。fork 只在 `config_providers.ts`
     的包装层追加生图格式，不改上游文件。
-  - 渠道测试的 `marshalChannelTestBody` 接受上游新增的 `responsesWebSocket` 参数。
-  - `testSingleKey` 同时保留 fork 的 `ch *biz.Channel` 与上游的 `responsesWebSocket`。
   - 编辑对话框的 `settingsPatch` 与新建时 `mergeChannelSettingsForUpdate` 的参数中保留
     `primaryApiFormat`。
+- 与上游 `v1.0.0-beta11` 的接合：
+  - 上游按 API 格式构造测试请求（`channelTestAPIFormat`、`buildChannelTestInput`）。
+    `channelTestAPIFormat` 先判生图标记，带标记的渠道得到图像生成格式。
+  - `testSingleKey` 保留 fork 的 `ch *biz.Channel`，并接受上游的 `responsesWebSocket` 与 API 格式参数。
 - 代码：
   - `internal/objects/channel.go`
   - `internal/server/gql/axonhub.graphql`
@@ -117,6 +120,7 @@
 - 测试与 fixture：
   - `frontend/src/features/channels/group-channel-types.test.mjs`
   - `internal/server/orchestrator/tester_test.go`
+  - `internal/server/orchestrator/tester_formats_test.go`
   - `internal/server/biz/channel_query_test.go`
   - `scripts/e2e/fixtures/channel-groups.sql`
 
