@@ -202,6 +202,14 @@ func (s *healthGateStream) Close() error {
 			}
 			return
 		}
+		streamErr := s.stream.Err()
+		if streamErr == nil {
+			streamErr = closeErr
+		}
+		// Pass-through closes this stream from a background drain after the handler
+		// has returned and canceled the request context. A transport failure seen on
+		// the stream is the channel's, whatever happened to the context afterwards.
+		clientCanceled := healthGateClientCanceled(s.ctx) && !IsUpstreamTransportError(streamErr)
 		// StreamCompleted tracks the generation outcome. A provider-sent incomplete
 		// terminal (token limit, content filter) or cancellation is a valid response
 		// and is not a channel fault. Session ownership follows the request outcome
@@ -210,7 +218,7 @@ func (s *healthGateStream) Close() error {
 		switch {
 		case s.state.StreamCompleted || s.state.OutboundStreamTerminal == streamTerminalIncomplete:
 			outcome = biz.HealthGateOutcomeSuccess
-		case healthGateClientCanceled(s.ctx) || s.state.OutboundStreamTerminal == streamTerminalCanceled:
+		case clientCanceled || s.state.OutboundStreamTerminal == streamTerminalCanceled:
 			outcome = biz.HealthGateOutcomeNeutral
 		case s.meaningful:
 			outcome = biz.HealthGateOutcomeUnstable
@@ -218,10 +226,6 @@ func (s *healthGateStream) Close() error {
 			outcome = biz.HealthGateOutcomeFailure
 		}
 		m.lastOutcome = outcome
-		streamErr := s.stream.Err()
-		if streamErr == nil {
-			streamErr = closeErr
-		}
 		if streamErr == nil && (outcome == biz.HealthGateOutcomeFailure || outcome == biz.HealthGateOutcomeUnstable) {
 			streamErr = ErrStreamIncomplete
 		}
