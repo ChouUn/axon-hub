@@ -316,15 +316,16 @@ func TestHealthGateSession_ProviderTerminalWithoutCompletionIsNotChannelFault(t 
 	for _, tt := range []struct {
 		terminal    streamTerminalState
 		wantOutcome biz.HealthGateOutcome
-		wantOwner   bool
 	}{
-		{terminal: streamTerminalIncomplete, wantOutcome: biz.HealthGateOutcomeSuccess, wantOwner: true},
+		{terminal: streamTerminalIncomplete, wantOutcome: biz.HealthGateOutcomeSuccess},
 		{terminal: streamTerminalCanceled, wantOutcome: biz.HealthGateOutcomeNeutral},
 	} {
 		t.Run(string(tt.terminal), func(t *testing.T) {
 			f := newHealthGateSessionFixture(t)
 			ctx := contexts.WithTrace(f.ctx, &ent.Trace{ID: 10, ThreadID: 20})
+			expected := setHealthGateSessionOwner(f.request, ctx, 20, 10, biz.SessionOwner{ChannelID: 1, ConsecutiveFailovers: 1})
 			selected := f.selectCandidates(t, ctx)
+			require.Equal(t, 1, selected[0].Channel.ID)
 			state := &PersistenceState{
 				RoutingPolicy:    EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated},
 				CurrentCandidate: selected[0], RequestService: f.request,
@@ -349,9 +350,12 @@ func TestHealthGateSession_ProviderTerminalWithoutCompletionIsNotChannelFault(t 
 				require.Zero(t, snapshot.ConsecutiveFailures)
 				require.Empty(t, snapshot.LastError)
 			}
-			_, found, err := f.request.GetSessionOwner(ctx, 20, 10)
+			// The request did not complete, so the owner keeps its lease and
+			// failover count: success on the owner would reset and renew both.
+			owner, found, err := f.request.GetSessionOwner(ctx, 20, 10)
 			require.NoError(t, err)
-			require.Equal(t, tt.wantOwner, found)
+			require.True(t, found)
+			require.Equal(t, expected, owner)
 		})
 	}
 }

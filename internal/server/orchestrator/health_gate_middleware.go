@@ -204,7 +204,8 @@ func (s *healthGateStream) Close() error {
 		}
 		// StreamCompleted tracks the generation outcome. A provider-sent incomplete
 		// terminal (token limit, content filter) or cancellation is a valid response
-		// and is not a channel fault.
+		// and is not a channel fault. Session ownership follows the request outcome
+		// instead: an incomplete stream is persisted as a failed request.
 		var outcome biz.HealthGateOutcome
 		switch {
 		case s.state.StreamCompleted || s.state.OutboundStreamTerminal == streamTerminalIncomplete:
@@ -227,7 +228,7 @@ func (s *healthGateStream) Close() error {
 		m.lastInfo = healthGateErrorInfo(streamErr)
 		if m.committed {
 			m.finishActive(s.ctx)
-			m.finishSession(s.ctx, outcome == biz.HealthGateOutcomeSuccess && !healthGateClientCanceled(s.ctx))
+			m.finishSession(s.ctx, s.state.StreamCompleted && !healthGateClientCanceled(s.ctx))
 		}
 	})
 	return closeErr
