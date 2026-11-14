@@ -780,10 +780,6 @@ func (p *PersistentOutboundTransformer) CanRetry(err error) bool {
 	if p.state.CurrentCandidate.healthGate != nil && p.state.CurrentCandidate.healthGate.lastResort || errors.Is(err, errSkipCandidateByHealthGate) {
 		return false
 	}
-	// Health-gated owners fail over immediately instead of retrying the same channel.
-	if p.state.CurrentCandidate.healthGate != nil && p.state.CurrentCandidate.TraceSticky {
-		return false
-	}
 
 	if errors.Is(err, errSkipCandidateByCircuitBreaker) {
 		return false

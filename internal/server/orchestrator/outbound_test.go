@@ -843,7 +843,7 @@ func TestPersistentOutboundTransformer_CanRetry(t *testing.T) {
 		require.True(t, outbound.CanRetry(nonRetryableErr), "sticky channels can retry another mapped model")
 	})
 
-	t.Run("health-gated sticky candidate keeps zero same-channel retries", func(t *testing.T) {
+	t.Run("health-gated owner follows normal same-channel retry rules", func(t *testing.T) {
 		outbound := &PersistentOutboundTransformer{
 			wrapped: &mockTransformer{},
 			state: &PersistenceState{
@@ -853,16 +853,15 @@ func TestPersistentOutboundTransformer_CanRetry(t *testing.T) {
 					healthGate:  &healthGateCandidateInfo{},
 					Models: []biz.ChannelModelEntry{
 						{RequestModel: "gpt-4", ActualModel: "gpt-4"},
-						{RequestModel: "gpt-4", ActualModel: "gpt-4-alternative"},
 					},
 				},
 			},
 		}
 
-		for _, err := range []error{retryableErr, nonRetryableErr, pipeline.ErrEmptyResponse,
-			&httpclient.Error{StatusCode: http.StatusInternalServerError}} {
-			require.False(t, outbound.CanRetry(err))
-		}
+		require.True(t, outbound.CanRetry(&httpclient.Error{StatusCode: http.StatusInternalServerError}))
+		require.True(t, outbound.CanRetry(pipeline.ErrEmptyResponse))
+		require.False(t, outbound.CanRetry(nonRetryableErr))
+		require.False(t, outbound.CanRetry(errSkipCandidateByHealthGate))
 	})
 
 	t.Run("health-gated last resort and skipped candidates do not retry", func(t *testing.T) {
@@ -881,7 +880,7 @@ func TestPersistentOutboundTransformer_CanRetry(t *testing.T) {
 		require.False(t, outbound.CanRetry(pipeline.ErrEmptyResponse))
 		outbound.state.CurrentCandidate.healthGate.lastResort = false
 		require.False(t, outbound.CanRetry(errSkipCandidateByHealthGate))
-		require.True(t, outbound.CanRetry(pipeline.ErrEmptyResponse), "non-owner health-gated candidates retain normal retries")
+		require.True(t, outbound.CanRetry(pipeline.ErrEmptyResponse), "health-gated candidates retain normal retries")
 	})
 
 	t.Run("auto-aggregate empty errors are retryable", func(t *testing.T) {
