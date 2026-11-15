@@ -20,7 +20,7 @@
 
 - 管理端无法直观看到哪个渠道×模型坏了。
 - 上游的 `(渠道, 模型)` 熔断器只挂在 `circuit-breaker` 策略下，阈值写死，查询与重置方法无调用方
-  （`internal/server/biz/model_circuit_breaker.go:144-149,359-435`）。
+  （`internal/server/biz/model_circuit_breaker.go:144-149,359-441`）。
 - 默认策略 `adaptive` 只按渠道扣分并在 5 分钟内衰减
   （`internal/server/orchestrator/lb_strategy_bp.go:43,49-90`）：
   - 坏渠道仍留在候选中。
@@ -35,7 +35,7 @@
 ### 会话归属与决策记录
 
 - 上游的会话粘性在每次尝试前改写（`internal/server/orchestrator/request_execution.go:137-145`、
-  `internal/server/biz/request.go:1353-1367`）。故障转移后又被下一次波动切回，每次切换都可能落到冷缓存、
+  `internal/server/biz/request.go:1516-1530`）。故障转移后又被下一次波动切回，每次切换都可能落到冷缓存、
   推高费用。
 - 管理端看不到某次请求为何跳过或转移渠道。
 - 熔断发生时无通知。
@@ -81,9 +81,9 @@ stateDiagram-v2
     （沿用 CCH，`src/app/v1/_lib/proxy/forwarder.ts:3214-3216,8626`）。
   - 结果为「不计入」类（如 400/404/422、429）时原样返回渠道上游的错误，不改写为 503。
   - 503 仅适用于尚未向客户端提交响应的失败。流式响应头已发出后
-    （`internal/server/api/chat.go:281-288`）发生的中断沿用流内错误与终止语义：不重试，
+    （`internal/server/api/chat.go:319-324`）发生的中断沿用流内错误与终止语义：不重试，
     不改写 HTTP 状态码，健康结果按 R4、R6 记录。
-  - 客户端取消后不再写响应。
+  - 客户端取消后不再写响应。最后一试的失败在客户端取消之后才收尾时，原样返回取消错误，不改写为 503。
 - D4 单机部署：健康状态只存进程内存，不做跨实例共享，重启后清零。
 - D5 统计范围：只统计走 `health-gated` 策略的流量。其他策略的请求不产生、不改变健康状态，
   保证管理端看到的熔断即实际生效的熔断。
@@ -98,7 +98,10 @@ stateDiagram-v2
 - D7 上游的 `circuit-breaker` 策略及其熔断器保留原样，不改动、不复用其实例。
 - D8 额度状态交给上游的配额路由（系统默认模式加渠道级覆盖，模式为忽略额度、耗尽时移除、背压），
   本策略不为额度另设口径：
-  - 选路时先按配额路由过滤候选，再做熔断判定、试探与最后一试。被配额路由移除的渠道不参与其中任何一步。
+  - 选路时先按配额路由过滤候选，再做熔断判定、试探与最后一试。被配额路由移除的候选不参与其中任何一步，
+    也不出现在决策记录的跳过项里。
+  - 配额路由按上游实际模型判断额度（上游 `f30e3c9b`，PR #2667，随上游 `v1.0.0-beta12` 发布）：
+    同一渠道内只移除额度耗尽的模型，全部模型都被移除时移除该渠道。
   - 额度告警不影响排序。
   - 「背压」模式下，用量偏高但未耗尽的渠道先只对已在该渠道上的会话保留。
     这样过滤后没有任何候选时，配额路由放回这些渠道，新会话也可使用，再进入门控判定。
@@ -147,12 +150,16 @@ stateDiagram-v2
     - 中途失败、最终成功记为成功（沿用 CCH）。
     - 最终失败按该组合最后一次尝试的分类记录。
     - 同渠道重试可能切换到该渠道的另一个 ActualModel
-      （`internal/server/orchestrator/outbound.go:848-852`），各组合分别记录。
+      （`internal/server/orchestrator/outbound.go:1135-1154`），各组合分别记录。
   - R4 结果分类：计数成功、计数失败、仅不稳、不计入四类，口径见 R6。
     - 流式请求以渠道上游的终态为准，收到 HTTP 200 或首个 token 不算成功：
       - 正常完成，或因输出上限、内容过滤提前结束（Responses 协议的 `incomplete`）：计数成功。
+        结束事件是否交付给客户端不影响健康结果。
       - 渠道上游报告取消：不计入。
       - 渠道上游报告失败，或没有终态：按 R6 的流中断处理。
+      - 没有终态但上游判定生成已完成（聚合出完整响应，或 OpenAI 流以带用量的正常 EOF 结束）：计数成功。
+    - 提交前（响应开始写给客户端之前）的错误按 R6 分类，不看渠道上游的终态：
+      渠道上游报告了完成、未完成或取消，空响应检测仍命中时计数失败。
     - 试探遇到「仅不稳」或「不计入」时释放试探名额，只更新最近异常信息。
       试探进度不增不减，保持试探状态等待下一个请求，不重新熔断也不延长熔断。
   - R5 无健康候选时的最后一试（D3 的细化）：
@@ -179,7 +186,8 @@ stateDiagram-v2
   - 不计入：
     - 429。
     - 400/404/422 及其他未列出的 4xx。
-    - 客户端取消。
+    - 客户端取消，仅限失败由客户端断开引起的情形。客户端断开之前已观察到的失败（上游失败终态、传输错误、
+      5xx、空响应检测等）照常分类，流式与非流式相同。
     - 本地 RPM 与排队拒绝。
     - 熔断自身跳过，含试探名额被占。
     - 无状态码且非网络、非超时的本地错误，如请求转换失败。
@@ -202,7 +210,7 @@ stateDiagram-v2
   - R9 统一视图：
     - 凭证自动禁用在健康详情中一并展示，机制保持独立。
     - 429 冷却不展示：其状态由各接口编排器各持一份
-      （`internal/server/orchestrator/orchestrator.go:37`），合并为全局会连带改变 AxonHub 已有的 RPM/TPM 计数行为。
+      （`internal/server/orchestrator/orchestrator.go:42`），合并为全局会连带改变 AxonHub 已有的 RPM/TPM 计数行为。
 - 配置（R10）：
   - 系统级参数（N、首次熔断时长、上限、M、W）放入重试策略。
   - 渠道级只覆盖阈值 N，放入渠道 `settings` JSON，留空沿用系统值。
@@ -218,6 +226,8 @@ stateDiagram-v2
 - 取消与收尾：
   - 选路、请求准入和管理端状态读取遵守调用方 context。渠道观察锁可取消等待，配置读取保持串行顺序。
   - 取消返回原 context 错误，不应用失败读取的默认配置，也不误计为渠道上游的失败。
+  - 客户端取消指下游连接断开或服务关闭。请求收尾时 AxonHub 自己取消执行 context，不算客户端取消。
+  - 流式请求在返回给客户端的流关闭、透传的后台转换结束之后登记健康结果并提交会话。
   - 尝试健康结果登记使用独立 10 秒预算。超时只释放匹配代次与票据的自身探测占位，
     不改变新代次、其他探测或恢复进度。
 - 默认值：
@@ -241,8 +251,10 @@ stateDiagram-v2
     - 归属以渠道为单位。「归属渠道×模型」指归属渠道上本次请求选用的上游实际模型。
     - 仅在 `prefer_previous_channel` 粘性模式下生效，粘性关闭时不读写归属。
   - R2 归属只在请求成功时写入，失败尝试不改写。
-    - 流式请求以生成完成为准。渠道上游给出未完成终态（输出上限、内容过滤）时请求记为失败，
-      归属、保护窗口与转移计数不变，健康结果仍按选路门控 R4 计数成功。
+    - 流式请求以请求完成为准：生成完成，且结束事件已交付给客户端。
+      - 渠道上游给出未完成终态（输出上限、内容过滤）时请求记为失败，
+        归属、保护窗口与转移计数不变，健康结果仍按选路门控 R4 计数成功。
+      - 生成完成但客户端在结束事件交付前断开时同样不写入，健康结果计数成功。
     - 提交时以会话当前归属为准重新计算，按会话主键进程内串行。
     - 归属新建或迁移时建立 Generation，正常续期保持不变。
     - 完成回调校验所选世代，旧请求不得改变新归属，即使过期后重新选择的是同一渠道。
@@ -272,7 +284,7 @@ stateDiagram-v2
     - 渠道名称按选路时快照保存。归属渠道不在候选中时按当时的渠道记录补齐。
   - R8 Webhook：
     - 事件为渠道×模型熔断（`channel.health_gate_opened`）与恢复（`channel.health_gate_recovered`）。
-    - 复用 AxonHub 已有的通知器，按事件名匹配订阅（`internal/server/biz/webhook_notifier.go:158-238`）。
+    - 复用 AxonHub 已有的通知器，按事件名匹配订阅（`internal/server/biz/webhook_notifier.go:295-321`）。
     - 异步发送，不在健康状态锁内调用。
     - 系统 Webhook 设置界面提供这两个事件选项。
     - 事件为进程内转移，多实例不去重。
@@ -303,10 +315,13 @@ stateDiagram-v2
   - `eaef7c06`（合入上游 `v1.0.0-beta11` 时接入配额路由与流终态）
   - `8c8b9a6b`（透传流式中断计入健康门控）
   - `bfe76e5f`（透传下渠道上游的失败终态计入健康门控）
+  - `4fb761b3`（适配上游 `v1.0.0-beta12` 的流生命周期）
+  - `9ff6b55a`（客户端断开之前已观察到的失败照常计入）
 - 代码，新文件（新策略与健康状态不改上游熔断实现）：
   - `internal/server/biz/health_gate.go`：状态机。
   - `internal/server/biz/system_health_gate.go`：配置。
-  - `internal/server/orchestrator/health_gate_{selector,middleware,outcome,errors,load_balancer}.go`
+  - `internal/server/orchestrator/health_gate_{selector,middleware,outcome,errors,load_balancer,stream}.go`
+    - `health_gate_stream.go`：包装 `Process` 返回的流，在它关闭后登记流式请求的健康结果并提交会话。
   - `internal/server/gql/channel_health_gate{.graphql,.go,.resolvers.go}`
   - `frontend/src/features/channels/components/channels-health-gate-dialog.tsx`
 - 代码，上游文件只做追加式接入：
@@ -315,7 +330,8 @@ stateDiagram-v2
   - `internal/server/biz/system.go`：策略常量、`RetryPolicy.HealthGate`、归一化调用。
   - `internal/server/biz/channel.go`：状态字段。
   - `internal/server/biz/channel_query.go`：筛选入参。
-  - `internal/server/orchestrator/orchestrator.go`：负载均衡器、中间件、`finalize` 改写最后一试错误。
+  - `internal/server/orchestrator/orchestrator.go`：负载均衡器、中间件、`finalize` 改写最后一试错误、
+    包装返回的流。
   - `internal/server/orchestrator/candidates.go`：选路钩子。
   - `internal/server/orchestrator/health_gate_selector.go` 调用上游的 `QuotaRoutingGate`
     （`internal/server/orchestrator/candidates_quota.go`）过滤候选。
@@ -343,6 +359,9 @@ stateDiagram-v2
   - `internal/server/gql/channel_health_gate_test.go`：状态映射与计数。
   - `health_gate_context_test.go`：取消、配置代次与探测释放、请求 context 已取消时的上游中断与失败终态、
     透传下客户端断开不计入、透传下后台关闭晚于请求结束时归属仍写入。
+  - `health_gate_lifecycle_test.go`：经真实 `Process`、交付与关闭的流式结果，覆盖交付前断开、聚合完成、
+    原始事件补终态、传输错误不被取消覆盖、同模型重试清空证据、提交前空响应检测优先于上游终态、
+    非流式客户端取消与最后一试 503。
   - `health_gate_load_balancer_weight_test.go`：新增高权重渠道、硬不可用候选后置、同权重分配、
     额度耗尽的渠道被移除、额度告警不改变排序、调试与生产排序一致及其他策略不变。
   - 真实 SQLite 连接池占满时，配置读取按 120ms deadline 退出，同渠道另一请求按 20ms deadline 退出锁等待。
@@ -353,6 +372,9 @@ stateDiagram-v2
   - 策略枚举与前端策略下拉为追加式冲突点。
   - 上游新增策略、改动负载均衡组装或自行实现熔断可视化时，逐条对照 D1–D8、R1–R11。
   - 上游改动配额路由的过滤入口或粘性渠道的取值时，对照 D8。
+  - 上游改动流的关闭顺序（`inbound.go` 的 `Close`、`stream_lifecycle.go`）或透传的后台转换
+    （`pass_through.go`）时，对照 R4 与「取消与收尾」。
+    健康门控读取 `PersistenceState.rawStreamDrainDone` 等待透传的后台转换结束，这个字段由 fork 加在上游文件里。
 
 ### 会话归属与决策记录
 
@@ -362,6 +384,7 @@ stateDiagram-v2
   - `3e40e21a`（未完成终态不写入会话归属）
   - `989da875`（归属渠道随上游按重试策略重试）
   - `bfe76e5f`（透传下已完成的流式请求写入会话归属）
+  - `4fb761b3`（流式请求的会话按包含交付确认的请求完成提交）
 - 代码，新文件：
   - `internal/server/biz/session_owner.go`：归属缓存读写、决策持久化。
   - `internal/server/biz/health_gate_notify.go`：熔断转移异步通知。

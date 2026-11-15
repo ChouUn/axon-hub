@@ -62,3 +62,8 @@
 - 同步上游：
   - 保留注册准入及映射目标校验，不能恢复按渠道支持模型直接选路。
   - 升级前核对未注册的渠道模型及映射目标，先补齐所需模型与关联。
+  - 上游新增的测试用到未注册的模型时，在测试里补注册模型与关联，不恢复已删除的开关。
+    合入上游 `v1.0.0-beta12` 时这样处理了：
+    - `internal/server/api/responses_protocol_integration_test.go`
+    - `internal/server/` 下的 `codex_models_routes_test.go`、`codex_response_harness_test.go`、
+      `codex_responses_routes_test.go`、`codex_images_routes_test.go`

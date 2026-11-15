@@ -16,7 +16,7 @@
 - 在 Claude 系模型负责与用户交互、GPT 子代理连续执行的工作流里，前者更容易遇到这种间隔。
 - 上游 AxonHub 没有强制 TTL 的配置：
   - 客户端的 TTL 原样转发。
-  - 自己补的断点不带 TTL，即 5 分钟（`llm/transformer/anthropic/ensure_cache_control.go:130-133`）。
+  - 自己补的断点不带 TTL，即 5 分钟（`llm/transformer/anthropic/ensure_cache_control.go:300-305`）。
 
 ## 形态
 
@@ -44,7 +44,9 @@ D 编号是确定形态的决策，R 编号是行为规则。
 - R2 改写范围：
   - 请求中所有 `type` 为 `ephemeral` 的 `cache_control` 均设为 `ttl: "1h"`。
   - 覆盖 `tools`、`system`、`messages` 内容块（含 `tool_result` 内嵌内容）与顶层 `cache_control`（自动缓存）。
-  - 只改已有断点的 TTL，不为此新增断点。客户端未使用提示缓存的请求不变。
+  - 只改已有断点的 TTL，不为此新增断点。请求里没有断点时不变。
+  - 上游自 `697b13a5`（PR #2697，随上游 `v1.0.0-beta12` 发布）起，为由其他入站格式转换而来、
+    不带缓存标记的请求加顶层 `cache_control`（自动缓存）。它按 D3 同样改为 1h。
   - 全部断点统一为 1h，满足「长 TTL 必须排在短 TTL 之前」。
 - R3 计费：
   - 写缓存 Token 按响应中的 5m、1h 分档分别计价。
@@ -84,8 +86,8 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - `internal/server/orchestrator/prompt_cache_ttl.go`：出站原始请求中间件。
     - 按 gjson 定位 R2 所列断点，只用 sjson 改写 `ttl`，其余字节不变。
     - 先复制请求体，不改动重试共享的底层数组。
-  - `internal/server/orchestrator/orchestrator.go`：中间件插在请求体透传之后、渠道请求体覆盖之前，
-    覆盖操作仍最终生效。
+  - `internal/server/orchestrator/orchestrator.go`：出站中间件的顺序为请求体透传、Responses 传输适配、
+    透传请求头、Responses 续接、本中间件、渠道请求体覆盖。覆盖操作仍最终生效。
 - 代码，前端：
   - `frontend/src/features/channels/{data/schema.ts,data/channels.ts,utils/merge.ts,components/channels-action-dialog.tsx}`：
     渠道编辑对话框的复选框。
@@ -105,6 +107,6 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - 关闭、非 Anthropic 格式、无断点、字符串 system、非法 JSON 原样返回。
   - 不改动重试共享的请求体。
 - 同步上游：
-  - 上游调整出站中间件顺序或 Anthropic 缓存断点处理（`ensure_cache_control.go`）时，
+  - 上游调整出站中间件顺序或 Anthropic 缓存断点处理（`ensure_cache_control.go`、`outbound.go` 的自动缓存）时，
     确认本中间件仍在请求体透传之后、覆盖之前执行。
   - 上游改用量记录的 1 小时写缓存字段时，同步请求日志标记的判定。

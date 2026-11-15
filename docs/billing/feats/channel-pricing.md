@@ -36,6 +36,18 @@
   - 历史版本不重算。
   - 普通渠道设置修改不覆盖倍率。
   - 自动补缺及渠道复制继承倍率。
+- 未设价时的兜底：
+  - 渠道没有为模型设价、模型库有该模型的价格时，按模型库的标准价格计费。兜底由上游 `cc1c7e5d`（PR #2655）引入。
+  - 兜底价格乘渠道当前的倍率。上游的兜底不乘倍率。
+  - 兜底没有价格版本快照，倍率随用量记录的 `cost_price_reference_id` 保存：
+
+    | 渠道倍率 | 引用写法 |
+    | --- | --- |
+    | 未设或为 1 | `model_library:<模型>`，与上游相同 |
+    | 其他取值，含 0 | `model_library@<倍率>:<模型>`，倍率为十进制小数 |
+
+  - 已有记录的倍率从引用读出，之后修改渠道倍率不改变它。
+  - 模型库也没有价格的模型不计费。
 - 交互：
   - 定价窗口使用视口高度，编辑区独立滚动，顶部引用与倍率、底部操作区固定。
   - 各行价格输入框等宽。
@@ -54,10 +66,13 @@
 - 提交：
   - `2eca7c59`（渠道标准价格引用、持久倍率与价格编辑交互）
   - `0af05bef`（价格对话框转发校验错误的类型修正）
+  - `55ca6e74`（模型库价格兜底乘渠道倍率）
 - 代码：
   - `frontend/src/features/channels/components/channels-model-price-dialog.tsx`
   - `frontend/src/components/model-price-editor.tsx`
   - `internal/server/biz/channel_price.go`
+  - `internal/server/biz/usage_log.go`：兜底计费。
+  - `internal/server/biz/usage_price_multiplier.go`：从引用读兜底倍率。
   - `internal/server/biz/cost_calc.go`
   - `internal/objects/channel.go`
   - `internal/objects/price.go`
@@ -70,6 +85,7 @@
   - `internal/server/biz/cost_calc_test.go`
   - `internal/server/biz/channel_auto_model_price_test.go`
   - `internal/server/biz/channel_model_sync_test.go`
+  - `internal/server/biz/usage_cost_test.go`：兜底乘倍率、引用写法、修改渠道倍率后历史记录不变。
   - `frontend/src/features/models/pricing.test.mjs`
 
 ## 上游模型价格时间戳修复回补

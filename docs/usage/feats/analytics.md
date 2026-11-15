@@ -20,6 +20,11 @@ fork 在仪表盘上新增的两张分析表：「API 密钥费用分析」按�
 ### 共用
 
 - 日期筛选：今天、昨天、本周、本月和全部时间。自然日边界使用系统设置中的时区。
+  - 上游自己的分析页自 `2851a192`（PR #2775，随上游 `v1.0.0-beta12` 发布）起按秒级时间范围筛选，
+    时间取浏览器时区。这两张表不跟随，保持自然日。
+  - API 密钥费用分析与上游分析页共用 `AnalyticsFilter`，它的起止时间随上游改为 RFC3339 时间戳。
+    前端在发请求前把系统时区的自然日换算成闭区间时间戳。
+  - 模型详情分析用自有的 `AnalyticsModelFilter`，起止仍是 `YYYY-MM-DD`，由后端按系统时区解析。
 - 按费用排名，明细默认全部收起。
 
 ### API 密钥费用分析
@@ -62,12 +67,16 @@ fork 在仪表盘上新增的两张分析表：「API 密钥费用分析」按�
   - `62011e01`：输出速度口径对齐上游。
 - 代码：
   - `frontend/src/features/analytics/`
+    - `utils/date-range.ts`：自然日范围与到时间戳的换算，fork 的文件。
+    - `utils/date-time-range.ts`：上游的秒级时间范围。上游的文件名是 `utils/date-range.ts`，与 fork 的文件重名，合入时改名。
   - `internal/server/gql/analytics.graphql`
   - `internal/server/gql/analytics_helpers.go`
 - 迁移：无。
 - 测试：
   - `internal/server/gql/analytics_helpers_test.go`
-  - `frontend/src/features/analytics-date-range.test.mjs`
+  - `frontend/src/features/analytics-date-range.test.mjs`：含自然日到时间戳的换算。
+- 同步上游：上游改动 `frontend/src/features/analytics/utils/date-range.ts` 时，改动落到 `utils/date-time-range.ts`，
+  上游的 `utils/date-range.test.mjs` 随之指向它。
 - fixture：
   - `scripts/e2e/fixtures/api-key-analytics.sql`
   - `scripts/e2e/fixtures/model-analytics.sql`

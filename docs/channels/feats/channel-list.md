@@ -7,7 +7,7 @@
 > Maintain: living — 持续更新，保持内容有效
 
 渠道列表是管理端的渠道页：顶部 tab 把渠道分组，下方是可排序、分页的表格。页面本身是上游已有的。
-本 fork 改了三处：tab 按供应商聚合，生图渠道单独成组，修正排序值为零时的分页错乱。
+本 fork 改了四处：tab 按供应商聚合，生图渠道单独成组，修正排序值为零时的分页错乱，修正行菜单打开弹窗后页面被锁住。
 
 ## 渠道 tab 按供应商聚合
 
@@ -87,6 +87,7 @@
   - `7fdbd2ae`（合入上游 `v1.0.0-beta10` 时重接）
   - `e18cc308`（补回列表字段与编辑同步）
   - `eaef7c06`（合入上游 `v1.0.0-beta11` 时重接渠道测试）
+  - `574f09ec`（合入上游 `v1.0.0-beta12` 时重接渠道测试）
 - 实现约束：
   - 选中图像格式后切换供应商时，类型须由 `getBaseChannelTypeForProvider` 推导。
     `getChannelTypeForApiFormat` 对图像格式恒为 undefined，否则表单 `type` 与 baseURL 停在上一家。
@@ -103,6 +104,10 @@
   - 上游按 API 格式构造测试请求（`channelTestAPIFormat`、`buildChannelTestInput`）。
     `channelTestAPIFormat` 先判生图标记，带标记的渠道得到图像生成格式。
   - `testSingleKey` 保留 fork 的 `ch *biz.Channel`，并接受上游的 `responsesWebSocket` 与 API 格式参数。
+- 与上游 `v1.0.0-beta12` 的接合：
+  - 上游扩展了 `channelTestAPIFormat` 的选择顺序（`48984732`，PR #2685；`0d82a8e4`，PR #2674）：
+    模型协议指定了端点的模型按该端点测试，其后依次是 Decisions、对话、SystemOne。
+  - 生图标记的判断仍排在最前，带标记的渠道不进入上游的选择顺序。
 - 代码：
   - `internal/objects/channel.go`
   - `internal/server/gql/axonhub.graphql`
@@ -171,3 +176,40 @@
   - 上游新增按可为零值字段排序的分页入口时，需同样接入。
   - 上游 `v1.0.0-beta10` 仍锁定 ent/contrib `3625dcc2e035`，`ent.resolvers.go` 的 `Paginate` 调用点未增加，
     合入时无需改动。
+
+## 行菜单打开弹窗后页面被锁住
+
+### 动机
+
+- 渠道表格每行有一个操作菜单，菜单项打开价格、模型别名、覆盖、代理等弹窗。
+- 关闭弹窗后，整页可能无法点击，`body` 留着 `pointer-events: none`，需要刷新。有两个原因：
+  - 菜单与弹窗的锁冲突：上游 `v1.0.0-beta12` 升级依赖（`7313fbc9`）后，菜单与弹窗依赖不同版本的
+    `@radix-ui/react-dismissable-layer`，各自记录 `body` 的原值。
+    由源码推断，菜单仍持锁时打开的弹窗把 `none` 记成原值，关闭时恢复成 `none`。运行时的写入顺序没有抓到 trace。
+  - 关闭后的延时清理：上游的写法是弹窗关闭 500ms 后清空当前行，留出关闭动画。
+    500ms 内重新打开弹窗时，旧的延时清掉新弹窗的当前行，弹窗不出现，页面停在锁住的状态。
+- 两个原因的影响范围与合入前后的对照实测见[上游 v1.0.0-beta12 同步记录](../../reports/upstream-sync-v1.0.0-beta12.md)的发现 7、8。
+
+### 形态
+
+- 行菜单不锁 `body`（`modal={false}`），弹窗仍为模态。
+- 重新打开任一弹窗时，取消尚未触发的清理。延时长度与关闭动画不变。
+
+### 边界
+
+- 不改依赖版本。
+- 行菜单打开时，页面其他位置仍可点击与滚动，与上游的用户表格行菜单相同。
+
+### 实现与维护
+
+- 提交：
+  - `d234b0eb`（行菜单改为非模态）
+  - `a4e9787b`（延时清理可取消）
+- 代码：
+  - `frontend/src/features/channels/components/channels-columns.tsx`
+  - `frontend/src/features/channels/components/channels-dialogs.tsx`
+- 迁移：无。
+- 测试：无自动化测试，单元测试覆盖不了这类时序，由浏览器实测覆盖，见同步记录的发现 7、8。
+- 同步上游：
+  - 上游改动渠道行菜单或 `channels-dialogs.tsx` 的关闭处理时，保留这两处。
+  - 上游的 Radix 依赖重新对齐后，`modal={false}` 可以去掉。

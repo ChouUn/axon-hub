@@ -11,3 +11,4 @@
 - [渠道强制 1 小时提示缓存](feats/force-one-hour-prompt-cache.md)
 - [透传](feats/passthrough.md)
 - [供应商模型目录](feats/model-catalog.md)
+- [渠道性能记录](feats/channel-performance.md)

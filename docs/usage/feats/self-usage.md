@@ -14,8 +14,8 @@
 - 只持有 API Key 的使用者无法查看自己的用量：
   - 普通推理 Key 可达的路由只有推理与模型列表（`58f73057~1` 的 `internal/server/routes.go:170-259`）。
   - 上游 `v1.0.0-beta10` 的 `apiKeyQuotaUsages`（上游 PR #1779、#1838）对普通推理 Key 不可用
-    （`internal/server/middleware/auth.go:129-151`、
-    `internal/server/gql/openapi/openapi.graphql:146-182`、`internal/scopes/rule_apikey_scope.go:78-87`）：
+    （`internal/server/middleware/auth.go:141-170`、
+    `internal/server/gql/openapi/openapi.graphql:149-182`、`internal/scopes/rule_apikey_scope.go:78-87`）：
     - 只接受 service_account 类型的 Key，需要 `read_api_keys`。
     - 可查同项目内隐私规则允许的非 personal Key。
     - 只返回已配额度的 profile。
@@ -77,7 +77,7 @@ D 编号是确定形态的决策，R 编号是行为规则。
 - R1 认证：
   - 只接受启用状态、所属项目为 active 的 `user`、`personal` Key。
   - `service_account`、`noauth`、禁用或归档的 Key 拒绝，不回退到系统 noauth Key。
-    推理路由的 `WithAPIKeyConfig` 会回退（`internal/server/middleware/auth.go:36-42`），
+    推理路由的 `WithAPIKeyConfig` 会回退（`internal/server/middleware/auth.go:27-29,52-54`），
     所以本页用专用认证入口，不改推理路由。
   - Key 的 IP 白名单照常生效。
   - Key 只经 `Authorization: Bearer` 请求头传输，不进入 URL，日志不记录明文。
@@ -106,6 +106,7 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - 不展示渠道、上游实际模型、请求与响应正文、错误详情。
 - R6 成本：按系统设置的币种格式显示。
   - 单条用量未定价不按 0 计入。
+  - 渠道未设价、由模型库价格兜底计费的用量算已定价，见[渠道定价](../../billing/feats/channel-pricing.md)。
   - 汇总（每日、每模型、总计）：
 
     | 情形 | 显示 |

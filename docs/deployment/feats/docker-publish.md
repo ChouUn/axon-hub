@@ -19,10 +19,14 @@
 
 ## 形态
 
-- 构建：复用上游 `docker-publish.yml`。
+- 构建：`docker-publish.yml` 沿用上游 `v1.0.0-beta11` 的写法，构建步骤写在文件内。
   - 监听 `v*` tag。
   - 构建前把 tag 写入 `internal/build/VERSION`。
   - amd64、arm64 原生构建后合成 manifest。
+  - 上游自 `5b9b2e96`（PR #2744，随上游 `v1.0.0-beta12` 发布）起把构建矩阵移到可复用的 `docker-build.yml`，
+    镜像名 `looplj/axonhub` 写在其中。本 fork 的 `docker-publish.yml` 不调用它。
+  - 上游同期对构建步骤的改动未带入本 fork 的文件：按架构划分 GHA 缓存（`6250e7d3`，PR #2712）、
+    action 版本固定到提交哈希。
 - 镜像名：由 workflow 级 `env.IMAGE` 指定为 `chouun/axon-hub`。
 - 产出：`<tag>`、`<tag>-<arch>`、`latest`。
 - 发布：
@@ -47,6 +51,9 @@
 - 提交：
   - `4dc42806`（`feat(ci): 发布 Docker 镜像到 fork 仓库`）
   - `7fdbd2ae`（合入上游 `v1.0.0-beta10`）
+  - `574f09ec`（合入上游 `v1.0.0-beta12`，保留 fork 的整份文件）
 - 代码：`.github/workflows/docker-publish.yml`。
 - 迁移与测试：无。
-- 同步上游：上游 manifest 步骤硬编码 `looplj/axonhub`，合并时在该处冲突，保留 `${IMAGE}`。
+- 同步上游：
+  - 上游改动 `docker-publish.yml` 时在该文件冲突，保留 fork 的整份文件。
+  - 上游对构建步骤的改动落在 `docker-build.yml`，需要时手工移到 fork 的 `docker-publish.yml`。
