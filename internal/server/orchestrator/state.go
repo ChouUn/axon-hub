@@ -105,9 +105,6 @@ type PersistenceState struct {
 	// stream response pass-through. It is replaced by every attempt that records.
 	PassThroughRecorder *rawEventRecorder
 
-	// rawStreamDrainDone publishes completion of the converted pass-through consumer.
-	rawStreamDrainDone <-chan struct{}
-
 	// PassThroughApplied records whether the inbound request body was substituted during pass-through.
 	PassThroughApplied bool
 

@@ -365,7 +365,7 @@ func TestHealthGateStream_DownstreamWriteFailureDoesNotBecomeProviderFailure(t *
 	require.Equal(t, biz.HealthGateOutcomeNeutral, tracker.lastOutcome)
 }
 
-func TestHealthGateStream_RawTerminalOnlyFillsMissingUpstreamTerminal(t *testing.T) {
+func TestHealthGateStream_UsesOutboundTerminalState(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		upstream streamTerminalState
@@ -379,9 +379,6 @@ func TestHealthGateStream_RawTerminalOnlyFillsMissingUpstreamTerminal(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			candidate := healthGateSelectorCandidate(1, 0, "model")
 			state := &PersistenceState{CurrentCandidate: candidate, RoutingPolicy: EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated}, OutboundStreamTerminal: test.upstream}
-			drain := make(chan struct{})
-			close(drain)
-			state.rawStreamDrainDone = drain
 			tracker := withHealthGate(&PersistentOutboundTransformer{state: state}, biz.NewHealthGate(nil), biz.DefaultHealthGatePolicy())
 			_, err := tracker.OnOutboundRawRequest(t.Context(), &httpclient.Request{})
 			require.NoError(t, err)

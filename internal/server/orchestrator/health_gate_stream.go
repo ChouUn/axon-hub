@@ -16,12 +16,8 @@ type healthGateResponseStream struct {
 	tracker  *healthGateAttemptTracker
 	observed *healthGateStream
 	raw      streams.Stream[*httpclient.StreamEvent]
-	drain    <-chan struct{}
 	once     sync.Once
 	closeErr error
-
-	terminalTracker  *StreamTerminalTracker
-	providerTerminal streamTerminalState
 
 	deliveryMu  sync.Mutex
 	deliveryErr error
@@ -34,32 +30,15 @@ func (m *healthGateAttemptTracker) wrapResponseStream(ctx context.Context, strea
 	m.mu.Lock()
 	result := &healthGateResponseStream{
 		Stream: stream, ctx: ctx, tracker: m, observed: m.stream,
-		raw: m.rawStream, drain: m.outbound.state.rawStreamDrainDone,
-	}
-	if result.drain != nil {
-		result.terminalTracker = NewStreamTerminalTrackerForRequest(m.outbound.state.Request)
+		raw: m.rawStream,
 	}
 	m.mu.Unlock()
 	return httpclient.WithResponseHeaders(result, httpclient.GetResponseHeaders(stream))
 }
 
-func (s *healthGateResponseStream) Current() *httpclient.StreamEvent {
-	event := s.Stream.Current()
-	if s.terminalTracker != nil && s.terminalTracker.Observe(event) {
-		s.deliveryMu.Lock()
-		s.providerTerminal = classifyAcceptedTerminalEvent(event)
-		s.deliveryMu.Unlock()
-		s.terminalTracker = nil
-	}
-	return event
-}
-
 func (s *healthGateResponseStream) Close() error {
 	s.once.Do(func() {
 		s.closeErr = s.Stream.Close()
-		if s.drain != nil {
-			<-s.drain
-		}
 		s.finish()
 	})
 	return s.closeErr
@@ -83,7 +62,6 @@ func (s *healthGateResponseStream) finish() {
 	}
 	s.deliveryMu.Lock()
 	deliveryErr := s.deliveryErr
-	providerTerminal := s.providerTerminal
 	s.deliveryMu.Unlock()
 	m := s.tracker
 	m.mu.Lock()
@@ -93,11 +71,8 @@ func (s *healthGateResponseStream) finish() {
 	}
 	m.committed = false
 	state := m.outbound.state
-	if state.OutboundStreamTerminal != streamTerminalNone {
-		providerTerminal = state.OutboundStreamTerminal
-	}
 	if m.active {
-		m.lastOutcome = classifyHealthGateStreamOutcome(ctx, state, providerTerminal, meaningful, streamErr, deliveryErr)
+		m.lastOutcome = classifyHealthGateStreamOutcome(ctx, state, state.OutboundStreamTerminal, meaningful, streamErr, deliveryErr)
 		if m.lastOutcome == biz.HealthGateOutcomeSuccess {
 			m.lastInfo = biz.HealthGateErrorInfo{}
 		} else {
