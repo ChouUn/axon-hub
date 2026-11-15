@@ -373,7 +373,10 @@ func TestHealthGateOrchestrator_CanceledLastResortPreservesCancellation(t *testi
 	cancel()
 	require.ErrorIs(t, tracker.finalize(ctx, context.Canceled, false), context.Canceled)
 	cfg := biz.ResolveHealthGateConfig(biz.DefaultHealthGatePolicy(), candidate.Channel)
-	require.Equal(t, biz.HealthGateStateHealthy, healthGateInspect(t, gate, biz.HealthGateKey{ChannelID: 1, ActualModel: "model"}, healthGateResolver(cfg)).State)
+	snapshot := healthGateSnapshot(t, gate, candidate.Channel.ID, healthGateResolver(cfg))
+	require.Len(t, snapshot, 1)
+	require.Equal(t, 1, snapshot[0].ConsecutiveFailures)
+	require.Equal(t, biz.HealthGateStateUnstable, snapshot[0].State)
 }
 
 func TestHealthGateOrchestrator_DisablingThresholdInvalidatesInFlightTicket(t *testing.T) {

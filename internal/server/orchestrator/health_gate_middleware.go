@@ -36,7 +36,6 @@ type healthGateAttemptTracker struct {
 	committed   bool
 	rawStream   streams.Stream[*httpclient.StreamEvent]
 	stream      *healthGateStream
-	attemptErr  error
 }
 
 func withHealthGate(outbound *PersistentOutboundTransformer, gate *biz.HealthGate, policy biz.HealthGatePolicy) *healthGateAttemptTracker {
@@ -81,8 +80,9 @@ func (m *healthGateAttemptTracker) OnOutboundRawRequest(ctx context.Context, req
 	defer m.mu.Unlock()
 	m.rawStream = nil
 	m.stream = nil
-	m.attemptErr = nil
 	if m.active && m.key == key {
+		m.lastOutcome = biz.HealthGateOutcomeNeutral
+		m.lastInfo = biz.HealthGateErrorInfo{}
 		return request, nil
 	}
 	m.finishActive(ctx)
@@ -121,11 +121,22 @@ func (m *healthGateAttemptTracker) OnOutboundRawError(ctx context.Context, err e
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.active {
-		m.lastOutcome = classifyHealthGateOutcome(ctx, err)
-		m.lastInfo = healthGateErrorInfo(err)
-		if IsUpstreamTransportError(err) {
-			m.attemptErr = err
+		outcome := biz.HealthGateOutcomeNeutral
+		if !healthGateClientCanceled(ctx) {
+			outcome = classifyHealthGateOutcome(ctx, err)
+			if m.outbound.state.OutboundStreamTerminal == streamTerminalFailed {
+				outcome = biz.HealthGateOutcomeFailure
+			}
+			if outcome == biz.HealthGateOutcomeFailure && m.stream != nil && m.stream.meaningful {
+				outcome = biz.HealthGateOutcomeUnstable
+			}
 		}
+		if outcome == biz.HealthGateOutcomeNeutral &&
+			(m.lastOutcome == biz.HealthGateOutcomeFailure || m.lastOutcome == biz.HealthGateOutcomeUnstable) {
+			return
+		}
+		m.lastOutcome = outcome
+		m.lastInfo = healthGateErrorInfo(err)
 	}
 }
 
@@ -177,32 +188,20 @@ func (m *healthGateAttemptTracker) finalize(ctx context.Context, err error, stre
 			m.lastOutcome = biz.HealthGateOutcomeNeutral
 		}
 	} else if m.active {
-		// The final error can be synthesized after the raw error callback (timeouts,
-		// empty bodies); use its classification when it carries new information.
-		m.lastOutcome = classifyHealthGateOutcome(ctx, err)
-		m.lastInfo = healthGateErrorInfo(err)
-		state := m.outbound.state
-		passThroughStream := state.RawStreamQueue != nil || (state.PassThroughApplied && state.LlmRequest != nil && state.LlmRequest.Stream != nil && *state.LlmRequest.Stream)
-		if healthGateClientCanceled(ctx) && passThroughStream {
-			upstreamErr := m.attemptErr
-			if upstreamErr == nil {
-				upstreamErr = err
+		// Preserve failure evidence observed before downstream cancellation. A
+		// canceled attempt without such evidence remains neutral.
+		if healthGateClientCanceled(ctx) {
+			if m.lastOutcome != biz.HealthGateOutcomeFailure && m.lastOutcome != biz.HealthGateOutcomeUnstable {
+				m.lastOutcome = biz.HealthGateOutcomeNeutral
+				m.lastInfo = healthGateErrorInfo(err)
 			}
-			if m.rawStream != nil {
-				if rawErr := m.rawStream.Err(); IsUpstreamTransportError(rawErr) {
-					upstreamErr = rawErr
-				}
-			}
-			if IsUpstreamTransportError(upstreamErr) {
-				m.lastOutcome = biz.HealthGateOutcomeFailure
-				if m.stream != nil && m.stream.meaningful {
-					m.lastOutcome = biz.HealthGateOutcomeUnstable
-				}
-				m.lastInfo = healthGateErrorInfo(upstreamErr)
-			}
+		} else {
+			// The final error may add synthesized timeout or empty-response evidence.
+			m.lastOutcome = classifyHealthGateOutcome(ctx, err)
+			m.lastInfo = healthGateErrorInfo(err)
 		}
 	}
-	failure := m.lastResort && m.lastOutcome == biz.HealthGateOutcomeFailure
+	failure := m.lastResort && m.lastOutcome == biz.HealthGateOutcomeFailure && !healthGateClientCanceled(ctx)
 	m.finishActive(ctx)
 	m.finishSession(ctx, err == nil && !healthGateClientCanceled(ctx))
 	if err != nil && (failure || errors.Is(err, errSkipCandidateByHealthGate)) {

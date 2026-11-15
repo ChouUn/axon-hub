@@ -22,6 +22,7 @@ import (
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/pipeline"
 	"github.com/looplj/axonhub/llm/streams"
+	"github.com/looplj/axonhub/llm/transformer"
 	"github.com/looplj/axonhub/llm/transformer/anthropic"
 	"github.com/looplj/axonhub/llm/transformer/openai"
 	"github.com/looplj/axonhub/llm/transformer/openai/responses"
@@ -529,12 +530,26 @@ func TestHealthGateStream_LaterCancellationDoesNotOverwriteObservedTransportErro
 	}
 }
 
+type healthGateCaptureOutboundState struct {
+	transformer.Outbound
+	state *PersistenceState
+}
+
+func (o *healthGateCaptureOutboundState) TransformStream(ctx context.Context, request *httpclient.Request, stream streams.Stream[*httpclient.StreamEvent]) (streams.Stream[*llm.Response], error) {
+	o.state = stream.(*OutboundPersistentStream).state
+	return o.Outbound.TransformStream(ctx, request, stream)
+}
+
 type healthGateCancelAfterRawError struct {
 	pipeline.DummyMiddleware
-	cancel context.CancelFunc
+	cancel       context.CancelFunc
+	beforeCancel func()
 }
 
 func (m *healthGateCancelAfterRawError) OnOutboundRawError(context.Context, error) {
+	if m.beforeCancel != nil {
+		m.beforeCancel()
+	}
 	m.cancel()
 }
 
@@ -569,7 +584,19 @@ func TestHealthGateOrchestrator_PreCommitPassThroughFailureSurvivesCancellation(
 			}
 			requestCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			processor.Middlewares = append(processor.Middlewares, &healthGateCancelAfterRawError{cancel: cancel})
+			candidate := processor.channelSelector.(*staticChannelSelector).candidates[0]
+			capture := &healthGateCaptureOutboundState{Outbound: candidate.Channel.Outbound}
+			candidate.Channel.Outbound = capture
+			processor.Middlewares = append(processor.Middlewares, &healthGateCancelAfterRawError{
+				cancel: cancel,
+				beforeCancel: func() {
+					require.NoError(t, requestCtx.Err())
+					if failedTerminal {
+						require.NotNil(t, capture.state)
+						require.Equal(t, streamTerminalFailed, capture.state.OutboundStreamTerminal)
+					}
+				},
+			})
 			result, err := processor.Process(requestCtx, request)
 			require.Error(t, err)
 			require.Nil(t, result.ChatCompletionStream)
@@ -577,13 +604,8 @@ func TestHealthGateOrchestrator_PreCommitPassThroughFailureSurvivesCancellation(
 			cfg := biz.ResolveHealthGateConfig(processor.SystemService.RetryPolicyOrDefault(ctx).HealthGateOrDefault(), &biz.Channel{Channel: ch})
 			snapshot := healthGateSnapshot(t, gate, ch.ID, healthGateResolver(cfg))
 			require.Len(t, snapshot, 1)
-			if failedTerminal {
-				require.Equal(t, 0, snapshot[0].ConsecutiveFailures)
-				require.Equal(t, biz.HealthGateStateHealthy, snapshot[0].State)
-			} else {
-				require.Equal(t, 1, snapshot[0].ConsecutiveFailures)
-				require.Equal(t, biz.HealthGateStateUnstable, snapshot[0].State)
-			}
+			require.Equal(t, 1, snapshot[0].ConsecutiveFailures)
+			require.Equal(t, biz.HealthGateStateUnstable, snapshot[0].State)
 		})
 	}
 }
@@ -621,6 +643,93 @@ func TestHealthGateOrchestrator_EmptyResponseDetectionPrecedesProviderTerminal(t
 			}
 		})
 	}
+}
+
+func TestHealthGateAttempt_PreCommitFailureEvidenceTracksObservationTime(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		err      error
+		terminal streamTerminalState
+	}{
+		{"empty response", pipeline.ErrEmptyResponse, streamTerminalNone},
+		{"provider error", healthGateServerError(), streamTerminalNone},
+		{"transport error", io.ErrUnexpectedEOF, streamTerminalNone},
+		{"published failed terminal", context.Canceled, streamTerminalFailed},
+	} {
+		for _, canceledBeforeCallback := range []bool{false, true} {
+			for _, meaningful := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/canceled_before_callback=%t/meaningful=%t", test.name, canceledBeforeCallback, meaningful), func(t *testing.T) {
+					ctx, cancel := context.WithCancel(t.Context())
+					defer cancel()
+					streaming := true
+					candidate := healthGateSelectorCandidate(1, 0, "model")
+					state := &PersistenceState{
+						CurrentCandidate: candidate, PassThroughApplied: true,
+						RoutingPolicy: EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated},
+						LlmRequest:    &llm.Request{Stream: &streaming},
+					}
+					gate := biz.NewHealthGate(nil)
+					policy := biz.DefaultHealthGatePolicy()
+					tracker := withHealthGate(&PersistentOutboundTransformer{state: state}, gate, policy)
+					_, err := tracker.OnOutboundRawRequest(ctx, &httpclient.Request{})
+					require.NoError(t, err)
+					var events []*llm.Response
+					if meaningful {
+						text := "hello"
+						events = append(events, &llm.Response{Choices: []llm.Choice{{Delta: &llm.Message{Content: llm.MessageContent{Content: &text}}}}})
+					}
+					observed, err := tracker.OnOutboundLlmStream(ctx, streams.SliceStream(events))
+					require.NoError(t, err)
+					for observed.Next() {
+						observed.Current()
+					}
+					if canceledBeforeCallback {
+						cancel()
+					}
+					state.OutboundStreamTerminal = test.terminal
+					tracker.OnOutboundRawError(ctx, test.err)
+					cancel()
+					tracker.OnOutboundRawError(ctx, context.Canceled)
+					require.ErrorIs(t, tracker.finalize(ctx, context.Canceled, false), context.Canceled)
+					want := biz.HealthGateOutcomeNeutral
+					if !canceledBeforeCallback {
+						want = biz.HealthGateOutcomeFailure
+						if meaningful {
+							want = biz.HealthGateOutcomeUnstable
+						}
+					}
+					require.Equal(t, want, tracker.lastOutcome)
+					cfg := biz.ResolveHealthGateConfig(policy, candidate.Channel)
+					snapshot := healthGateSnapshot(t, gate, candidate.Channel.ID, healthGateResolver(cfg))
+					require.Len(t, snapshot, 1)
+					if canceledBeforeCallback {
+						require.Zero(t, snapshot[0].ConsecutiveFailures)
+						require.Equal(t, biz.HealthGateStateHealthy, snapshot[0].State)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestHealthGateAttempt_PreCommitCancellationWithoutPublishedFailureIsNeutral(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	streaming := true
+	candidate := healthGateSelectorCandidate(1, 0, "model")
+	state := &PersistenceState{
+		CurrentCandidate: candidate, PassThroughApplied: true,
+		RoutingPolicy: EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated},
+		LlmRequest:    &llm.Request{Stream: &streaming},
+	}
+	tracker := withHealthGate(&PersistentOutboundTransformer{state: state}, biz.NewHealthGate(nil), biz.DefaultHealthGatePolicy())
+	_, err := tracker.OnOutboundRawRequest(ctx, &httpclient.Request{})
+	require.NoError(t, err)
+	_, err = tracker.OnOutboundRawStream(ctx, &healthGateRawErrorStream{Stream: streams.SliceStream([]*httpclient.StreamEvent{}), err: io.ErrUnexpectedEOF})
+	require.NoError(t, err)
+	cancel()
+	require.ErrorIs(t, tracker.finalize(ctx, context.Canceled, false), context.Canceled)
+	require.Equal(t, biz.HealthGateOutcomeNeutral, tracker.lastOutcome)
 }
 
 func TestHealthGateStream_SameModelRetryClearsPreviousTransportEvidence(t *testing.T) {
