@@ -17,13 +17,14 @@ func canReadChannelHealthGate(ctx context.Context) bool {
 }
 
 func (r *Resolver) healthGatePolicy(ctx context.Context) biz.HealthGatePolicy {
-	bypassCtx := authz.WithSystemBypass(ctx, "health-gate-policy")
-	return r.systemService.RetryPolicyOrDefault(bypassCtx).HealthGateOrDefault()
+	return r.systemService.RetryPolicyOrDefault(ctx).HealthGateOrDefault()
 }
 
 func (r *Resolver) healthGateConfigResolver(ctx context.Context, channelID int) biz.HealthGateConfigResolver {
 	return func() (biz.HealthGateConfig, bool) {
-		ch, err := r.client.Channel.Get(authz.WithSystemBypass(ctx, "health-gate-channel"), channelID)
+		ch, err := authz.RunAsHost(ctx, r.client, "health-gate-channel", func(ctx context.Context) (*ent.Channel, error) {
+			return r.client.Channel.Get(ctx, channelID)
+		})
 		if err != nil {
 			return biz.HealthGateConfig{}, false
 		}

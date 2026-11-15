@@ -275,6 +275,7 @@ func TestPluginKVGraphql(t *testing.T) {
 type pluginEndpointFixture struct {
 	db             *ent.Client
 	manager        *plugin.Manager
+	channelService *biz.ChannelService
 	handler        *GraphqlHandler
 	engine         http.Handler
 	setupCtx       context.Context
@@ -418,6 +419,7 @@ func newPluginEndpointFixture(t *testing.T, name string) *pluginEndpointFixture 
 	return &pluginEndpointFixture{
 		db:             db,
 		manager:        manager,
+		channelService: channelSvc,
 		handler:        handler,
 		engine:         engine,
 		setupCtx:       setupCtx,

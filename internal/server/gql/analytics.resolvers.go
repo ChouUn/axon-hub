@@ -264,6 +264,9 @@ func (r *queryResolver) AnalyticsChannelTags(ctx context.Context) ([]string, err
 
 // AnalyticsModelStats is the resolver for the analyticsModelStats field.
 func (r *queryResolver) AnalyticsModelStats(ctx context.Context, filter *AnalyticsModelFilter) ([]*AnalyticsModelStat, error) {
+	if err := authz.RequireScope(ctx, scopes.ScopeReadDashboard); err != nil {
+		return nil, err
+	}
 	ctx = authz.WithScopeDecision(ctx, scopes.ScopeReadDashboard)
 	return r.queryAnalyticsModelStats(ctx, filter)
 }

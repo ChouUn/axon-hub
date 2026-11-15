@@ -13,7 +13,7 @@ import (
 
 // LoadUsagePriceMultipliers reads fallback references and historical price snapshots.
 // The caller must first restrict usage logs to records visible to the requester;
-// this bypass grants access only to the matching version snapshots.
+// the fixed host read returns only their matching version snapshots.
 func LoadUsagePriceMultipliers(ctx context.Context, client *ent.Client, referenceIDs []string) (map[string]decimal.Decimal, error) {
 	multipliers := make(map[string]decimal.Decimal, len(referenceIDs))
 	var versionReferences []string
@@ -30,7 +30,7 @@ func LoadUsagePriceMultipliers(ctx context.Context, client *ent.Client, referenc
 	if len(versionReferences) == 0 {
 		return multipliers, nil
 	}
-	versions, err := authz.RunWithSystemBypass(ctx, "usage-price-multipliers", func(ctx context.Context) ([]*ent.ChannelModelPriceVersion, error) {
+	versions, err := authz.RunAsHost(ctx, client, "usage-price-multipliers", func(ctx context.Context) ([]*ent.ChannelModelPriceVersion, error) {
 		return client.ChannelModelPriceVersion.Query().Where(channelmodelpriceversion.ReferenceIDIn(versionReferences...)).Select(
 			channelmodelpriceversion.FieldReferenceID, channelmodelpriceversion.FieldPrice,
 		).All(ctx)

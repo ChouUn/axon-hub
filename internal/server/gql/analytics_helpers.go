@@ -729,8 +729,9 @@ func (r *queryResolver) queryAnalyticsChannelTags(
 func (r *queryResolver) queryAnalyticsTagChannels(
 	ctx context.Context,
 ) ([]*ent.Channel, error) {
-	channels, err := authz.RunWithSystemBypass(
+	channels, err := authz.RunAsHost(
 		ctx,
+		r.client,
 		"analytics-model-channel-tags",
 		func(ctx context.Context) ([]*ent.Channel, error) {
 			return r.client.Channel.Query().
@@ -748,8 +749,9 @@ func (r *queryResolver) queryAnalyticsTagChannels(
 		return channels, nil
 	}
 
-	project, err := authz.RunWithSystemBypass(
+	project, err := authz.RunAsHost(
 		ctx,
+		r.client,
 		"analytics-model-channel-tags-project",
 		func(ctx context.Context) (*ent.Project, error) {
 			return r.client.Project.Get(ctx, projectID)
