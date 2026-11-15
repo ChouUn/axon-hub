@@ -28,6 +28,7 @@
   - 上游同期对构建步骤的改动未带入本 fork 的文件：按架构划分 GHA 缓存（`6250e7d3`，PR #2712）、
     action 版本固定到提交哈希。上游 `v1.0.0-rc1` 又把 `docker/login-action` 的固定版本升到 v4.8.0（`e1b488e3`，PR #2941），
     本 fork 仍用 `@v4`。
+  - 上游 `v1.0.0-rc.4` 给 `docker-publish.yml` 加了手动触发，按输入的 tag 与分支发布（`c42d57de`，PR #2983），本 fork 的文件没有。
 - 镜像名：由 workflow 级 `env.IMAGE` 指定为 `chouun/axon-hub`。
 - 产出：`<tag>`、`<tag>-<arch>`、`latest`。
 - 发布：
@@ -55,6 +56,7 @@
   - `574f09ec`（合入上游 `v1.0.0-beta12`，保留 fork 的整份文件）
   - `c0ce0483`（合入上游 `v1.0.0-rc1`，保留 fork 的整份文件）
   - `f2225b75`（`Dockerfile` 的构建镜像改用 Go 1.27.4，回补上游 `c42d57de`）
+  - `7d9536f5`（合入上游 `v1.0.0-rc.4`，保留 fork 的整份文件）
 - 代码：`.github/workflows/docker-publish.yml`。
 - 迁移与测试：无。
 - 同步上游：
@@ -63,5 +65,6 @@
   - 上游升级 `go.mod` 的 Go 版本时，核对 `Dockerfile` 构建镜像的版本。
     官方 Go 镜像设了 `GOTOOLCHAIN=local`，版本低于 `go.mod` 时镜像内的 `scripts/verify-go-sse-dependency.sh` 失败，镜像构建不出来。
     - 上游 `v1.0.0-rc.3` 把 `go.mod` 升到 1.27.4 而 `Dockerfile` 仍为 1.27.3。
-      fork 回补了上游 `c42d57de`（PR #2983，随上游 `v1.0.0-rc.4` 发布）中 `Dockerfile` 的这一行。
-    - `c42d57de` 还改了上游的 `docker-publish.yml`，合入 `v1.0.0-rc.4` 时按上一条处理。
+      fork 回补了上游 `c42d57de`（PR #2983，随上游 `v1.0.0-rc.4` 发布）中 `Dockerfile` 的这一行，合入 `v1.0.0-rc.4` 时两侧相同。
+    - 上游 `v1.0.0-rc.4` 起用 `scripts/bump-go-version.sh` 同时改各 `go.mod` 与 `Dockerfile` 的版本，
+      规则见上游的 `.agents/rules/go-version.md`。

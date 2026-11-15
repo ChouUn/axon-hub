@@ -91,8 +91,10 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - `55ca6e74`（模型库兜底的倍率与价格来源标记）
   - `7b689d40`（`fix(gql): 插件 GraphQL 入口装载成本加载器`）
   - `9a2036ad`（`fix(authz): fork 的宿主固定读取改用 RunAsHost`）：插件入口读取历史价格版本的倍率。
+  - `699a7d8f`（共享单元格接入上游的指标配色）
 - 代码，前端共享组件：
   - `frontend/src/components/request-usage-cells.tsx`：ID、Token、读写缓存、成本悬浮、耗时单元格。
+    读缓存命中率与首字耗时按上游 `frontend/src/features/requests/utils/metric-colors.ts` 的设置着色。
   - `frontend/src/components/request-usage-cost-breakdown.ts`：悬浮行构建。
 - 代码，管理端：
   - `frontend/src/features/requests/components/requests-columns.tsx`：对应列的 cell 用共享组件，列定义不变。

@@ -39,6 +39,7 @@
 - 未设价时的兜底：
   - 渠道没有为模型设价、模型库有该模型的价格时，按模型库的标准价格计费。兜底由上游 `cc1c7e5d`（PR #2655）引入。
   - 兜底价格乘渠道当前的倍率。上游的兜底不乘倍率。
+  - 兜底价格取自上游 `v1.0.0-rc.4` 引入的共享模型缓存，倍率乘在价格副本上，缓存中的标准价格不变。
   - 兜底没有价格版本快照，倍率随用量记录的 `cost_price_reference_id` 保存：
 
     | 渠道倍率 | 引用写法 |
@@ -67,6 +68,7 @@
   - `2eca7c59`（渠道标准价格引用、持久倍率与价格编辑交互）
   - `0af05bef`（价格对话框转发校验错误的类型修正）
   - `55ca6e74`（模型库价格兜底乘渠道倍率）
+  - `0212f0ec`、`f87aa4b6`（兜底计费的测试适配上游的共享模型缓存）
 - 代码：
   - `frontend/src/features/channels/components/channels-model-price-dialog.tsx`
   - `frontend/src/components/model-price-editor.tsx`
@@ -85,7 +87,8 @@
   - `internal/server/biz/cost_calc_test.go`
   - `internal/server/biz/channel_auto_model_price_test.go`
   - `internal/server/biz/channel_model_sync_test.go`
-  - `internal/server/biz/usage_cost_test.go`：兜底乘倍率、引用写法、修改渠道倍率后历史记录不变。
+  - `internal/server/biz/usage_cost_test.go`：兜底乘倍率、引用写法、修改渠道倍率后历史记录不变、
+    倍率不写进共享模型缓存、同一请求内模型库价格变化时沿用请求开始时的价格。
   - `frontend/src/features/models/pricing.test.mjs`
 - 同步上游：
   - 上游 `03ffac6f`（PR #2662，随上游 `v1.0.0-rc1` 发布）在价格对话框从模型库填价时乘汇率，默认 7.14。
