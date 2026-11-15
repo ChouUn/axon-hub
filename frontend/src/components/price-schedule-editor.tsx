@@ -105,6 +105,7 @@ type PriceScheduleEditorProps = {
   currencyCode?: string;
   defaultTimezone?: string;
   renderItems?: (itemsPath: string) => ReactNode;
+  // Portal target for popups opened inside a dialog; see .agents/rules/frontend-ui.md.
   portalContainer?: HTMLElement | null;
 };
 
