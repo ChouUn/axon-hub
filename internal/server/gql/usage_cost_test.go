@@ -3,6 +3,7 @@ package gql
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/looplj/axonhub/internal/ent/enttest"
 	"github.com/looplj/axonhub/internal/ent/intercept"
 	"github.com/looplj/axonhub/internal/ent/model"
+	"github.com/looplj/axonhub/internal/ent/request"
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/llm"
@@ -222,4 +224,22 @@ func TestUsageLogModelLibraryMultiplierSnapshot(t *testing.T) {
 			require.True(t, multiplier.Equal(factor))
 		})
 	}
+}
+
+func TestPluginUsageLogFallbackMultiplier(t *testing.T) {
+	fx := newPluginEndpointFixture(t, "plugin_usage_fallback_multiplier")
+	require.NoError(t, fx.manager.Enable(fx.setupCtx, fx.pages.ID, []string{"read_requests"}, nil))
+	project := fx.db.Project.Query().OnlyX(fx.setupCtx)
+	req := fx.db.Request.Create().SetProjectID(project.ID).SetModelID("gpt-4").
+		SetRequestBody([]byte(`{}`)).SetStream(false).SetStatus(request.StatusCompleted).SaveX(fx.setupCtx)
+	fx.db.UsageLog.Create().SetRequestID(req.ID).SetProjectID(project.ID).SetChannelID(fx.channelID).
+		SetModelID("gpt-4").SetTotalCost(0.25).SetCostPriceReferenceID("model_library@0.5:gpt-4").SaveX(fx.setupCtx)
+	code, payload, raw := fx.postPlugin(fx.ownerToken, pluginPagesID, `{ usageLogs(first: 1) { edges { node { totalCost costPriceMultiplier } } } }`)
+	require.Equal(t, http.StatusOK, code, raw)
+	require.NotContains(t, payload, "errors", raw)
+	edges := payload["data"].(map[string]any)["usageLogs"].(map[string]any)["edges"].([]any)
+	require.Len(t, edges, 1, raw)
+	node := edges[0].(map[string]any)["node"].(map[string]any)
+	require.Equal(t, float64(0.25), node["totalCost"], raw)
+	require.Equal(t, "0.5", fmt.Sprint(node["costPriceMultiplier"]), raw)
 }

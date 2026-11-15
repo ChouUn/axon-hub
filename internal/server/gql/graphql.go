@@ -151,9 +151,7 @@ func NewGraphqlHandlers(deps Dependencies) *GraphqlHandler {
 	})
 	gqlSrv.Use(&loggingTracer{})
 	gqlSrv.AroundOperations(apiKeyReadOnly)
-	gqlSrv.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
-		return next(withUsagePriceLoader(ctx, deps.Ent))
-	})
+	gqlSrv.AroundOperations(usagePriceLoaderMiddleware(deps.Ent))
 	gqlSrv.Use(entgql.Transactioner{
 		TxOpener:   deps.Ent,
 		SkipTxFunc: skipMutationTransaction,
@@ -166,6 +164,12 @@ func NewGraphqlHandlers(deps Dependencies) *GraphqlHandler {
 		PluginGraphql: newPluginGraphqlHandler(schema, deps.Ent, deps.PluginManager),
 		PluginFetch:   newPluginFetchHandler(deps.PluginManager),
 		executable:    schema,
+	}
+}
+
+func usagePriceLoaderMiddleware(client *ent.Client) graphql.OperationMiddleware {
+	return func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
+		return next(withUsagePriceLoader(ctx, client))
 	}
 }
 
@@ -253,6 +257,7 @@ func newPluginGraphqlHandler(schema graphql.ExecutableSchema, client *ent.Client
 	srv.Use(extension.FixedComplexityLimit(pluginGraphqlComplexityLimit))
 	srv.Use(&loggingTracer{})
 	srv.AroundOperations(rejectPluginGraphqlOperation)
+	srv.AroundOperations(usagePriceLoaderMiddleware(client))
 	srv.Use(entgql.Transactioner{
 		TxOpener:   client,
 		SkipTxFunc: skipMutationTransaction,
