@@ -65,7 +65,7 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - 自助页各已定价记录倍率一致时列该倍率。不一致时倍率显示「混合」
     （`SelfUsageRequest.costMultiplierMixed`），基础合计显示「-」。
 - R6 可见性：
-  - 管理端倍率随用量记录一并返回，可见成本即可见倍率，不额外要求渠道读取权限。
+  - 管理端倍率随用量记录一并返回，可见成本即可见倍率，不额外要求渠道读取权限。插件 GraphQL 入口同样如此。
   - 自助页沿用[API Key 自助用量页](../../usage/feats/self-usage.md) R2 的 Key 隔离。
 - R7 价格来源标记：
   - 管理端请求列表的成本单元格在成本来自模型库兜底时显示一个硬币图标，悬浮说明成本取自模型库价格。
@@ -89,6 +89,8 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - `b61412dc`（`fix(requests): 成本悬浮始终显示倍率`）
   - `e28ec340`（`fix(requests): 成本悬浮基础合计与倍率行对齐`）
   - `55ca6e74`（模型库兜底的倍率与价格来源标记）
+  - `7b689d40`（`fix(gql): 插件 GraphQL 入口装载成本加载器`）
+  - `9a2036ad`（`fix(authz): fork 的宿主固定读取改用 RunAsHost`）：插件入口读取历史价格版本的倍率。
 - 代码，前端共享组件：
   - `frontend/src/components/request-usage-cells.tsx`：ID、Token、读写缓存、成本悬浮、耗时单元格。
   - `frontend/src/components/request-usage-cost-breakdown.ts`：悬浮行构建。
@@ -105,10 +107,10 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - `internal/server/gql/usage_price_loader.go`：单次 GraphQL 操作内按 reference_id 批量查价格版本。
     - 共享查询使用操作上下文，单个字段的上下文只约束自身等待。
     - 查询失败不缓存。
-  - `internal/server/biz/usage_price_multiplier.go`：窄 bypass 查询价格版本。
+  - `internal/server/biz/usage_price_multiplier.go`：以 `authz.RunAsHost` 固定读取用量记录引用的价格版本。
   - 上游文件追加：
     - `internal/server/gql/gqlgen.yml`：schema 列表。
-    - `internal/server/gql/graphql.go`：`AroundOperations` 注入 loader。
+    - `internal/server/gql/graphql.go`：主入口与插件入口都经 `usagePriceLoaderMiddleware` 注入 loader。
 - 代码，自助页：
   - `internal/server/biz/self_usage_cost.go`：本页请求的分项合并与倍率判定。
   - `internal/server/biz/self_usage.go`
@@ -131,6 +133,8 @@ D 编号是确定形态的决策，R 编号是行为规则。
     - 同批多行只发一次版本查询，且同操作内不重复查询。
     - 一个字段取消不影响同批其他字段。
     - 批次窗口由测试手动关闭，不依赖调度时机。
+    - 插件入口读取模型库兜底的倍率（`TestPluginUsageLogFallbackMultiplier`）。
+  - `internal/server/gql/plugin_host_read_test.go`：插件入口读取历史价格版本的倍率，缺用户 scope 或缺插件授权时拒绝。
   - `frontend/src/components/request-usage-cost-breakdown.test.mjs`：
     - 排序与零值跳过。
     - 折算单价。
@@ -140,4 +144,5 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - `frontend/src/components/request-usage-cells.test.mjs`：价格来源标记只在模型库兜底的记录上显示。
 - 同步上游：
   - 上游调整请求列表的 Token、缓存、成本、耗时列或 `CostItem` 类型时，同步到共享组件与 `cost.graphql`。
-  - `graphql.go` 的 `AroundOperations` 注入与上游已有的操作钩子并列。
+  - `graphql.go` 的 `AroundOperations` 注入与上游已有的操作钩子并列。上游新增 GraphQL 入口时同样装载 `usagePriceLoaderMiddleware`。
+  - 读取价格版本用 `authz.RunAsHost`，不用 system bypass：上游 `v1.0.0-rc1` 起插件主体不能提升为 System。

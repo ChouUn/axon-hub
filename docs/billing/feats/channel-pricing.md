@@ -87,6 +87,10 @@
   - `internal/server/biz/channel_model_sync_test.go`
   - `internal/server/biz/usage_cost_test.go`：兜底乘倍率、引用写法、修改渠道倍率后历史记录不变。
   - `frontend/src/features/models/pricing.test.mjs`
+- 同步上游：
+  - 上游 `03ffac6f`（PR #2662，随上游 `v1.0.0-rc1` 发布）在价格对话框从模型库填价时乘汇率，默认 7.14。
+    本 fork 的对话框改为引用标准价、不从外部目录填充，没有这段填价代码，所以合入时保留 fork 的整份对话框，不采用汇率。
+  - 上游再改 `channels-model-price-dialog.tsx` 时，以 fork 的文件为准，只取与引用、倍率无关的改动。
 
 ## 上游模型价格时间戳修复回补
 

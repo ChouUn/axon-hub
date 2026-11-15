@@ -15,7 +15,7 @@
   - 请求体可复用：transcription、translation、image variation 这类 multipart 请求不透传。
 - 透传时仍把请求体里的 `model` 改写为映射后的模型。
 
-本 fork 修正了其中三处：流式预读队列的循环等待，渠道上游的错误体被重包装，以及流式透传关闭时读取流状态的数据竞争。
+本 fork 修正了其中两处：流式预读队列的循环等待，渠道上游的错误体被重包装。
 
 ## 透传预读队列循环等待
 
@@ -28,20 +28,21 @@
 
 ### 形态
 
-- 每次尝试在消费者接入前暂存原始事件，上限为 4096 个事件、64 MiB 的 data/type/id 字节。
+- 每次尝试在首个转换事件产出之前暂存原始事件，上限为 4096 个事件、64 MiB 的 data/type/id 字节。
 - 单个事件上限为 32 MiB。
-- 超限返回不可重试的 `ErrPreCommitBufferExceeded`。超限后的暂存拒绝接入，不暴露失败尝试的内容。
-- 消费者接入时有序交付暂存的事件。
-- 接入后队列上限为 4096 个事件、128 MiB，队列满时读取渠道上游的一侧等待消费者。
+- 超限返回不可重试的 `ErrPreCommitBufferExceeded`。超限后不交出已暂存的事件，不暴露失败尝试的内容。
+- 首个转换事件产出时有序交付暂存的事件。此后每次只暂存两个转换事件之间的原始事件，按 128 MiB 字节限额计。
+- 读取渠道上游与交付给客户端在同一个协程里进行，客户端读得慢时，读取渠道上游一侧随之变慢。
 - 重试重置时释放旧暂存。
 - 与上游实现的关系：
   - 上游 `02269f12`（#2580，随上游 `v1.0.0-beta11` 发布）修了同一问题，暂存上限为 1024 个事件、8 MiB。
     8 MiB 小于合法的单个 32 MiB SSE 事件，当时保留 fork 自己的实现。
   - 上游 `94cd05b1`（#2656，随上游 `v1.0.0-beta12` 发布）重写了暂存与接入后的队列，字节上限升到上面的取值。
     本 fork 自此以上游实现为底。
+  - 上游 `4af420ca`（#2951，随上游 `v1.0.0-rc1` 发布）去掉了接入后的队列和后台转换协程，改为上面的同步读取。
   - 与上游的差异有两处：
     - 事件数上限为 4096，上游为 1024。
-    - 超限后拒绝接入。上游的接入不检查暂存是否已超限。
+    - 超限后不交出已暂存的事件。上游的交付不检查暂存是否已超限。
 
 ### 边界
 
@@ -50,15 +51,15 @@
 
 ### 实现与维护
 
-- 提交：`cbea376e`。
-- 代码：`internal/server/orchestrator/` 下的 `pass_through.go`、`state.go`、`outbound.go`。
+- 提交：`cbea376e`，上游 `v1.0.0-rc1` 的 merge `c0ce0483` 把这两处差异接到上游的同步实现上。
+- 代码：`internal/server/orchestrator/pass_through.go` 的 `maxRawPreAttachEvents` 与 `rawEventRecorder.take`。
 - 迁移：无 schema migration、data migration 或持久缓存结构变化。
 - 测试：
   - 真实 HTTP 的 Anthropic 渠道上游立即发送 200 个空 thinking delta，透传和重试开启时完整接收 206 个事件及
     `message_stop`。
   - 行为回归覆盖跳过事件、事件顺序及事件数、字节上限。
   - `pass_through_preread_test.go` 是 fork 的测试。
-  - 上游的 `pass_through_budget_test.go` 按本 fork 的事件数上限改写后保留。
+  - 上游的 `pass_through_budget_test.go` 按本 fork 的事件数上限与超限不交出改写后保留。
   - 无新增 fixture。
 - 同步上游：上游改动预读暂存时跟随上游实现，保留上面两处差异，`pass_through_preread_test.go` 的断言保持通过。
 
@@ -109,42 +110,3 @@
 - 同步上游：
   - `llm/` 是独立模块，上游改动 `ResponseError` 或 Anthropic 入站 `TransformError` 时需重接。
   - 上游自行实现错误透传后，以上游为准并移除本字段。
-
-## 流式透传关闭时读取流状态的数据竞争
-
-### 动机
-
-- 流式透传时，转换管线一侧的流由后台协程读完，用于用量结算与请求记录。
-- 上游 `v1.0.0-beta12` 关闭透传流时，先关闭原入站流，再等后台协程退出：
-  - 客户端在结束事件交付前断开时走这条顺序。
-  - 结束事件已交付、等待后台协程超时时同样如此。
-- 原入站流的关闭随即读取已收到的事件与终态，后台协程可能仍在写入，构成数据竞争。
-  受影响的是请求记录的状态与响应内容。
-
-### 形态
-
-- 原入站流关闭时，先关闭转换流与流生命周期，等后台协程退出，再读取事件与终态。
-- 没有流生命周期时，后台协程自己关闭流，不等待。
-
-### 边界
-
-- 关闭等待后台协程退出，没有超时：转换流与流生命周期关闭后，后台协程读到流结束即退出。
-- 渠道上游尾部的收集预算（1 秒、事件数、字节数）不变。
-
-### 实现与维护
-
-- 提交：`aae3f464`（`fix(orchestrator): 透传流关闭时等待后台转换协程退出再读取状态`）。
-- 代码，上游文件：
-  - `internal/server/orchestrator/state.go`：包内字段 `rawStreamDrainDone`，保存后台协程的退出信号。
-  - `internal/server/orchestrator/pass_through.go`：赋值。
-  - `internal/server/orchestrator/outbound.go`：重试重置时清空。
-  - `internal/server/orchestrator/inbound.go`：`InboundPersistentStream.Close` 的等待。
-- 迁移：无。
-- 测试：`internal/server/orchestrator/pass_through_close_lifecycle_test.go`。
-  - 真实 Anthropic 转换与透传，覆盖未交付和交付后等待超时两条关闭分支。
-  - 修复前 `-race` 报竞争。
-  - 无新增 fixture。
-- 同步上游：
-  - 上游改动 `InboundPersistentStream.Close` 或 `passThroughDeliveryStream.Close` 的顺序时，确认关闭仍在后台协程退出后读取状态。
-  - [健康门控](../../routing/feats/health-gate.md)也读取 `rawStreamDrainDone`。
-  - 上游自行修复后，以上游为准并移除本字段。

@@ -197,4 +197,7 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - `frontend/src/features/self-usage/{date-range,cost}.test.mjs`：时区与夏令时的日期预设、费用展示。
   - 无新增 fixture。
   - MySQL 与 PostgreSQL 的分桶表达式未在真实数据库上运行验证。
-- 同步上游：新路由组在 `internal/server/routes.go` 追加。
+- 同步上游：
+  - 新路由组在 `internal/server/routes.go` 追加。
+  - 上游 `v1.0.0-rc1` 起插件主体不能提升为 System（`6c5cfe6e`，PR #2917）。自助页的路由只接受 user/personal API Key，
+    插件主体走不到 `self_usage.go` 的 bypass，所以保留。上游让插件主体也能进入这组路由时，改用 `authz.RunAsHost`。

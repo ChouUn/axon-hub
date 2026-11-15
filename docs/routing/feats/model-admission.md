@@ -67,3 +67,6 @@
     - `internal/server/api/responses_protocol_integration_test.go`
     - `internal/server/` 下的 `codex_models_routes_test.go`、`codex_response_harness_test.go`、
       `codex_responses_routes_test.go`、`codex_images_routes_test.go`
+  - 上游改写的管理端界面又用到已删除的设置时，合入时去掉这些引用。
+    合入上游 `v1.0.0-rc1` 时，上游 `7f961ddb`（PR #2919）重写的 `models-settings-dialog.tsx` 又带回了三项开关的表单项，
+    合入时去掉，其余分区沿用上游。

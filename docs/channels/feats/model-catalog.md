@@ -28,3 +28,6 @@
 - 代码：`frontend/src/features/models/data/providers.schema.ts`。
 - 迁移：无。
 - 测试：无专用测试。
+- 同步上游：
+  - 上游 `7d3a5191`（PR #2936，随上游 `v1.0.0-rc1` 发布）把目录改为按需加载并去掉手动刷新，没有改 `cost` 的 schema。
+  - 上游的 schema 接受 `null` 后，以上游为准并移除本改动。

@@ -60,3 +60,5 @@
 - 同步上游：
   - `NewSchema`、`Dependencies` 与 `NewTestChannelOrchestrator` 多了一个参数，上游改动这些签名时需重接。
   - 上游为 GraphQL 路由或渠道测试引入自己的超时后，以上游为准并移除本配置。
+  - 上游 `v1.0.0-rc1` 在三个测试入口加了插件主体的拒绝（`6c5cfe6e`，PR #2917）。合入后先做这项拒绝，再脱离请求 deadline。
+  - 上游 `v1.0.0-rc1` 的 GraphQL 处理器仍按操作名跳过事务，合入时两个处理器都换成按字段跳过。

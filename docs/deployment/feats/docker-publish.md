@@ -26,7 +26,8 @@
   - 上游自 `5b9b2e96`（PR #2744，随上游 `v1.0.0-beta12` 发布）起把构建矩阵移到可复用的 `docker-build.yml`，
     镜像名 `looplj/axonhub` 写在其中。本 fork 的 `docker-publish.yml` 不调用它。
   - 上游同期对构建步骤的改动未带入本 fork 的文件：按架构划分 GHA 缓存（`6250e7d3`，PR #2712）、
-    action 版本固定到提交哈希。
+    action 版本固定到提交哈希。上游 `v1.0.0-rc1` 又把 `docker/login-action` 的固定版本升到 v4.8.0（`e1b488e3`，PR #2941），
+    本 fork 仍用 `@v4`。
 - 镜像名：由 workflow 级 `env.IMAGE` 指定为 `chouun/axon-hub`。
 - 产出：`<tag>`、`<tag>-<arch>`、`latest`。
 - 发布：
@@ -52,6 +53,7 @@
   - `4dc42806`（`feat(ci): 发布 Docker 镜像到 fork 仓库`）
   - `7fdbd2ae`（合入上游 `v1.0.0-beta10`）
   - `574f09ec`（合入上游 `v1.0.0-beta12`，保留 fork 的整份文件）
+  - `c0ce0483`（合入上游 `v1.0.0-rc1`，保留 fork 的整份文件）
 - 代码：`.github/workflows/docker-publish.yml`。
 - 迁移与测试：无。
 - 同步上游：

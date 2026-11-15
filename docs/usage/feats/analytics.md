@@ -65,6 +65,9 @@ fork 在仪表盘上新增的两张分析表：「API 密钥费用分析」按�
   - `d3d4160e`：新增 API 密钥费用分析。
   - `7415d058`（`feat(analytics): 新增模型详情分析`）：新增模型详情分析，并统一系统时区日期边界。
   - `62011e01`：输出速度口径对齐上游。
+  - `396d30d0`（`fix(analytics): 适配 react-day-picker v10 的初始焦点`）：两张分析页共用的日期筛选组件改用 `autoFocus`。
+  - `9a2036ad`（`fix(authz): fork 的宿主固定读取改用 RunAsHost`）：模型详情分析的渠道标签与项目 profile 改用 `authz.RunAsHost`
+    固定读取，`analyticsModelStats` 先校验 `read_dashboard`，插件 GraphQL 入口可用。
 - 代码：
   - `frontend/src/features/analytics/`
     - `utils/date-range.ts`：自然日范围与到时间戳的换算，fork 的文件。
@@ -75,8 +78,13 @@ fork 在仪表盘上新增的两张分析表：「API 密钥费用分析」按�
 - 测试：
   - `internal/server/gql/analytics_helpers_test.go`
   - `frontend/src/features/analytics-date-range.test.mjs`：含自然日到时间戳的换算。
-- 同步上游：上游改动 `frontend/src/features/analytics/utils/date-range.ts` 时，改动落到 `utils/date-time-range.ts`，
-  上游的 `utils/date-range.test.mjs` 随之指向它。
+  - `internal/server/gql/plugin_host_read_test.go`：插件入口的渠道标签、按标签筛选与项目 profile 裁剪，缺 scope 或授权时拒绝。
+- 同步上游：
+  - 上游改动 `frontend/src/features/analytics/utils/date-range.ts` 时，改动落到 `utils/date-time-range.ts`，
+    上游的 `utils/date-range.test.mjs` 随之指向它。
+  - 上游升级 react-day-picker 等日历依赖时，检查 fork 页面里日历组件的属性。v10 删掉了 `initialFocus`。
+  - `/analytics/api-keys`、`/analytics/models` 不在侧边栏里，导航模块按「未列出的页面」处理，
+    与上游的 `/analytics` 相同（`frontend/src/config/nav-items.ts` 的 `resolveNavModule`）。
 - fixture：
   - `scripts/e2e/fixtures/api-key-analytics.sql`
   - `scripts/e2e/fixtures/model-analytics.sql`
