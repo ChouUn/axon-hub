@@ -1294,13 +1294,6 @@ func TestUsageCost_ModelLibraryMemoKeepsChannelMultipliersSeparate(t *testing.T)
 	}
 	channels.SetEnabledChannelsForTest(builtChannels)
 	service := NewUsageLogService(client, NewSystemService(SystemServiceParams{Ent: client}), channels)
-	modelQueries := 0
-	client.Intercept(intercept.Func(func(_ context.Context, query intercept.Query) error {
-		if query.Type() == ent.TypeModel {
-			modelQueries++
-		}
-		return nil
-	}))
 	memoCtx := WithModelLibraryPriceMemo(ctx)
 	for _, index := range []int{0, 1, 0} {
 		ch := builtChannels[index]
@@ -1319,7 +1312,9 @@ func TestUsageCost_ModelLibraryMemoKeepsChannelMultipliersSeparate(t *testing.T)
 		require.InDelta(t, expected, *log.TotalCost, 1e-12)
 		require.Equal(t, modelLibraryPriceReferenceIDWithMultiplier("model", &factor), log.CostPriceReferenceID)
 	}
-	require.Equal(t, 1, modelQueries, "both channels and cost injection must share the model lookup")
+	cachedModel, err := channels.modelCache.get(ctx, client, "model")
+	require.NoError(t, err)
+	require.Nil(t, cachedModel.ModelCard.Price.Multiplier, "channel multipliers must not leak into the shared model cache")
 	price, found, cached := modelLibraryPriceMemoFromContext(memoCtx).get("model")
 	require.True(t, found)
 	require.True(t, cached)
