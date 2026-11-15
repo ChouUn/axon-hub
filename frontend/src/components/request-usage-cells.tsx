@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getStatusColor } from '@/features/requests/components/help';
-import { extractNumberID } from '@/lib/utils';
+import { metricColorTextClass } from '@/features/requests/utils/metric-colors';
+import { useMetricColorSettings } from '@/features/requests/utils/use-metric-colors';
+import { cn, extractNumberID } from '@/lib/utils';
 import { formatDuration } from '@/utils/format-duration';
 import { buildCostBreakdown, isModelLibraryPriceReference, type CostBreakdown } from './request-usage-cost-breakdown';
 
@@ -51,13 +53,13 @@ export function TokensCell({ prompt, completion, reasoning }: { prompt: number; 
 
 export function ReadCacheCell({ cached, prompt }: { cached: number; prompt: number }) {
   const { t } = useTranslation();
+  const metricColors = useMetricColorSettings();
   if (cached === 0) return <div className='text-muted-foreground text-xs'>-</div>;
   const hitRate = prompt > 0 ? (cached / prompt) * 100 : 0;
-  const isLowHitRate = hitRate < 80 && prompt >= 40000;
   return (
     <div className='text-xs'>
       <div className='text-sm font-medium'>{cached.toLocaleString()}</div>
-      <div className={isLowHitRate ? 'font-medium text-red-600 dark:text-red-400' : 'text-muted-foreground'}>
+      <div className={cn('font-medium', metricColorTextClass(metricColors, 'cacheHitRate', hitRate))}>
         {t('requests.columns.cacheHitRate', { rate: hitRate.toFixed(1) })}
       </div>
     </div>
@@ -81,11 +83,16 @@ export function DurationCell({ status, stream, latencyMs, firstTokenLatencyMs }:
   status: string; stream: boolean; latencyMs: number | null; firstTokenLatencyMs: number | null;
 }) {
   const { t } = useTranslation();
+  const metricColors = useMetricColorSettings();
   if (status !== 'completed' || latencyMs == null) return <span className='text-muted-foreground text-xs'>-</span>;
   if (!stream) return <span className='font-mono text-xs'>{t('requests.duration.total', { duration: formatDuration(latencyMs) })}</span>;
   return (
     <div className='min-w-[128px] font-mono text-xs'>
-      {firstTokenLatencyMs != null && <div>{t('requests.duration.firstToken', { duration: formatDuration(firstTokenLatencyMs) })}</div>}
+      {firstTokenLatencyMs != null && (
+        <div className={metricColorTextClass(metricColors, 'firstTokenLatency', firstTokenLatencyMs / 1000)}>
+          {t('requests.duration.firstToken', { duration: formatDuration(firstTokenLatencyMs) })}
+        </div>
+      )}
       <div className='text-muted-foreground'>{t('requests.duration.total', { duration: formatDuration(latencyMs) })}</div>
     </div>
   );
