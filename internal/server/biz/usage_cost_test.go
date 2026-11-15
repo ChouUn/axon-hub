@@ -1279,7 +1279,7 @@ func TestUsageCost_ModelLibraryMemoKeepsChannelMultipliersSeparate(t *testing.T)
 	client := enttest.NewEntClient(t, "sqlite3", "file:fallback-multiplier-memo?mode=memory&_fk=0")
 	t.Cleanup(func() { require.NoError(t, client.Close()) })
 	ctx := authz.WithTestBypass(ent.NewContext(context.Background(), client))
-	createModelLibraryPriceEntry(t, ctx, client, "model", model.StatusEnabled, objects.ModelCardCost{Input: 1, Output: 2})
+	catalog := createModelLibraryPriceEntry(t, ctx, client, "model", model.StatusEnabled, objects.ModelCardCost{Input: 1, Output: 2})
 	channels := NewChannelServiceForTest(client)
 	t.Cleanup(channels.Stop)
 	var builtChannels []*Channel
@@ -1295,11 +1295,21 @@ func TestUsageCost_ModelLibraryMemoKeepsChannelMultipliersSeparate(t *testing.T)
 	channels.SetEnabledChannelsForTest(builtChannels)
 	service := NewUsageLogService(client, NewSystemService(SystemServiceParams{Ent: client}), channels)
 	memoCtx := WithModelLibraryPriceMemo(ctx)
-	for _, index := range []int{0, 1, 0} {
+	for i, index := range []int{0, 1, 0} {
 		ch := builtChannels[index]
 		factor := *ch.Settings.ModelPriceMultiplier
 		usage := &llm.Usage{PromptTokens: 100, CompletionTokens: 200, TotalTokens: 300}
 		service.InjectUsageCost(memoCtx, ch.ID, "model", usage)
+		if i == 0 {
+			// Invalidate the shared cache mid-request: the rest of this request must
+			// keep the price its cost injection used, across both channels.
+			card := *catalog.ModelCard
+			card.Price = &objects.ModelPrice{Items: []objects.ModelPriceItem{
+				{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromInt(10))}},
+				{ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromInt(20))}},
+			}}
+			client.Model.UpdateOneID(catalog.ID).SetModelCard(&card).ExecX(ctx)
+		}
 		expected := decimal.RequireFromString("0.0005").Mul(factor).InexactFloat64()
 		require.NotNil(t, usage.Cost)
 		require.InDelta(t, expected, *usage.Cost, 1e-12)
@@ -1319,6 +1329,12 @@ func TestUsageCost_ModelLibraryMemoKeepsChannelMultipliersSeparate(t *testing.T)
 	require.True(t, found)
 	require.True(t, cached)
 	require.Nil(t, price.Multiplier, "the memo must retain the unmodified standard price")
+	require.True(t, price.Items[0].Pricing.UsagePerUnit.Equal(decimal.NewFromInt(1)), "the memo must keep the price the request started with")
+	freshUsage := &llm.Usage{PromptTokens: 100, CompletionTokens: 200, TotalTokens: 300}
+	service.InjectUsageCost(WithModelLibraryPriceMemo(ctx), builtChannels[0].ID, "model", freshUsage)
+	require.NotNil(t, freshUsage.Cost)
+	require.InDelta(t, decimal.RequireFromString("0.005").Mul(*builtChannels[0].Settings.ModelPriceMultiplier).InexactFloat64(), *freshUsage.Cost, 1e-12,
+		"a new request must see the updated model library price")
 }
 
 func TestModelLibraryPriceReferenceIDWithMultiplier(t *testing.T) {
