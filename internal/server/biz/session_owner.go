@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/looplj/axonhub/internal/authz"
+	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/pkg/xcache"
@@ -187,13 +188,10 @@ func (s *RequestService) SessionOwnerChannelName(ctx context.Context, channelID 
 	return channel.Name, nil
 }
 
-// UpdateRequestChannelIDWithoutSticky tracks the selected channel without
-// changing the current session owner before a successful request completes.
-func (s *RequestService) UpdateRequestChannelIDWithoutSticky(ctx context.Context, requestID, channelID int) error {
-	if err := s.entFromContext(ctx).Request.UpdateOneID(requestID).SetChannelID(channelID).Exec(ctx); err != nil {
-		return fmt.Errorf("failed to update request channel ID: %w", err)
-	}
-	return nil
+// AssignRequestChannelWithoutSticky records the selected channel in memory
+// without changing the session owner before a successful request completes.
+func (s *RequestService) AssignRequestChannelWithoutSticky(req *ent.Request, channelID int) {
+	req.ChannelID = channelID
 }
 
 // SetRequestRoutingDecision persists the completed health-gated routing trace.

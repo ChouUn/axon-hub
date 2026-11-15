@@ -34,8 +34,9 @@ func TestHealthGateProductNewChannelAndSessionExpiry(t *testing.T) {
 		TraceStickyMode: biz.TraceStickyPreferPreviousChannel,
 	}}
 	base := &staticChannelSelector{candidates: []*ChannelModelsCandidate{old}}
-	balancer := NewLoadBalancer(policy, nil, NewWeightRoundRobinStrategy(metrics), NewLatencyAwareStrategy(metrics)).WithHealthGate(biz.NewHealthGate(nil))
-	selector := WithTraceStickyLoadBalancedSelector(base, balancer, policy, service)
+	balancer := NewLoadBalancer(metrics, nil, NewWeightRoundRobinStrategy(), NewLatencyAwareStrategy()).WithHealthGate(biz.NewHealthGate(nil))
+	selector := WithTraceStickyLoadBalancedSelector(base, balancer, policy.policy, service)
+	selector.healthGatePolicyProvider = policy
 	selectFor := func(threadID int) *ChannelModelsCandidate {
 		t.Helper()
 		ctx := contexts.WithThread(t.Context(), &ent.Thread{ID: threadID})

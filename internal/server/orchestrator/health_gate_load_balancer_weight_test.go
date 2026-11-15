@@ -30,20 +30,22 @@ func (m *healthGateWeightMetrics) IncrementChannelSelection(channelID int) {
 	metrics.RequestCount++
 }
 
-func healthGateWeightStrategies(metrics ChannelMetricsProvider) []LoadBalanceStrategy {
+func healthGateWeightStrategies() []LoadBalanceStrategy {
 	return []LoadBalanceStrategy{
-		NewWeightRoundRobinStrategy(metrics),
-		NewLatencyAwareStrategy(metrics),
+		NewWeightRoundRobinStrategy(),
+		NewLatencyAwareStrategy(),
 		NewRateLimitAwareStrategy(NewChannelRequestTracker(), nil),
 	}
 }
 
-func healthGateWeightTotalScore(t *testing.T, ctx context.Context, strategies []LoadBalanceStrategy, channel *biz.Channel) float64 {
+func healthGateWeightTotalScore(t *testing.T, ctx context.Context, strategies []LoadBalanceStrategy, channel *biz.Channel, provider ChannelMetricsProvider) float64 {
 	t.Helper()
 	total := 0.0
+	metrics, err := provider.GetChannelMetrics(ctx, channel.ID)
+	require.NoError(t, err)
 	for _, strategy := range strategies {
-		score := strategy.Score(ctx, channel)
-		debugScore, _ := strategy.ScoreWithDebug(ctx, channel)
+		score := strategy.Score(ctx, channel, metrics)
+		debugScore, _ := strategy.ScoreWithDebug(ctx, channel, metrics)
 		require.InDelta(t, score, debugScore, 0.000001, strategy.Name())
 		total += score
 	}
@@ -69,7 +71,8 @@ func TestHealthGateSelector_NewSessionPrefersAddedHigherWeightWithRealScores(t *
 			}}
 			previous := &fakePreviousChannelProvider{traceChannelIDs: map[int]int{}}
 			selector, _, _ := healthGateSelectorFixture(&now, []*ChannelModelsCandidate{old}, biz.TraceStickyPreferPreviousChannel, previous)
-			selector.loadBalancer.strategies = healthGateWeightStrategies(metrics)
+			selector.loadBalancer.strategies = healthGateWeightStrategies()
+			selector.loadBalancer.metricsProvider = metrics
 			selector.loadBalancer.selectionTracker = metrics
 			selector.loadBalancer.debug = mode.debug
 			req := &llm.Request{Model: "alias"}
@@ -95,16 +98,16 @@ func TestHealthGateSelector_NewSessionPrefersAddedHigherWeightWithRealScores(t *
 
 			// Establish the actual regression trigger: the old score-first rule
 			// prefers 10 even without an owner, because its latency is excellent.
-			oldScore := healthGateWeightTotalScore(t, newCtx, selector.loadBalancer.strategies, old.Channel)
-			newScore := healthGateWeightTotalScore(t, newCtx, selector.loadBalancer.strategies, added.Channel)
+			oldScore := healthGateWeightTotalScore(t, newCtx, selector.loadBalancer.strategies, old.Channel, metrics)
+			newScore := healthGateWeightTotalScore(t, newCtx, selector.loadBalancer.strategies, added.Channel, metrics)
 			// The initial selection raises the old count from 1 to 2:
 			// WRR = 150/(1+(2/0.1)/150), latency = 80*(1-10/3000), rate limit = 100.
 			require.InDelta(t, 150.0/(1+(2/0.1)/150)+80*(1-10.0/3000)+100, oldScore, 0.000001)
 			require.InDelta(t, 150+40+100, newScore, 0.000001)
 			require.Greater(t, oldScore, newScore)
-			scoreFirst := NewLoadBalancer(selector.policy, nil, selector.loadBalancer.strategies...)
+			scoreFirst := NewLoadBalancer(metrics, nil, selector.loadBalancer.strategies...)
 			scoreFirst.debug = mode.debug
-			legacyOrder := scoreFirst.Sort(newCtx, wrapped.candidates, req.Model, false)
+			legacyOrder := scoreFirst.Sort(newCtx, wrapped.candidates, req.Model, false, 0)
 			require.Equal(t, old.Channel.ID, legacyOrder[0].Channel.ID)
 
 			result, err := selector.Select(newCtx, req)
@@ -139,13 +142,12 @@ func TestHealthGateLoadBalancer_EqualWeightUsesRealRoundRobinScores(t *testing.T
 					low.Channel.ID: {NonStreamingSampleCount: 1, NonStreamingLatencyEWMA: 10},
 				},
 			}}
-			policy := &mockRetryPolicyProvider{policy: &biz.RetryPolicy{Enabled: true, MaxChannelRetries: 2}}
-			lb := NewLoadBalancer(policy, metrics, healthGateWeightStrategies(metrics)...).WithHealthGate(biz.NewHealthGate(nil))
+			lb := NewLoadBalancer(metrics, metrics, healthGateWeightStrategies()...).WithHealthGate(biz.NewHealthGate(nil))
 			lb.debug = debug
 			counts := map[int]int{}
 			previousID := 0
 			for range 6 {
-				result := lb.Sort(context.Background(), []*ChannelModelsCandidate{low, first, second}, "alias", false)
+				result := lb.Sort(context.Background(), []*ChannelModelsCandidate{low, first, second}, "alias", false, 0)
 				require.Len(t, result, 3)
 				id := result[0].Channel.ID
 				require.NotEqual(t, low.Channel.ID, id, "excellent lower-tier latency cannot override the explicit tier")
@@ -169,7 +171,8 @@ func TestHealthGateSelector_AssociationPriorityPrecedesWeightTiers(t *testing.T)
 			fallback.Channel.OrderingWeight = 15
 			metrics := &mockMetricsProvider{}
 			selector, _, _ := healthGateSelectorFixture(&now, []*ChannelModelsCandidate{fallback, preferred}, biz.TraceStickyDisabled, nil)
-			selector.loadBalancer.strategies = healthGateWeightStrategies(metrics)
+			selector.loadBalancer.strategies = healthGateWeightStrategies()
+			selector.loadBalancer.metricsProvider = metrics
 			selector.loadBalancer.debug = debug
 
 			result, err := selector.Select(context.Background(), &llm.Request{Model: "alias"})
@@ -211,12 +214,12 @@ func TestHealthGateSelector_WeightTiersRespectRateLimitsAndQuota(t *testing.T) {
 				}
 				metrics := &mockMetricsProvider{}
 				strategies := []LoadBalanceStrategy{
-					NewWeightRoundRobinStrategy(metrics), NewLatencyAwareStrategy(metrics),
+					NewWeightRoundRobinStrategy(), NewLatencyAwareStrategy(),
 					NewRateLimitAwareStrategy(tracker, nil),
 				}
 				ctx := context.Background()
-				highScore := healthGateWeightTotalScore(t, ctx, strategies, high.Channel)
-				lowScore := healthGateWeightTotalScore(t, ctx, strategies, low.Channel)
+				highScore := healthGateWeightTotalScore(t, ctx, strategies, high.Channel, metrics)
+				lowScore := healthGateWeightTotalScore(t, ctx, strategies, low.Channel, metrics)
 				require.Equal(t, hard, isHardUnavailableScore(highScore))
 				require.False(t, isHardUnavailableScore(lowScore))
 				if hard {
@@ -229,6 +232,7 @@ func TestHealthGateSelector_WeightTiersRespectRateLimitsAndQuota(t *testing.T) {
 					selector, _, policy := healthGateSelectorFixture(&now, []*ChannelModelsCandidate{high, low}, biz.TraceStickyDisabled, nil)
 					policy.MaxChannelRetries = retries
 					selector.loadBalancer.strategies = strategies
+					selector.loadBalancer.metricsProvider = metrics
 					selector.loadBalancer.debug = debug
 					selector.quotaGate = NewQuotaRoutingGate(quota, biz.QuotaRoutingSettings{DefaultMode: objects.QuotaRoutingModeRemoveOnExhausted})
 					result, err := selector.Select(ctx, &llm.Request{Model: "alias"})
@@ -265,29 +269,28 @@ func TestHealthGateLoadBalancer_OtherFourStrategiesKeepTheirOrdering(t *testing.
 				oldMetrics := &biz.AggregatedMetrics{NonStreamingSampleCount: 1, NonStreamingLatencyEWMA: 10}
 				oldMetrics.RequestCount = 1
 				metrics := &mockMetricsProvider{metrics: map[int]*biz.AggregatedMetrics{old.Channel.ID: oldMetrics}}
-				policy := &mockRetryPolicyProvider{policy: &biz.RetryPolicy{Enabled: true, MaxChannelRetries: 1, LoadBalancerStrategy: strategy}}
 				rateLimit := NewRateLimitAwareStrategy(NewChannelRequestTracker(), nil)
 				var lb *LoadBalancer
 				expectedID := added.Channel.ID
 				switch strategy {
 				case biz.LoadBalancerStrategyAdaptive:
-					lb = NewLoadBalancer(policy, nil, NewErrorAwareStrategy(metrics), NewWeightRoundRobinStrategy(metrics), NewLatencyAwareStrategy(metrics), rateLimit)
+					lb = NewLoadBalancer(metrics, nil, NewErrorAwareStrategy(), NewWeightRoundRobinStrategy(), NewLatencyAwareStrategy(), rateLimit)
 					expectedID = old.Channel.ID
 				case biz.LoadBalancerStrategyFailover:
-					lb = NewLoadBalancer(policy, nil, NewWeightStrategy(), NewRandomStrategy(), rateLimit)
+					lb = NewLoadBalancer(nil, nil, NewWeightStrategy(), NewRandomStrategy(), rateLimit)
 				case biz.LoadBalancerStrategyCircuitBreaker:
-					lb = NewLoadBalancer(policy, nil, NewWeightStrategy(), NewModelAwareCircuitBreakerStrategy(biz.NewModelCircuitBreaker()), rateLimit)
+					lb = NewLoadBalancer(nil, nil, NewWeightStrategy(), NewModelAwareCircuitBreakerStrategy(biz.NewModelCircuitBreaker()), rateLimit)
 				case biz.LoadBalancerStrategyRoundRobin:
 					// Equal counts retain input order even when the second channel
 					// has a higher weight: this mode disables the weight tie-breaker.
 					oldMetrics.RequestCount = 0
-					lb = NewLoadBalancer(policy, nil, NewRoundRobinStrategy(metrics), rateLimit).
-						WithoutWeightTieBreaker().WithRoundRobinHealthFilter(NewRoundRobinHealthStrategy(metrics))
+					lb = NewLoadBalancer(metrics, nil, NewRoundRobinStrategy(), rateLimit).
+						WithoutWeightTieBreaker().WithRoundRobinHealthFilter(NewRoundRobinHealthStrategy())
 					expectedID = old.Channel.ID
 				}
 				lb.debug = debug
 				require.Nil(t, lb.healthGate)
-				result := lb.Sort(context.Background(), []*ChannelModelsCandidate{old, added}, "alias", false)
+				result := lb.Sort(context.Background(), []*ChannelModelsCandidate{old, added}, "alias", false, 0)
 				require.Len(t, result, 2)
 				require.Equal(t, expectedID, result[0].Channel.ID)
 			})

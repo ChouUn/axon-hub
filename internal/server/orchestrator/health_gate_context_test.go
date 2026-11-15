@@ -44,10 +44,10 @@ func TestHealthGateAdmissionCancelsConfigurationRead(t *testing.T) {
 	defer close(provider.release)
 	candidate := healthGateSelectorCandidate(1, 1, "model")
 	state := &PersistenceState{
-		CurrentCandidate:        candidate,
-		ChannelModelsCandidates: []*ChannelModelsCandidate{candidate},
-		RetryPolicyProvider:     provider,
-		RoutingPolicy:           EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated},
+		CurrentCandidate:         candidate,
+		ChannelModelsCandidates:  []*ChannelModelsCandidate{candidate},
+		HealthGatePolicyProvider: provider,
+		RoutingPolicy:            EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated},
 	}
 	gate := biz.NewHealthGate(nil)
 	tracker := withHealthGate(&PersistentOutboundTransformer{state: state}, gate, biz.DefaultHealthGatePolicy())
@@ -186,7 +186,7 @@ func TestHealthGateStream_PassThroughHTTPClientCancellationIsNeutral(t *testing.
 	require.NoError(t, err)
 	require.NotNil(t, result.EventStream)
 	require.True(t, state.PassThroughApplied)
-	require.NotNil(t, state.RawStreamQueue, "the raw pass-through producer must be active")
+	require.NotNil(t, state.PassThroughRecorder, "the raw pass-through recorder must be active")
 	require.NoError(t, tracker.finalize(ctx, nil, true))
 	result.EventStream = tracker.wrapResponseStream(ctx, result.EventStream)
 	defer result.EventStream.Close()
@@ -200,21 +200,14 @@ func TestHealthGateStream_PassThroughHTTPClientCancellationIsNeutral(t *testing.
 	require.True(t, sawContent, "the client must receive output before disconnecting")
 	require.NoError(t, ctx.Err())
 	cancel()
-	var streamErr error
-	require.Eventually(t, func() bool {
-		state.RawStreamQueue.backlog.mu.Lock()
-		defer state.RawStreamQueue.backlog.mu.Unlock()
-		streamErr = *state.RawStreamErrRef
-		return streamErr != nil
-	}, 5*time.Second, time.Millisecond, "pass-through upstream did not stop after client cancellation")
+	require.False(t, result.EventStream.Next(), "reading after client cancellation must stop the upstream")
+	streamErr := state.PassThroughRecorder.Err()
 	require.ErrorIs(t, streamErr, context.Canceled, "actual upstream error: %T: %v", streamErr, streamErr)
 	require.False(t, IsUpstreamTransportError(streamErr), "actual upstream error: %T: %v", streamErr, streamErr)
 	require.NoError(t, result.EventStream.Close())
-	require.Eventually(t, func() bool {
-		tracker.mu.Lock()
-		defer tracker.mu.Unlock()
-		return !tracker.active
-	}, 5*time.Second, time.Millisecond, "the background pipeline must finish health recording")
+	tracker.mu.Lock()
+	require.False(t, tracker.active, "Close must finish health recording")
+	tracker.mu.Unlock()
 	candidate := state.CurrentCandidate
 	cfg := biz.ResolveHealthGateConfig(policy, candidate.Channel)
 	snapshots := healthGateSnapshot(t, gate, candidate.Channel.ID, healthGateResolver(cfg))

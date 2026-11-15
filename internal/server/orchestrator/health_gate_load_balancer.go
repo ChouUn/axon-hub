@@ -37,6 +37,11 @@ func compareHealthGateWeightTiers(a *biz.Channel, aScore float64, b *biz.Channel
 	return 0
 }
 
+// RetryPolicyProvider supplies current policy to fork health-gate decisions.
+type RetryPolicyProvider interface {
+	RetryPolicyOrDefault(ctx context.Context) *biz.RetryPolicy
+}
+
 // Resolve against current settings, not the candidate snapshot: a delayed
 // request must never roll back a newer health-gate configuration cycle.
 func currentHealthGateConfig(

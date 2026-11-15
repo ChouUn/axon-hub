@@ -56,7 +56,7 @@ func (m *healthGateAttemptTracker) finishActive(ctx context.Context) {
 	ctx, cancel := xcontext.DetachWithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	state := m.outbound.state
-	resolve := currentHealthGateConfig(ctx, state.RetryPolicyProvider, state.ChannelService, m.channel, m.policy)
+	resolve := currentHealthGateConfig(ctx, state.HealthGatePolicyProvider, state.ChannelService, m.channel, m.policy)
 	if err := m.gate.Finish(ctx, m.ticket, resolve, m.lastOutcome, m.lastInfo); err != nil {
 		log.Warn(ctx, "failed to finalize health gate attempt", log.Cause(err))
 	}
@@ -94,7 +94,7 @@ func (m *healthGateAttemptTracker) OnOutboundRawRequest(ctx context.Context, req
 			m.decision.record.LastResort = true
 		}
 	}
-	resolve := currentHealthGateConfig(ctx, m.outbound.state.RetryPolicyProvider, m.outbound.state.ChannelService, channel, m.policy)
+	resolve := currentHealthGateConfig(ctx, m.outbound.state.HealthGatePolicyProvider, m.outbound.state.ChannelService, channel, m.policy)
 	allowProbe, lastResort := false, false
 	if info != nil {
 		allowProbe, lastResort = info.probeEligible, info.lastResort

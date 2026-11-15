@@ -64,7 +64,7 @@ func anthropicPreReadPipeline(t *testing.T, executor pipeline.Executor, beforeAt
 	for _, build := range beforeAttach {
 		middlewares = append(middlewares, build(state))
 	}
-	middlewares = append(middlewares, applyPassThroughStream(outbound, nil), applyPassThroughRequestBody(outbound, nil), captureRawProviderStream(outbound, nil))
+	middlewares = append(middlewares, applyPassThroughStream(outbound), applyPassThroughRequestBody(outbound, nil), captureRawProviderStream(outbound))
 	return pipeline.NewFactory(executor).Pipeline(inbound, outbound,
 		pipeline.WithRetry(0, 1, 0),
 		pipeline.WithMiddlewares(middlewares...),
@@ -109,63 +109,25 @@ func TestPassThroughPreReadSkippedEventsAreBounded(t *testing.T) {
 	require.NoError(t, ctx.Err(), "overflow must fail without waiting for the deadline")
 }
 
-func TestPassThroughPreReadOverflowBeforeAttachment(t *testing.T) {
-	// Signature is meaningful and below the raw limit. Hold attachment until the
-	// producer has read ahead beyond that limit, after pre-read already succeeded.
-	process := anthropicPreReadPipeline(t,
-		&mockExecutor{streamEvents: anthropicPreReadEvents(maxRawPreAttachEvents-5, true)},
-		func(state *PersistenceState) pipeline.Middleware {
-			return pipeline.OnInboundRawStream("wait-for-producer", func(ctx context.Context, stream streams.Stream[*httpclient.StreamEvent]) (streams.Stream[*httpclient.StreamEvent], error) {
-				ticker := time.NewTicker(time.Millisecond)
-				defer ticker.Stop()
-				for {
-					state.RawStreamBacklog.mu.Lock()
-					failed := state.RawStreamBacklog.err != nil
-					state.RawStreamBacklog.mu.Unlock()
-					if failed {
-						return stream, nil
-					}
-					select {
-					case <-ticker.C:
-					case <-ctx.Done():
-						return nil, ctx.Err()
-					}
-				}
-			})
-		},
-	)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	result, err := process(ctx, anthropicPreReadRequest())
-	require.ErrorIs(t, err, pipeline.ErrPreCommitBufferExceeded)
-	require.Nil(t, result, "failed pre-attachment capture must not commit buffered content")
-	require.NoError(t, ctx.Err())
-}
-
-func TestRawStreamBacklogByteBoundary(t *testing.T) {
+func TestRawEventRecorderByteBoundary(t *testing.T) {
 	event := &httpclient.StreamEvent{Data: make([]byte, 32*1024*1024)}
 	for _, overflow := range []bool{false, true} {
-		backlog := &rawStreamBacklog{}
+		events := []*httpclient.StreamEvent{event, event}
+		if overflow {
+			events = append(events, &httpclient.StreamEvent{Type: "x"})
+		}
+		recorder := &rawEventRecorder{source: streams.SliceStream(events)}
 		// Legal individual events can exceed the transformed metadata budget.
 		for range 2 {
-			held, err := backlog.hold(event)
-			require.NoError(t, err)
-			require.True(t, held)
+			require.True(t, recorder.Next())
 		}
 		if overflow {
-			_, err := backlog.hold(&httpclient.StreamEvent{Type: "x"})
-			require.ErrorIs(t, err, pipeline.ErrPreCommitBufferExceeded)
-		}
-		heldEvents, err := backlog.attach()
-		if overflow {
-			require.ErrorIs(t, err, pipeline.ErrPreCommitBufferExceeded)
-			require.Nil(t, heldEvents, "overflowed attempts must not expose a prefix")
+			require.False(t, recorder.Next())
+			require.ErrorIs(t, recorder.Err(), pipeline.ErrPreCommitBufferExceeded)
+			require.Nil(t, recorder.take(), "overflowed attempts must not expose a prefix")
 			continue
 		}
-		require.NoError(t, err)
-		require.Equal(t, []*httpclient.StreamEvent{event, event}, heldEvents)
-		held, err := backlog.hold(event)
-		require.NoError(t, err)
-		require.False(t, held, "attached streams use channel backpressure, not the pre-read budget")
+		require.NoError(t, recorder.Err())
+		require.Equal(t, []*httpclient.StreamEvent{event, event}, recorder.take())
 	}
 }

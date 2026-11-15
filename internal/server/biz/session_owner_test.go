@@ -661,10 +661,11 @@ func TestRoutingDecisionIsPersisted(t *testing.T) {
 	stored, err := client.Request.Get(ctx, req.ID)
 	require.NoError(t, err)
 	require.Equal(t, decision, stored.RoutingDecision)
-	require.NoError(t, svc.UpdateRequestChannelIDWithoutSticky(ctx, req.ID, 42))
+	svc.AssignRequestChannelWithoutSticky(req, 42)
+	require.Equal(t, 42, req.ChannelID)
 	stored, err = client.Request.Get(ctx, req.ID)
 	require.NoError(t, err)
-	require.Equal(t, 42, stored.ChannelID)
+	require.Zero(t, stored.ChannelID, "channel assignment is persisted only by the terminal update")
 	_, err = svc.previousChannelCache.Get(ctx, buildPreviousTraceChannelCacheKey(7))
 	require.Error(t, err)
 }

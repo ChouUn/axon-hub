@@ -786,8 +786,10 @@ export interface ModelChannelConnection {
     name: string;
     type: string;
     status: string;
+    orderingWeight: number;
   };
   models: ChannelModelEntry[];
+  priority: number;
 }
 
 export function useQueryUnassociatedChannels() {
@@ -804,11 +806,13 @@ export function useQueryUnassociatedChannels() {
 const MODEL_CHANNEL_CONNECTIONS_QUERY = `
   query QueryModelChannelConnections($associations: [ModelAssociationInput!]!) {
     queryModelChannelConnections(associations: $associations) {
+      priority
       channel {
         id
         name
         type
         status
+        orderingWeight
       }
       models {
         requestModel

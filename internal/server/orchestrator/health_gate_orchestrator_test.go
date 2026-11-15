@@ -61,7 +61,7 @@ func healthGateOrchestratorFixture(t *testing.T, ctx context.Context, client *en
 		PipelineFactory: pipeline.NewFactory(executor), ModelMapper: NewModelMapper(),
 		channelLimiterManager:   NewChannelLimiterManager(),
 		Middlewares:             []pipeline.Middleware{stream.EnsureUsage()},
-		healthGatedLoadBalancer: NewLoadBalancer(systemService, channelService).WithHealthGate(gate),
+		healthGatedLoadBalancer: NewLoadBalancer(channelService, channelService).WithHealthGate(gate),
 	}
 	return ctx, processor, gate
 }
@@ -388,8 +388,8 @@ func TestHealthGateOrchestrator_DisablingThresholdInvalidatesInFlightTicket(t *t
 	provider := &mockRetryPolicyProvider{policy: policy}
 	gate := biz.NewHealthGate(nil)
 	state := &PersistenceState{
-		RoutingPolicy:       EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated},
-		RetryPolicyProvider: provider, CurrentCandidate: candidate,
+		RoutingPolicy:            EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated},
+		HealthGatePolicyProvider: provider, CurrentCandidate: candidate,
 	}
 	tracker := withHealthGate(&PersistentOutboundTransformer{state: state}, gate, policy.HealthGateOrDefault())
 	ctx := context.Background()
@@ -420,7 +420,7 @@ func TestHealthGateOrchestrator_OldDisabledSelectionCannotResetNewCycle(t *testi
 	makeTracker := func(candidates []*ChannelModelsCandidate, fallback biz.HealthGatePolicy) *healthGateAttemptTracker {
 		state := &PersistenceState{
 			RoutingPolicy:    EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated},
-			CurrentCandidate: candidates[0], RetryPolicyProvider: selector.policy,
+			CurrentCandidate: candidates[0], HealthGatePolicyProvider: selector.healthGatePolicyProvider,
 		}
 		return withHealthGate(&PersistentOutboundTransformer{state: state}, gate, fallback)
 	}

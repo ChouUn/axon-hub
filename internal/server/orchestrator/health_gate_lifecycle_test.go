@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -156,51 +155,9 @@ func TestHealthGateOrchestrator_CompletedBeforeDeliveryCancellation(t *testing.T
 	require.False(t, found)
 }
 
-type healthGatePauseAfterOutput struct {
-	streams.Stream[*llm.Response]
-	paused  chan struct{}
-	release chan struct{}
-	once    sync.Once
-	next    bool
-}
-
-func (s *healthGatePauseAfterOutput) Next() bool {
-	if s.next {
-		close(s.paused)
-		<-s.release
-		s.next = false
-	}
-	return s.Stream.Next()
-}
-
-func (s *healthGatePauseAfterOutput) Current() *llm.Response {
-	response := s.Stream.Current()
-	if hasMeaningfulStreamOutput(response) {
-		s.next = true
-	}
-	return response
-}
-
-func (s *healthGatePauseAfterOutput) Close() error {
-	s.once.Do(func() { close(s.release) })
-	return s.Stream.Close()
-}
-
-type healthGatePauseOutputMiddleware struct {
-	pipeline.DummyMiddleware
-	paused  chan struct{}
-	release chan struct{}
-}
-
-func (m *healthGatePauseOutputMiddleware) OnOutboundLlmStream(_ context.Context, stream streams.Stream[*llm.Response]) (streams.Stream[*llm.Response], error) {
-	return &healthGatePauseAfterOutput{Stream: stream, paused: m.paused, release: m.release}, nil
-}
-
 func TestHealthGateStream_PassThroughFailedTerminalAfterClientCancellation(t *testing.T) {
 	ctx, _, processor, gate, request := healthGateLifecycleHTTPFixture(t, llm.APIFormatOpenAIResponse, true,
 		healthGateResponsesEvents("response.failed", "failed", `,"error":{"message":"provider failed"}`))
-	paused, release := make(chan struct{}), make(chan struct{})
-	processor.Middlewares = append(processor.Middlewares, &healthGatePauseOutputMiddleware{paused: paused, release: release})
 	requestCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	result, err := processor.Process(requestCtx, request)
@@ -217,17 +174,10 @@ func TestHealthGateStream_PassThroughFailedTerminalAfterClientCancellation(t *te
 		require.NoError(t, boundary.Deliver(requestCtx, func() (bool, error) { return false, nil }))
 	}
 	require.True(t, sawFailure)
-	select {
-	case <-paused:
-	case <-time.After(5 * time.Second):
-		t.Fatal("normalized drain did not pause")
-	}
 	response := result.ChatCompletionStream.(*healthGateResponseStream)
-	require.Equal(t, streamTerminalNone, response.tracker.outbound.state.OutboundStreamTerminal)
 	cancel()
 	require.NoError(t, result.ChatCompletionStream.Close())
-	require.Contains(t, []streamTerminalState{streamTerminalNone, streamTerminalFailed}, response.tracker.outbound.state.OutboundStreamTerminal)
-	require.Equal(t, streamTerminalFailed, response.providerTerminal)
+	require.Equal(t, streamTerminalFailed, response.tracker.outbound.state.OutboundStreamTerminal)
 	candidate := processor.channelSelector.(*staticChannelSelector).candidates[0]
 	cfg := biz.ResolveHealthGateConfig(processor.SystemService.RetryPolicyOrDefault(ctx).HealthGateOrDefault(), candidate.Channel)
 	snapshot := healthGateSnapshot(t, gate, candidate.Channel.ID, healthGateResolver(cfg))
@@ -397,54 +347,6 @@ func TestHealthGateStream_FinalizationObservesTailEvidence(t *testing.T) {
 			require.False(t, tracker.active)
 		})
 	}
-}
-
-func TestHealthGateStream_DeliveredTimeoutWaitsForConvertedDrain(t *testing.T) {
-	candidate := healthGateSelectorCandidate(1, 0, "model")
-	state := &PersistenceState{CurrentCandidate: candidate, RoutingPolicy: EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated}}
-	tracker := withHealthGate(&PersistentOutboundTransformer{state: state}, biz.NewHealthGate(nil), biz.DefaultHealthGatePolicy())
-	owner, ctx := newStreamLifecycle(t.Context())
-	defer owner.Close()
-	_, err := tracker.OnOutboundRawRequest(ctx, &httpclient.Request{})
-	require.NoError(t, err)
-	_, err = tracker.OnOutboundLlmStream(ctx, streams.SliceStream([]*llm.Response{}))
-	require.NoError(t, err)
-	require.NoError(t, tracker.finalize(ctx, nil, true))
-	drain := make(chan struct{})
-	state.rawStreamDrainDone = drain
-	closed := make(chan struct{})
-	inner := withPassThroughDeliveryGateAndDrain(streams.SliceStream([]*httpclient.StreamEvent{}), owner, func() error {
-		owner.Close()
-		close(closed)
-		return nil
-	}, drain)
-	owner.AcknowledgeDelivery()
-	response := tracker.wrapResponseStream(ctx, inner)
-	done := make(chan error, 1)
-	go func() { done <- response.Close() }()
-	select {
-	case <-closed:
-	case <-time.After(5 * time.Second):
-		t.Fatal("delivery gate did not take its timeout close path")
-	}
-	tracker.mu.Lock()
-	require.True(t, tracker.active)
-	tracker.mu.Unlock()
-	select {
-	case err := <-done:
-		t.Fatalf("health finalization ran before converted drain exited: %v", err)
-	default:
-	}
-	state.OutboundStreamTerminal = streamTerminalCompleted
-	close(drain)
-	select {
-	case err := <-done:
-		require.NoError(t, err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("health finalization did not finish after drain exit")
-	}
-	require.Equal(t, biz.HealthGateOutcomeSuccess, tracker.lastOutcome)
-	require.NoError(t, response.Close())
 }
 
 func TestHealthGateStream_DownstreamWriteFailureDoesNotBecomeProviderFailure(t *testing.T) {

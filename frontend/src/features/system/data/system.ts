@@ -1913,7 +1913,6 @@ const CATALOG_SETTINGS_QUERY = `
   query CatalogSettings {
     catalogSettings {
       upstreamURL
-      refreshSeconds
     }
   }
 `;
@@ -1926,12 +1925,10 @@ const UPDATE_CATALOG_SETTINGS_MUTATION = `
 
 export interface CatalogSettings {
   upstreamURL: string;
-  refreshSeconds: number;
 }
 
 export interface UpdateCatalogSettingsInput {
   upstreamURL?: string;
-  refreshSeconds?: number;
 }
 
 export function useCatalogSettings() {

@@ -54,7 +54,8 @@ func newHealthGateSessionFixture(t *testing.T) *healthGateSessionFixture {
 	require.NoError(t, system.SetRetryPolicy(ctx, policy))
 	gate := biz.NewHealthGate(nil)
 	selector := WithTraceStickyLoadBalancedSelector(&staticChannelSelector{candidates: candidates},
-		NewLoadBalancer(system, nil).WithHealthGate(gate), system, requests)
+		NewLoadBalancer(nil, nil).WithHealthGate(gate), policy, requests)
+	selector.healthGatePolicyProvider = system
 	return &healthGateSessionFixture{ctx: ctx, client: client, projectID: project.ID, request: requests, selector: selector, gate: gate, policy: policy, candidates: candidates}
 }
 
@@ -259,7 +260,7 @@ func TestHealthGateSession_LastResortExcludedFromSkippedAndStickyDisabled(t *tes
 	require.Len(t, selected[0].healthGate.decision.record.Skipped, 1)
 	require.NotEqual(t, selected[0].Channel.ID, selected[0].healthGate.decision.record.Skipped[0].ChannelID)
 	f.policy.TraceStickyMode = biz.TraceStickyDisabled
-	require.NoError(t, f.selector.policy.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
+	require.NoError(t, f.selector.healthGatePolicyProvider.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
 	selected = f.selectCandidates(t, ctx)
 	require.Nil(t, selected[0].healthGate.decision.record.Owner)
 	require.False(t, selected[0].healthGate.decision.sticky)
@@ -270,7 +271,7 @@ func TestHealthGateSession_StickyDisabledDoesNotChangeOwner(t *testing.T) {
 	ctx := contexts.WithTrace(f.ctx, &ent.Trace{ID: 10, ThreadID: 20})
 	expected := setHealthGateSessionOwner(f.request, ctx, 20, 10, biz.SessionOwner{ChannelID: 1, ConsecutiveFailovers: 1})
 	f.policy.TraceStickyMode = biz.TraceStickyDisabled
-	require.NoError(t, f.selector.policy.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
+	require.NoError(t, f.selector.healthGatePolicyProvider.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
 	selected := f.selectCandidates(t, ctx)
 	require.Nil(t, selected[0].healthGate.decision.record.Owner)
 	decision := f.complete(t, ctx, selected, 1, true, false)
@@ -377,7 +378,7 @@ func TestHealthGateSession_LateFormerOwnerCannotUndoMigration(t *testing.T) {
 	f.candidates = append(f.candidates, third)
 	f.selector.wrapped.(*staticChannelSelector).candidates = f.candidates
 	f.policy.MaxChannelRetries = 2
-	require.NoError(t, f.selector.policy.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
+	require.NoError(t, f.selector.healthGatePolicyProvider.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
 	setHealthGateSessionOwner(f.request, ctx, 20, 10, biz.SessionOwner{ChannelID: 1, ConsecutiveFailovers: 1})
 	fast := f.selectCandidates(t, ctx)
 	slow := f.selectCandidates(t, ctx)
@@ -479,7 +480,7 @@ func TestHealthGateSession_LegacyDoesNotSeed(t *testing.T) {
 				row, err := f.client.Request.Create().SetProjectID(f.projectID).SetTraceID(trace.ID).
 					SetSource("api").SetStatus("completed").SetModelID("alias").SetRequestBody([]byte(`{"model":"alias"}`)).Save(ctx)
 				require.NoError(t, err)
-				require.NoError(t, f.request.UpdateRequestChannelID(ctx, row.ID, 2))
+				f.request.AssignRequestChannel(ctx, row, 2)
 				id := trace.ID
 				if scope == "thread" {
 					id = trace.ThreadID
@@ -782,7 +783,7 @@ func TestHealthGateSession_LateFreshCompletionCannotReplaceEstablishedOwner(t *t
 	f := newHealthGateSessionFixture(t)
 	ctx := contexts.WithTrace(f.ctx, &ent.Trace{ID: 10, ThreadID: 20})
 	f.policy.HealthGate.OwnerFailoverThreshold = 1
-	require.NoError(t, f.selector.policy.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
+	require.NoError(t, f.selector.healthGatePolicyProvider.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
 	selected := f.selectCandidates(t, ctx)
 	require.False(t, selected[0].healthGate.decision.found)
 	require.Equal(t, 1, selected[0].Channel.ID)
@@ -847,7 +848,7 @@ func TestHealthGateSession_LateFormerOwnerRetryCannotMigrateFreshOwner(t *testin
 	f.selector.wrapped.(*staticChannelSelector).candidates = f.candidates
 	f.policy.MaxChannelRetries = 2
 	f.policy.HealthGate.OwnerFailoverThreshold = 1
-	require.NoError(t, f.selector.policy.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
+	require.NoError(t, f.selector.healthGatePolicyProvider.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
 	expired := setHealthGateSessionOwner(f.request, ctx, 20, 10, biz.SessionOwner{
 		ChannelID: 10, ExpiresAt: time.Now().Add(time.Minute),
 	})
@@ -884,7 +885,7 @@ func TestHealthGateSession_LateFallbackCannotAlterReestablishedSameChannel(t *te
 	f := newHealthGateSessionFixture(t)
 	ctx := contexts.WithTrace(f.ctx, &ent.Trace{ID: 10, ThreadID: 20})
 	f.policy.HealthGate.OwnerFailoverThreshold = 1
-	require.NoError(t, f.selector.policy.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
+	require.NoError(t, f.selector.healthGatePolicyProvider.(*biz.SystemService).SetRetryPolicy(ctx, f.policy))
 	f.complete(t, ctx, f.selectCandidates(t, ctx), 0, true, false)
 	selected := f.selectCandidates(t, ctx)
 	slow := f.begin(t, ctx, selected, 1, nil)

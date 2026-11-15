@@ -47,7 +47,7 @@ func (s *LoadBalancedSelector) selectHealthGated(
 	decision.candidates = candidates
 	decision.channelSvc = channelService
 	decision.requestSvc, _ = s.previousChannelProvider.(*biz.RequestService)
-	decision.policy = s.policy
+	decision.policy = s.healthGatePolicyProvider
 	decision.fallback = policy.HealthGateOrDefault()
 	if decision.found {
 		decision.record.Owner = &objects.RoutingDecisionCombo{
@@ -67,7 +67,7 @@ func (s *LoadBalancedSelector) selectHealthGated(
 			ownerSeen = true
 			decision.record.Owner.ChannelName = candidate.Channel.Name
 		}
-		cfg := currentHealthGateConfig(ctx, s.policy, channelService, candidate.Channel, policy.HealthGateOrDefault())
+		cfg := currentHealthGateConfig(ctx, s.healthGatePolicyProvider, channelService, candidate.Channel, policy.HealthGateOrDefault())
 		indices := make([]int, 0, len(candidate.Models))
 		for index, entry := range candidate.Models {
 			view, err := lb.healthGate.Inspect(ctx, biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: entry.ActualModel}, cfg)
@@ -120,12 +120,12 @@ func (s *LoadBalancedSelector) selectHealthGated(
 	if decision.sticky && decision.found && ownerAllowed {
 		if sticky, remaining := extractStickyCandidate(filtered, decision.owner.ChannelID); sticky != nil {
 			sticky.TraceSticky = true
-			fallbacks := s.sortCandidates(ctx, lb, remaining, req, max(requiredCount-1, 0), false)
+			fallbacks := s.sortCandidates(ctx, lb, remaining, req, max(requiredCount-1, 0), requiredCount, false)
 			lb.TrackSelection(sticky)
 			return append([]*ChannelModelsCandidate{sticky}, fallbacks...), nil
 		}
 	}
-	return s.sortCandidates(ctx, lb, filtered, req, requiredCount, true), nil
+	return s.sortCandidates(ctx, lb, filtered, req, requiredCount, requiredCount, true), nil
 }
 
 func healthGateLastResortBefore(a, b biz.HealthGateView) bool {
@@ -155,8 +155,8 @@ func cloneHealthGateCandidate(ctx context.Context, req *llm.Request, source *Cha
 	if len(clone.modelAPIFormats) != 0 {
 		clone.APIFormat = clone.modelAPIFormats[0]
 	} else if indices[0] != 0 {
-		endpoints := applyForcedAPIFormats(ctx, clone.Channel, clone.Models[:1], req.Model, clone.Channel.ResolveEndpoints())
-		clone.APIFormat = SelectAPIFormat(endpoints, req)
+		endpoints, forced := applyForcedAPIFormats(ctx, clone.Channel, clone.Models[:1], req.Model, clone.Channel.ResolveEndpoints())
+		clone.APIFormat = selectEndpointAPIFormat(endpoints, req, forced)
 	}
 	clone.healthGate = info
 	return &clone

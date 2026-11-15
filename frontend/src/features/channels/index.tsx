@@ -23,7 +23,6 @@ import {
 } from './data/channels';
 import { CHANNEL_TYPE_TO_PROVIDER } from './data/config_channels';
 import { groupChannelTypesByProvider, IMAGE_PRIMARY_API_FORMAT } from './utils/group-channel-types';
-import { useProvidersData } from '@/features/models/data/providers';
 import { useQuotaRoutingSettings } from '@/features/system/data/system';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
@@ -32,7 +31,6 @@ const ChannelsDialogs = lazy(() => import('./components/channels-dialogs').then(
 
 function ChannelsContent() {
   const { t } = useTranslation();
-  useProvidersData();
   const { channelPermissions, hasSystemScope } = usePermissions();
   const { data: quotaRoutingSettings } = useQuotaRoutingSettings();
   const queryClient = useQueryClient();

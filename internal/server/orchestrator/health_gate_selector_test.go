@@ -46,7 +46,8 @@ func healthGateSelectorFixture(now *time.Time, candidates []*ChannelModelsCandid
 	if previous != nil {
 		previous = healthGateLegacySessionProvider{previous}
 	}
-	selector := WithTraceStickyLoadBalancedSelector(&staticChannelSelector{candidates: candidates}, NewLoadBalancer(provider, nil).WithHealthGate(gate), provider, previous)
+	selector := WithTraceStickyLoadBalancedSelector(&staticChannelSelector{candidates: candidates}, NewLoadBalancer(nil, nil).WithHealthGate(gate), policy, previous)
+	selector.healthGatePolicyProvider = provider
 	return selector, gate, policy
 }
 
@@ -328,14 +329,15 @@ func TestHealthGateSelector_UsesCurrentChannelThreshold(t *testing.T) {
 	updatedChannel := *candidate.Channel.Channel
 	updatedChannel.Settings = &objects.ChannelSettings{HealthGateFailureThreshold: &disabled}
 	service.SetEnabledChannelsForTest([]*biz.Channel{{Channel: &updatedChannel}})
-	selector := WithTraceStickyLoadBalancedSelector(&staticChannelSelector{candidates: []*ChannelModelsCandidate{candidate}}, NewLoadBalancer(provider, service).WithHealthGate(gate), provider, nil)
+	selector := WithTraceStickyLoadBalancedSelector(&staticChannelSelector{candidates: []*ChannelModelsCandidate{candidate}}, NewLoadBalancer(service, service).WithHealthGate(gate), policy, nil)
+	selector.healthGatePolicyProvider = provider
 	ctx := context.Background()
 	result, err := selector.Select(ctx, &llm.Request{Model: "alias"})
 	require.NoError(t, err)
 	require.False(t, result[0].healthGate.lastResort)
 	state := &PersistenceState{
 		RoutingPolicy:    EffectiveRoutingPolicy{LoadBalancerStrategy: biz.LoadBalancerStrategyHealthGated},
-		CurrentCandidate: result[0], ChannelService: service, RetryPolicyProvider: provider,
+		CurrentCandidate: result[0], ChannelService: service, HealthGatePolicyProvider: provider,
 	}
 	tracker := withHealthGate(&PersistentOutboundTransformer{state: state}, gate, policy.HealthGateOrDefault())
 	_, err = tracker.OnOutboundRawRequest(ctx, &httpclient.Request{})
