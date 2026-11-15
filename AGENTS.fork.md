@@ -14,7 +14,7 @@
 - 本仓库是 [上游 AxonHub](https://github.com/looplj/axonhub) 的自维护 fork。
 - 本 fork 相对上游的改动按模块和功能记录在 [docs/index.md](docs/index.md)。
 - 新增或实质修改 fork 改动、同步上游 release 前，MUST 先加载
-  [.agent/rules/fork-maintenance.md](.agent/rules/fork-maintenance.md)。
+  [.agents/rules/fork-maintenance.md](.agents/rules/fork-maintenance.md)。
 - 上游 release tag 是定期同步的基线。合并或 cherry-pick 上游 release 前，MUST 同时检查
   上游的 schema、data migration 和 fork 改动。
 - 本 fork 的专有行为和迁移 SHOULD 与上游历史保持可区分。
@@ -22,7 +22,7 @@
 
 ## 文档
 
-- `.agent/rules/docs.md` 要求的中英文同步在本 fork 不适用：fork 不发布文档。
+- `.agents/rules/docs.md` 要求的中英文同步在本 fork 不适用：fork 不发布文档。
 - 本仓库不使用 OpenSpec：doc-writing 归入 spec 的行为契约 MUST 写在所属功能的文档
   （`docs/<模块>/feats/`）中，并保留已有的 D、R 编号。
 

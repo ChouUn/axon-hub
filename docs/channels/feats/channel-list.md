@@ -88,13 +88,14 @@
   - `e18cc308`（补回列表字段与编辑同步）
   - `eaef7c06`（合入上游 `v1.0.0-beta11` 时重接渠道测试）
   - `574f09ec`（合入上游 `v1.0.0-beta12` 时重接渠道测试）
+  - `377be5b4`（合入上游 `v1.0.0-rc2` 时把 API 格式回显接入 `resetDialogState`）
 - 实现约束：
   - 选中图像格式后切换供应商时，类型须由 `getBaseChannelTypeForProvider` 推导。
     `getChannelTypeForApiFormat` 对图像格式恒为 undefined，否则表单 `type` 与 baseURL 停在上一家。
   - `excludePrimaryApiFormat` 谓词必须兼容 `settings` 中不存在该键的旧行，否则普通渠道会被一起滤掉。
   - `countChannelsByType` 按 `(type, 是否生图)` 在内存中计数并返回 `primaryApiFormat`，供分组函数拆组。
   - `CHANNEL_QUERY_LIST_NODE_BASE_SELECTION` 包含 `settings { primaryApiFormat }`，供列表徽章与分组读取。
-  - 编辑初始化、`initialRow` 同步与打开时重置统一使用 `getInitialApiFormatForRow`。
+  - 编辑初始化、`initialRow` 同步与 `resetDialogState` 统一使用 `getInitialApiFormatForRow`。
 - 与上游 `v1.0.0-beta10` 的接合：
   - `getApiFormatsForProvider` 上游已委托给 `protocol-options.ts`。fork 只在 `config_providers.ts`
     的包装层追加生图格式，不改上游文件。
@@ -108,6 +109,8 @@
   - 上游扩展了 `channelTestAPIFormat` 的选择顺序（`48984732`，PR #2685；`0d82a8e4`，PR #2674）：
     模型协议指定了端点的模型按该端点测试，其后依次是 Decisions、对话、SystemOne。
   - 生图标记的判断仍排在最前，带标记的渠道不进入上游的选择顺序。
+- 与上游 `v1.0.0-rc2` 的接合：
+  - 上游把编辑对话框关闭时的重置抽成 `resetDialogState`（`19a0984f`，PR #2859），转去「设置模型别名」前也调用它。
 - 代码：
   - `internal/objects/channel.go`
   - `internal/server/gql/axonhub.graphql`
@@ -214,3 +217,6 @@
   - 上游改动渠道行菜单或 `channels-dialogs.tsx` 的关闭处理时，保留这两处。
   - 上游 `v1.0.0-rc1` 升级依赖后，`@radix-ui/react-dismissable-layer` 只剩 1.2.1 一个版本，锁冲突的前提不再成立。
     `modal={false}` 继续保留作防御。要去掉的话，先按同步记录发现 7 的步骤在浏览器复测。
+  - 上游 `v1.0.0-rc2`（`19a0984f`，PR #2859）在 `channels-dialogs.tsx` 加了等效的延时清理：没有打开的弹窗而仍有当前行时 500ms 后清空，
+    重新打开时取消。合入时保留 fork 的 `scheduleCurrentRowClear`，两者并存，
+    见[上游 v1.0.0-rc2 同步记录](../../reports/upstream-sync-v1.0.0-rc2.md)的第 21 项。

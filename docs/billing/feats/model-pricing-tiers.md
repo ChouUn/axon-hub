@@ -75,6 +75,7 @@
   - `frontend/src/features/models/components/models-price-editor.tsx`
   - `frontend/src/features/models/data/pricing.ts`
   - `frontend/src/components/model-price-editor.tsx`
+  - `frontend/src/components/price-schedule-editor.tsx`
   - `frontend/src/features/models/components/models-batch-create-dialog.tsx`
   - `internal/objects/model.go`
   - `internal/objects/price.go`

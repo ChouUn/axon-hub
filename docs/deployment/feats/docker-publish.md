@@ -37,7 +37,7 @@
 - 仓库前提：
   - fork 仓库启用 workflow。
   - 配置 repository secrets `DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN`。
-  - `release.yml`（goreleaser）在 Actions 页面单独禁用。
+  - `release.yml`（goreleaser）在 Actions 页面单独禁用。上游 `v1.0.0-rc2` 起它还调用 `desktop-release.yml` 打包桌面应用，禁用后一并不运行。
 
 ## 边界
 
