@@ -87,7 +87,7 @@ function DateRangePicker({
           </Button>
         </PopoverTrigger>
         <PopoverContent className='w-auto p-0' align='start'>
-          <Calendar mode='single' selected={startDate ? parseDate(startDate) : undefined} onSelect={handleStartDateSelect} initialFocus />
+          <Calendar mode='single' selected={startDate ? parseDate(startDate) : undefined} onSelect={handleStartDateSelect} autoFocus />
         </PopoverContent>
       </Popover>
 
@@ -109,7 +109,7 @@ function DateRangePicker({
             selected={endDate ? parseDate(endDate) : undefined}
             onSelect={handleEndDateSelect}
             disabled={{ after: new Date() }}
-            initialFocus
+            autoFocus
           />
         </PopoverContent>
       </Popover>
