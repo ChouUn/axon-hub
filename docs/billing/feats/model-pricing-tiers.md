@@ -71,6 +71,7 @@
   - `93e5878e`：权威模型定价与全量阶梯。
   - `2eca7c59`：渠道完整价格引用、倍率衔接与阶梯填充交互。
   - `bf37dae1`：Anthropic 官方目录一小时写缓存价。
+  - `6b164ba7`：统一全量阶梯的中文说明与校验提示随上游 `v1.0.0-rc.3` 改用「词元」。
 - 代码：
   - `frontend/src/features/models/components/models-price-editor.tsx`
   - `frontend/src/features/models/data/pricing.ts`

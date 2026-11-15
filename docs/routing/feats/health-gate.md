@@ -104,8 +104,15 @@ stateDiagram-v2
     同一渠道内只移除额度耗尽的模型，全部模型都被移除时移除该渠道。
   - 额度告警不影响排序。
   - 「背压」模式下，用量偏高但未耗尽的渠道先只对已在该渠道上的会话保留。
-    这样过滤后没有任何候选时，配额路由放回这些渠道，新会话也可使用，再进入门控判定。
-  - 「已在该渠道上」以会话归属（会话归属与决策记录 R1）为准，不读其他策略使用的粘性缓存。
+    「已在该渠道上」以会话归属（会话归属与决策记录 R1）为准，不读其他策略使用的粘性缓存。
+    - 还有余量充足的候选时，配额路由把这些渠道留作兜底，不供新会话首选
+      （上游 `8529df6a`，PR #2974，随上游 `v1.0.0-rc.3` 发布）：
+      - 兜底渠道与首选渠道做同样的门控判定。熔断的组合记入跳过项，也可被选为最后一试。
+      - 健康的兜底渠道排在全部健康首选之后，按优先级每个渠道取一个，最多取渠道重试次数（`MaxChannelRetries`）个。
+        关闭重试时不追加。
+      - 没有健康首选时，健康的兜底渠道成为候选，最多 1 + `MaxChannelRetries` 个。首个即首次尝试，不算最后一试。
+      - 首选与兜底都没有健康候选时，才按 R5 进入最后一试。
+    - 没有余量充足的候选时，配额路由放回这些渠道，新会话也可使用，再进入门控判定。
   - 过滤后没有候选时返回额度耗尽错误，不进入最后一试。
 
 ### 会话归属与决策记录
@@ -179,7 +186,10 @@ stateDiagram-v2
 - 失败口径（R6，参考 CCH `src/app/v1/_lib/proxy/errors.ts:992-1064` 并按 AxonHub 适配）：
   - 计数失败：
     - 渠道上游返回 5xx。
-    - 网络错误。
+    - 网络错误：错误链中有 `net.Error`（含 `http.Client.Do` 返回的 `*url.Error`），
+      或上游的 `IsUpstreamTransportError`（`internal/server/orchestrator/upstream_transport_error.go`）判定为传输错误。
+      后者自上游 `d8455a8d`（PR #2910，随上游 `v1.0.0-rc.3` 发布）起含 HTTP/2 的流重置（`INTERNAL_ERROR`、`REFUSED_STREAM`）与 GOAWAY，
+      读取响应体时遇到的这类错误不带 `net.Error`，由它识别。
     - 超时，含 408 与首事件、非流式响应超时。
     - 首个 token 前的流中断。
     - 空响应检测命中。
@@ -332,6 +342,7 @@ stateDiagram-v2
   - `c0ce0483`（合入上游 `v1.0.0-rc1`：配置改经专用字段按当前设置解析，接入上游新的负载均衡签名）
   - `c0fb9cba`（删除透传关闭时的等待，以及只在等待存在时启用的原始事件补终态）
   - `9a2036ad`（健康详情与异常筛选读取渠道当前配置改用 `authz.RunAsHost`，插件 GraphQL 入口可用）
+  - `9092b950`（接入上游 `v1.0.0-rc.3` 配额路由的兜底渠道）
 - 代码，新文件（新策略与健康状态不改上游熔断实现）：
   - `internal/server/biz/health_gate.go`：状态机。
   - `internal/server/biz/system_health_gate.go`：配置。
@@ -371,7 +382,7 @@ stateDiagram-v2
 - 测试：
   - `internal/server/biz/health_gate_test.go`：状态机、翻倍与清零、代次失效、阈值 0 切换、归一化。
   - `internal/server/orchestrator/health_gate_outcome_test.go`：失败口径边界。
-  - `health_gate_selector_test.go`：门控、粘性跳过、试探资格、最后一试选择。
+  - `health_gate_selector_test.go`：门控、粘性跳过、试探资格、最后一试选择，额度兜底渠道的追加、熔断跳过与首次尝试。
   - `health_gate_orchestrator_test.go`：端到端熔断、503 与透传、流式首 token 后断流。
   - `internal/server/gql/channel_health_gate_test.go`：状态映射与计数。
   - `health_gate_context_test.go`：取消、配置代次与探测释放、请求 context 已取消时的上游中断与失败终态、

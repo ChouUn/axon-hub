@@ -156,7 +156,7 @@ D 编号是确定形态的决策，R 编号是行为规则。
 
 ## 实现与维护
 
-- 提交：`58f73057`、`1c5509ae`。
+- 提交：`58f73057`、`1c5509ae`、`6b164ba7`（汇总与趋势的中文文案随上游 `v1.0.0-rc.3` 改用「词元」）。
 - 代码，新文件：
   - `internal/server/middleware/self_service_auth.go`：严格 Bearer、仅 user/personal、无 noauth 回退、
     IP 白名单。

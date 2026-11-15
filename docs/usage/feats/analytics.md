@@ -68,6 +68,7 @@ fork 在仪表盘上新增的两张分析表：「API 密钥费用分析」按�
   - `396d30d0`（`fix(analytics): 适配 react-day-picker v10 的初始焦点`）：两张分析页共用的日期筛选组件改用 `autoFocus`。
   - `9a2036ad`（`fix(authz): fork 的宿主固定读取改用 RunAsHost`）：模型详情分析的渠道标签与项目 profile 改用 `authz.RunAsHost`
     固定读取，`analyticsModelStats` 先校验 `read_dashboard`，插件 GraphQL 入口可用。
+  - `6b164ba7`（`fix(i18n): fork 的中文文案改用「词元」`）：两张表的中文列名与说明随上游 `v1.0.0-rc.3` 改用「词元」。
 - 代码：
   - `frontend/src/features/analytics/`
     - `utils/date-range.ts`：自然日范围与到时间戳的换算，fork 的文件。
