@@ -37,7 +37,7 @@ func (s *LoadBalancedSelector) selectHealthGated(
 		stickyID = decision.owner.ChannelID
 	}
 	if s.quotaGate != nil {
-		candidates = s.quotaGate.Filter(ctx, candidates, req, stickyID)
+		candidates, _ = s.quotaGate.Filter(ctx, candidates, req, stickyID)
 	}
 	var channelService *biz.ChannelService
 	if service, ok := lb.selectionTracker.(*biz.ChannelService); ok {
