@@ -6,6 +6,13 @@
 > Visibility: public — 他人可读，避免写入本机环境
 > Maintain: frozen 2026-11-15 — 已定稿；内容与定稿日期不改，内容变化只追加 Outdated / Superseded 段，元数据可维护，定位用的路径与链接可随文件移动更新到原对象与版本的新位置
 
+## Outdated
+
+2026-11-15：「验证」中类型检查一条把 6 条与上游消息不同的已有错误都归因于 fork 的字段，实际只有 4 条如此。6 条都对应上游同一位置的已有错误，该条其余结论不变。
+
+- `quota-badges.tsx`、`channels-action-dialog.tsx`（2 条）、`models-batch-create-dialog.tsx` 的 4 条：fork 的字段或枚举使消息里展开的类型不同。
+- `apikeys-profiles-dialog.tsx` 的 2 条 TS2719：两棵树的依赖安装路径不同，类型摘要的截断位置随之不同。
+
 ## 结论
 
 - 上游 `v1.0.0-beta12` → `v1.0.0-rc1` 的 81 个提交以 merge 合入，merge 提交为 `c0ce0483`。
