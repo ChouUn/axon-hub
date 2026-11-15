@@ -133,6 +133,111 @@ func TestHealthGateSelector_AllQuotaExhaustedReturnsEmpty(t *testing.T) {
 	require.Equal(t, 1, selector.quotaGate.DroppedCount())
 }
 
+func TestHealthGateSelector_QuotaBackpressureFallbacks(t *testing.T) {
+	tests := []struct {
+		name           string
+		retriesEnabled bool
+		tripOrder      []int
+		wantIDs        []int
+		wantSkipped    []int
+		wantLastResort bool
+	}{
+		{name: "healthy_preferred_then_reserved", retriesEnabled: true, wantIDs: []int{1, 2}},
+		{name: "tripped_reserved_is_skipped", retriesEnabled: true, tripOrder: []int{2}, wantIDs: []int{1}, wantSkipped: []int{2}},
+		{name: "healthy_reserved_is_initial_attempt", retriesEnabled: true, tripOrder: []int{1}, wantIDs: []int{2}, wantSkipped: []int{1}},
+		{name: "disabled_retries_exclude_reserved_fallback", wantIDs: []int{1}},
+		{name: "disabled_retries_allow_reserved_initial_attempt", tripOrder: []int{1}, wantIDs: []int{2}, wantSkipped: []int{1}},
+		{name: "earliest_last_trial_is_reserved", retriesEnabled: true, tripOrder: []int{2, 1}, wantIDs: []int{2}, wantSkipped: []int{1}, wantLastResort: true},
+		{name: "earliest_last_trial_is_preferred", retriesEnabled: true, tripOrder: []int{1, 2}, wantIDs: []int{1}, wantSkipped: []int{2}, wantLastResort: true},
+	}
+	for _, mode := range []biz.TraceStickyMode{biz.TraceStickyDisabled, biz.TraceStickyPreferPreviousChannel} {
+		for _, tt := range tests {
+			t.Run(fmt.Sprintf("%s/%s", mode, tt.name), func(t *testing.T) {
+				now := time.Unix(1000, 0)
+				open := healthGateSelectorCandidate(1, 1, "open")
+				pressured := healthGateSelectorCandidate(2, 0, "pressured")
+				open.Channel.Name, pressured.Channel.Name = "open-channel", "pressured-channel"
+				byID := map[int]*ChannelModelsCandidate{1: open, 2: pressured}
+				previous := &fakePreviousChannelProvider{traceChannelIDs: map[int]int{10: open.Channel.ID}}
+				selector, gate, policy := healthGateSelectorFixture(&now,
+					[]*ChannelModelsCandidate{pressured, open}, mode, previous)
+				policy.Enabled, policy.MaxChannelRetries = tt.retriesEnabled, 1
+				tracker := &mockSelectionTracker{}
+				selector.loadBalancer.selectionTracker = tracker
+				selector.quotaGate = NewQuotaRoutingGate(&mockQuotaStatusProvider{statuses: map[int]*biz.QuotaChannelStatus{
+					open.Channel.ID:      quotaRoutingStatus(providerquotastatus.StatusAvailable),
+					pressured.Channel.ID: quotaStickyOnlyStatus(),
+				}}, biz.QuotaRoutingSettings{DefaultMode: objects.QuotaRoutingModeBackpressure})
+				tripped := make(map[int]bool)
+				for _, id := range tt.tripOrder {
+					candidate := byID[id]
+					openHealthGateModel(t, gate, policy, candidate, candidate.Models[0].ActualModel)
+					tripped[id] = true
+					now = now.Add(time.Second)
+				}
+				if tt.wantIDs[0] == pressured.Channel.ID {
+					pressured.TraceSticky = true
+				}
+				ctx := contexts.WithTrace(context.Background(), &ent.Trace{ID: 10})
+
+				result, err := selector.Select(ctx, &llm.Request{Model: "alias"})
+				require.NoError(t, err)
+				require.Equal(t, tt.wantIDs, quotaRoutingIDs(result))
+				require.Equal(t, mode == biz.TraceStickyPreferPreviousChannel && tt.wantIDs[0] == open.Channel.ID && !tt.wantLastResort, result[0].TraceSticky)
+				decision := result[0].healthGate.decision
+				require.Equal(t, tt.wantLastResort, decision.record.LastResort)
+				require.Equal(t, []*ChannelModelsCandidate{open, pressured}, decision.candidates)
+				require.Equal(t, "pressured-channel", healthGateOwnerName(ctx, pressured.Channel.ID, decision.candidates, nil, nil))
+				require.Equal(t, tripped[pressured.Channel.ID], decision.ownerGatedAtCompletion(ctx, gate, pressured.Channel.ID))
+				var skippedIDs []int
+				for _, skipped := range decision.record.Skipped {
+					skippedIDs = append(skippedIDs, skipped.ChannelID)
+					require.Equal(t, string(biz.HealthGateStateOpen), skipped.State)
+				}
+				require.Equal(t, tt.wantSkipped, skippedIDs)
+				for _, candidate := range result {
+					require.NotSame(t, byID[candidate.Channel.ID], candidate)
+					require.Same(t, decision, candidate.healthGate.decision)
+					require.Equal(t, tt.wantLastResort, candidate.healthGate.lastResort)
+				}
+				for id := range byID {
+					wantSelections := 0
+					if !tt.wantLastResort && id == tt.wantIDs[0] {
+						wantSelections = 1
+					}
+					require.Equal(t, wantSelections, tracker.selections[id])
+				}
+				if mode == biz.TraceStickyPreferPreviousChannel {
+					require.Equal(t, open.Channel.ID, decision.record.Owner.ChannelID)
+					require.Equal(t, open.Channel.Name, decision.record.Owner.ChannelName)
+					require.Equal(t, tripped[open.Channel.ID], decision.ownerOpen)
+				}
+			})
+		}
+	}
+}
+
+func TestHealthGateSelector_StickyQuotaFallbackFollowsAllPreferred(t *testing.T) {
+	now := time.Unix(1000, 0)
+	owner := healthGateSelectorCandidate(1, 2, "owner")
+	pressured := healthGateSelectorCandidate(2, 0, "pressured")
+	other := healthGateSelectorCandidate(3, 1, "other")
+	previous := &fakePreviousChannelProvider{traceChannelIDs: map[int]int{10: owner.Channel.ID}}
+	selector, _, _ := healthGateSelectorFixture(&now,
+		[]*ChannelModelsCandidate{pressured, other, owner}, biz.TraceStickyPreferPreviousChannel, previous)
+	selector.quotaGate = NewQuotaRoutingGate(&mockQuotaStatusProvider{statuses: map[int]*biz.QuotaChannelStatus{
+		owner.Channel.ID:     quotaRoutingStatus(providerquotastatus.StatusAvailable),
+		pressured.Channel.ID: quotaStickyOnlyStatus(),
+		other.Channel.ID:     quotaRoutingStatus(providerquotastatus.StatusAvailable),
+	}}, biz.QuotaRoutingSettings{DefaultMode: objects.QuotaRoutingModeBackpressure})
+	ctx := contexts.WithTrace(context.Background(), &ent.Trace{ID: 10})
+
+	result, err := selector.Select(ctx, &llm.Request{Model: "alias"})
+	require.NoError(t, err)
+	require.Equal(t, []int{owner.Channel.ID, other.Channel.ID, pressured.Channel.ID}, quotaRoutingIDs(result))
+	require.True(t, result[0].TraceSticky)
+}
+
 func TestHealthGateSelector_StickyGateLeavesCacheUnchanged(t *testing.T) {
 	now := time.Unix(1000, 0)
 	first := healthGateSelectorCandidate(1, 0, "broken")

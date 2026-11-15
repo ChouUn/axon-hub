@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"slices"
 
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/server/biz"
@@ -20,6 +21,8 @@ type gatedModel struct {
 	view      biz.HealthGateView
 }
 
+// selectHealthGated applies the same health checks to preferred and quota-reserved
+// candidates, then appends healthy reserved candidates last to preserve backpressure.
 func (s *LoadBalancedSelector) selectHealthGated(
 	ctx context.Context,
 	req *llm.Request,
@@ -36,15 +39,16 @@ func (s *LoadBalancedSelector) selectHealthGated(
 	if decision.sticky && decision.found {
 		stickyID = decision.owner.ChannelID
 	}
+	var reserved []*ChannelModelsCandidate
 	if s.quotaGate != nil {
-		candidates, _ = s.quotaGate.Filter(ctx, candidates, req, stickyID)
+		candidates, reserved = s.quotaGate.Filter(ctx, candidates, req, stickyID)
 	}
 	var channelService *biz.ChannelService
 	if service, ok := lb.selectionTracker.(*biz.ChannelService); ok {
 		channelService = service
 	}
 	decision.probeEligible = probeEligible
-	decision.candidates = candidates
+	decision.candidates = slices.Concat(candidates, reserved)
 	decision.channelSvc = channelService
 	decision.requestSvc, _ = s.previousChannelProvider.(*biz.RequestService)
 	decision.policy = s.healthGatePolicyProvider
@@ -52,54 +56,77 @@ func (s *LoadBalancedSelector) selectHealthGated(
 	if decision.found {
 		decision.record.Owner = &objects.RoutingDecisionCombo{
 			ChannelID:   decision.owner.ChannelID,
-			ChannelName: healthGateOwnerName(ctx, decision.owner.ChannelID, candidates, channelService, decision.requestSvc),
+			ChannelName: healthGateOwnerName(ctx, decision.owner.ChannelID, decision.candidates, channelService, decision.requestSvc),
 		}
 	}
-	filtered := make([]*ChannelModelsCandidate, 0, len(candidates))
 	var lastResort *gatedModel
 	ownerSeen, ownerAllowed := false, false
-	for _, candidate := range candidates {
-		if candidate == nil || candidate.Channel == nil {
-			continue
-		}
-		ownerCandidate := decision.found && candidate.Channel.ID == decision.owner.ChannelID
-		if ownerCandidate {
-			ownerSeen = true
-			decision.record.Owner.ChannelName = candidate.Channel.Name
-		}
-		cfg := currentHealthGateConfig(ctx, s.healthGatePolicyProvider, channelService, candidate.Channel, policy.HealthGateOrDefault())
-		indices := make([]int, 0, len(candidate.Models))
-		for index, entry := range candidate.Models {
-			view, err := lb.healthGate.Inspect(ctx, biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: entry.ActualModel}, cfg)
-			if err != nil {
-				return nil, err
-			}
-			combo := healthGateCombo(candidate, entry.ActualModel, view.State)
-			if ownerCandidate && decision.record.Owner.ActualModel == "" {
-				decision.record.Owner.ActualModel = combo.ActualModel
-				decision.record.Owner.State = combo.State
-			}
-			if view.State == biz.HealthGateStateHealthy || view.State == biz.HealthGateStateUnstable ||
-				(view.State == biz.HealthGateStateProbing && probeEligible && !view.ProbeBusy) {
-				indices = append(indices, index)
-				if ownerCandidate {
-					ownerAllowed = true
-				}
+	inspect := func(candidates []*ChannelModelsCandidate) ([]*ChannelModelsCandidate, error) {
+		healthy := make([]*ChannelModelsCandidate, 0, len(candidates))
+		for _, candidate := range candidates {
+			if candidate == nil || candidate.Channel == nil {
 				continue
 			}
-			decision.record.Skipped = append(decision.record.Skipped, combo)
-			if lastResort == nil || healthGateLastResortBefore(view, lastResort.view) {
-				lastResort = &gatedModel{candidate: candidate, index: index, view: view}
+			ownerCandidate := decision.found && candidate.Channel.ID == decision.owner.ChannelID
+			if ownerCandidate {
+				ownerSeen = true
+				decision.record.Owner.ChannelName = candidate.Channel.Name
+			}
+			cfg := currentHealthGateConfig(ctx, s.healthGatePolicyProvider, channelService, candidate.Channel, policy.HealthGateOrDefault())
+			indices := make([]int, 0, len(candidate.Models))
+			for index, entry := range candidate.Models {
+				view, err := lb.healthGate.Inspect(ctx, biz.HealthGateKey{ChannelID: candidate.Channel.ID, ActualModel: entry.ActualModel}, cfg)
+				if err != nil {
+					return nil, err
+				}
+				combo := healthGateCombo(candidate, entry.ActualModel, view.State)
+				if ownerCandidate && decision.record.Owner.ActualModel == "" {
+					decision.record.Owner.ActualModel = combo.ActualModel
+					decision.record.Owner.State = combo.State
+				}
+				if view.State == biz.HealthGateStateHealthy || view.State == biz.HealthGateStateUnstable ||
+					(view.State == biz.HealthGateStateProbing && probeEligible && !view.ProbeBusy) {
+					indices = append(indices, index)
+					if ownerCandidate {
+						ownerAllowed = true
+					}
+					continue
+				}
+				decision.record.Skipped = append(decision.record.Skipped, combo)
+				if lastResort == nil || healthGateLastResortBefore(view, lastResort.view) {
+					lastResort = &gatedModel{candidate: candidate, index: index, view: view}
+				}
+			}
+			if len(indices) != 0 {
+				healthy = append(healthy, cloneHealthGateCandidate(ctx, req, candidate, indices, &healthGateCandidateInfo{probeEligible: probeEligible, decision: decision}))
 			}
 		}
-		if len(indices) != 0 {
-			filtered = append(filtered, cloneHealthGateCandidate(ctx, req, candidate, indices, &healthGateCandidateInfo{probeEligible: probeEligible, decision: decision}))
-		}
+		return healthy, nil
+	}
+	preferred, err := inspect(candidates)
+	if err != nil {
+		return nil, err
+	}
+	fallbackHealthy, err := inspect(reserved)
+	if err != nil {
+		return nil, err
 	}
 	decision.ownerOpen = decision.found && ownerSeen && !ownerAllowed
-	if len(filtered) == 0 {
+	requiredCount := 1
+	if policy.Enabled {
+		requiredCount += policy.MaxChannelRetries
+	}
+	if len(preferred) == 0 {
+		if len(fallbackHealthy) != 0 {
+			result := quotaFallbackCandidates(fallbackHealthy, requiredCount)
+			for _, candidate := range result {
+				candidate.TraceSticky = false
+			}
+			lb.TrackSelection(result[0])
+			return result, nil
+		}
 		if lastResort == nil {
-			return filtered, nil
+			return preferred, nil
 		}
 		selected := healthGateCombo(lastResort.candidate, lastResort.candidate.Models[lastResort.index].ActualModel, lastResort.view.State)
 		for i, skipped := range decision.record.Skipped {
@@ -113,19 +140,20 @@ func (s *LoadBalancedSelector) selectHealthGated(
 		clone.TraceSticky = false
 		return []*ChannelModelsCandidate{clone}, nil
 	}
-	requiredCount := 1
-	if policy.Enabled {
-		requiredCount += policy.MaxChannelRetries
-	}
+	quotaFallback := quotaFallbackCandidates(fallbackHealthy, quotaFallbackLimit(policy))
 	if decision.sticky && decision.found && ownerAllowed {
-		if sticky, remaining := extractStickyCandidate(filtered, decision.owner.ChannelID); sticky != nil {
+		if sticky, remaining := extractStickyCandidate(preferred, decision.owner.ChannelID); sticky != nil {
 			sticky.TraceSticky = true
 			fallbacks := s.sortCandidates(ctx, lb, remaining, req, max(requiredCount-1, 0), requiredCount, false)
 			lb.TrackSelection(sticky)
-			return append([]*ChannelModelsCandidate{sticky}, fallbacks...), nil
+			result := make([]*ChannelModelsCandidate, 0, 1+len(fallbacks)+len(quotaFallback))
+			result = append(result, sticky)
+			result = append(result, fallbacks...)
+			return append(result, quotaFallback...), nil
 		}
 	}
-	return s.sortCandidates(ctx, lb, filtered, req, requiredCount, requiredCount, true), nil
+	result := s.sortCandidates(ctx, lb, preferred, req, requiredCount, requiredCount, true)
+	return append(result, quotaFallback...), nil
 }
 
 func healthGateLastResortBefore(a, b biz.HealthGateView) bool {
