@@ -3,11 +3,11 @@
 import { format } from 'date-fns';
 import { ColumnDef } from '@tanstack/react-table';
 import { IconAlertTriangle, IconArrowsExchange, IconArrowsJoin2, IconCheck, IconClockHour1, IconQuestionMark, IconRoute } from '@tabler/icons-react';
-import { Ban, FileText } from 'lucide-react';
 import { zhCN, enUS } from 'date-fns/locale';
+import { Ban, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { formatUserName } from '@/lib/utils';
+import { cn, formatUserName } from '@/lib/utils';
 import { usePaginationSearch } from '@/hooks/use-pagination-search';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Badge } from '@/components/ui/badge';
@@ -18,8 +18,15 @@ import { RequestIdCell, TokensCell, ReadCacheCell, WriteCacheCell, CostCell, Dur
 import { useGeneralSettings, useSecuritySettings, useUpdateSecuritySettings } from '@/features/system/data/system';
 import { useRequestPermissions } from '../../../hooks/useRequestPermissions';
 import { Request } from '../data/schema';
-import { calculateTokensPerSecond, getTokensPerSecondValue } from '../utils/tokens-per-second';
+import { type MetricColorKey, metricColorTextClass } from '../utils/metric-colors';
+import {
+  calculateTokensPerSecond,
+  calculateTotalTimeTokensPerSecond,
+  getTokensPerSecondValue,
+  getTotalTimeTokensPerSecondValue,
+} from '../utils/tokens-per-second';
 import { getRequestModelAuditTooltip, getUpstreamModelAudit } from '../utils/upstream-model-audit';
+import { useMetricColorSettings } from '../utils/use-metric-colors';
 import { getStatusColor } from './help';
 
 interface UseRequestsColumnsOptions {
@@ -45,6 +52,15 @@ export const MODEL_ID_COLUMN = 'modelID' as const;
 
 export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnDef<Request>[] {
   const { t, i18n } = useTranslation();
+  const metricColors = useMetricColorSettings();
+  // Colour class for a metric value. `base` keeps the caller's own classes
+  // (font weight / mono) while the tier only contributes the tone, so a
+  // switched-off metric or the neutral tier keeps the default look.
+  const metricTone = (key: MetricColorKey, value: number | null | undefined, base?: string) => {
+    const tone = metricColorTextClass(metricColors, key, value);
+
+    return base ? cn(base, tone) : tone;
+  };
   const locale = i18n.language === 'zh' ? zhCN : enUS;
   const permissions = useRequestPermissions();
   const { hasSystemScope } = usePermissions();
@@ -216,7 +232,9 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
                     <IconRoute className='h-3.5 w-3.5' />
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>{t(passThroughApplied ? 'requests.tooltips.passThroughApplied' : 'requests.tooltips.passThroughNotApplied')}</TooltipContent>
+                <TooltipContent>
+                  {t(passThroughApplied ? 'requests.tooltips.passThroughApplied' : 'requests.tooltips.passThroughNotApplied')}
+                </TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -540,7 +558,29 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
       header: ({ column }) => <DataTableColumnHeader column={column} title={t('requests.columns.tokensPerSecond')} />,
       enableSorting: true,
       enableHiding: true,
-      cell: ({ row }) => <span className='font-mono text-xs'>{calculateTokensPerSecond(row.original)}</span>,
+      cell: ({ row }) => {
+        const tps = getTokensPerSecondValue(row.original);
+        // Missing data renders "-" — keep it uncoloured instead of reading as red.
+        // Rates above 500 are measurement artifacts (tiny effective latency from
+        // TTFT subtraction can inflate the rate) — also uncoloured.
+        const tpsColor = tps !== null && tps > 500 ? '' : metricTone('throughput', tps, 'font-mono text-xs');
+        const totalTpsValue = getTotalTimeTokensPerSecondValue(row.original);
+        const totalTps = calculateTotalTimeTokensPerSecond(row.original);
+        // The total rate keeps the muted tone when the metric is off or neutral, and
+        // stays uncoloured above the same 500 tok/s artefact threshold as the
+        // generation-rate line above.
+        const totalTpsColor =
+          totalTpsValue !== null && totalTpsValue > 500
+            ? ''
+            : metricTone('throughputIncludingFirstToken', totalTpsValue) || 'text-muted-foreground';
+
+        return (
+          <div className='font-mono text-xs'>
+            <div className={tpsColor}>{calculateTokensPerSecond(row.original)}</div>
+            {totalTps !== '-' && <div className={totalTpsColor}>{t('requests.columns.tokensPerSecondTotal', { value: totalTps })}</div>}
+          </div>
+        );
+      },
       sortingFn: (rowA, rowB) => (getTokensPerSecondValue(rowA.original) ?? 0) - (getTokensPerSecondValue(rowB.original) ?? 0),
     },
     {
@@ -572,9 +612,7 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
       enableSorting: true,
       enableHiding: true,
       cell: ({ row }) => (
-        <span className='text-xs whitespace-nowrap'>
-          {format(new Date(row.original.createdAt), 'yyyy-MM-dd HH:mm:ss', { locale })}
-        </span>
+        <span className='text-xs whitespace-nowrap'>{format(new Date(row.original.createdAt), 'yyyy-MM-dd HH:mm:ss', { locale })}</span>
       ),
     },
     {

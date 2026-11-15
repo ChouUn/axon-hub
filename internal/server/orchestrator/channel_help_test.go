@@ -30,6 +30,9 @@ func newTestChannelServiceForChannels(client *ent.Client) *biz.ChannelService {
 	systemService := newTestSystemService(client)
 
 	return biz.NewChannelService(biz.ChannelServiceParams{
+		ModelCache: biz.NewModelCacheService(biz.ModelCacheServiceParams{
+			Ent: client,
+		}),
 		Ent:           client,
 		SystemService: systemService,
 	})
@@ -38,6 +41,9 @@ func newTestChannelServiceForChannels(client *ent.Client) *biz.ChannelService {
 // newTestModelService creates a minimal model service for testing.
 func newTestModelService(client *ent.Client) *biz.ModelService {
 	return biz.NewModelService(biz.ModelServiceParams{
+		ModelCache: biz.NewModelCacheService(biz.ModelCacheServiceParams{
+			Ent: client,
+		}),
 		Ent: client,
 	})
 }

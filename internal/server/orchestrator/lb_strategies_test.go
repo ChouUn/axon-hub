@@ -85,6 +85,9 @@ func newTestChannelService(client *ent.Client) *biz.ChannelService {
 	})
 
 	return biz.NewChannelService(biz.ChannelServiceParams{
+		ModelCache: biz.NewModelCacheService(biz.ModelCacheServiceParams{
+			Ent: client,
+		}),
 		Ent:           client,
 		SystemService: systemService,
 	})

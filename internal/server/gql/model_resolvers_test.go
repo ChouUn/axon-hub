@@ -60,6 +60,9 @@ func TestQueryModels_ProjectAPIKeyManagerCanReadModels(t *testing.T) {
 	})
 	channelService := biz.NewChannelServiceForTest(client)
 	modelService := biz.NewModelService(biz.ModelServiceParams{
+		ModelCache: biz.NewModelCacheService(biz.ModelCacheServiceParams{
+			Ent: client,
+		}),
 		ChannelService: channelService,
 		SystemService:  systemService,
 		Ent:            client,
