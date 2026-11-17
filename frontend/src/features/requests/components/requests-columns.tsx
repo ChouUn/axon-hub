@@ -50,8 +50,16 @@ export const DEFAULT_MOBILE_HIDDEN_COLUMN_IDS = [
 
 export const MODEL_ID_COLUMN = 'modelID' as const;
 
+const RESPONSES_HTTP = 'openai/responses';
+const RESPONSES_WEBSOCKET = 'openai/responses-ws';
+
 export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnDef<Request>[] {
   const { t, i18n } = useTranslation();
+  const protocolLabel = (format: string) => {
+    if (format === RESPONSES_HTTP) return t('requests.protocols.responsesHttp');
+    if (format === RESPONSES_WEBSOCKET) return t('requests.protocols.responsesWebSocket');
+    return t(`channels.dialogs.fields.apiFormat.formats.${format}`, { defaultValue: format });
+  };
   const metricColors = useMetricColorSettings();
   // Colour class for a metric value. `base` keeps the caller's own classes
   // (font weight / mono) while the tier only contributes the tone, so a
@@ -156,15 +164,25 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
         const outboundFormat = executions[0]?.format;
         const passThroughApplied = executions.some((execution) => execution.passThroughApplied);
         const oneHourPromptCache = (request.oneHourPromptCacheUsageLogs?.totalCount ?? 0) > 0;
-        // Orange is reserved for a confirmed mismatch: a missing format on either
-        // side is "unknown" and stays muted.
-        const formatsComparable = Boolean(inboundFormat && outboundFormat);
-        const outboundProtocolMatches = formatsComparable && outboundFormat === inboundFormat;
-        const outboundProtocolTooltip = !formatsComparable
+        const outboundProtocolMatches = inboundFormat === outboundFormat;
+        const responsesTransportChanged =
+          (inboundFormat === RESPONSES_WEBSOCKET && outboundFormat === RESPONSES_HTTP) ||
+          (inboundFormat === RESPONSES_HTTP && outboundFormat === RESPONSES_WEBSOCKET);
+        const outboundProtocolTooltip = !inboundFormat || !outboundFormat
           ? t('requests.tooltips.outboundProtocolUnknown')
           : outboundProtocolMatches
-            ? t('requests.tooltips.outboundProtocolMatching', { protocol: outboundFormat })
-            : t('requests.tooltips.outboundProtocolConverted', { protocol: outboundFormat });
+            ? t('requests.tooltips.outboundProtocolMatching', { protocol: protocolLabel(outboundFormat) })
+            : t('requests.tooltips.outboundProtocolRoute', {
+                inbound: protocolLabel(inboundFormat),
+                outbound: protocolLabel(outboundFormat),
+              });
+        const outboundProtocolColor = !inboundFormat || !outboundFormat
+          ? 'text-muted-foreground/45'
+          : outboundProtocolMatches
+            ? 'text-emerald-700 dark:text-emerald-300'
+            : responsesTransportChanged
+              ? 'text-blue-700 dark:text-blue-300'
+              : 'text-orange-700 dark:text-orange-300';
 
         const modelLabel =
           executionModelIds.length > 0 ? (
@@ -203,13 +221,7 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span
-                    className={`inline-flex h-5 w-5 items-center justify-center ${
-                      !formatsComparable
-                        ? 'text-muted-foreground/45'
-                        : outboundProtocolMatches
-                          ? 'text-emerald-700 dark:text-emerald-300'
-                          : 'text-orange-700 dark:text-orange-300'
-                    }`}
+                    className={cn('inline-flex h-5 w-5 items-center justify-center', outboundProtocolColor)}
                     tabIndex={0}
                     role='img'
                     aria-label={outboundProtocolTooltip}

@@ -13,7 +13,7 @@
 
 1. 打开对应 Codex 渠道的「端点配置」，取消勾选「WebSocket」并保存。渠道保留 HTTP Responses 端点 `openai/responses`，OMP 继续连接 AxonHub 的 `/codex/responses`。[渠道端点配置](../zh/guides/channel-management.md#responses-http-与-websocket-端点) · [Codex 入口](../zh/guides/codex-integration.md#配置-codex-认证与路由)
 2. 如果渠道上游的推理地址以 `/backend-api/codex/responses` 结尾，渠道 Base URL 填 `https://example.com/backend-api/codex#`，把 `example.com` 换成实际主机。末尾的单个 `#` 跳过自动追加的 `/v1`，AxonHub 仍会拼上 `/responses`。如 Responses 端点已单独覆盖 Base URL 或路径，以该端点的有效配置为准。[Base URL 特殊配置](../zh/guides/channel-management.md#base-url-特殊配置)
-3. 查看 OMP 请求的执行记录。入站 `openai/responses-ws`、出站 `openai/responses` 时，列表会显示「已由入站协议转换（`openai/responses`）」。保持上游 WebSocket 关闭。这个标记只比较格式，缓存命中看执行响应的用量。[请求列表的协议判断](../../frontend/src/features/requests/components/requests-columns.tsx#L154-L167) · [Responses 传输适配](../../llm/transformer/openai/responses/protocol_codec.go#L31-L74)
+3. 查看 OMP 请求的执行记录。入站 `openai/responses-ws`、出站 `openai/responses` 时，列表的蓝色协议图标会提示「Responses WebSocket → Responses HTTP/SSE」。缓存命中看执行响应的用量。[请求列表的协议提示](../routing/feats/request-protocol-indicator.md) · [Responses 传输适配](../../llm/transformer/openai/responses/protocol_codec.go#L31-L74)
 
 渠道「最大并发」限制执行中的请求数。上游 WS 可以在请求结束后保持空闲连接，因此这个限制无法约束同一上游账号的存活 WS 会话数。重新勾选「WebSocket」会重新引入这项会话配额约束。[渠道并发配置](../../internal/server/orchestrator/channel_limiter_manager.go#L31-L69) · [上游 WS 执行器](../../llm/transformer/openai/responses/websocket_executor.go)
 
