@@ -584,14 +584,16 @@ AxonHub provides an enhanced `/v1/models` endpoint that lists available models w
 | `context_length` | integer | Maximum context length in tokens |
 | `max_output_tokens` | integer | Maximum output tokens |
 | `modalities` | object | Model supported input/output types (input, output) |
+| `input_modalities` | array of strings | Input modalities from the model card, available to clients such as OMP |
 | `capabilities` | object | Model capabilities (vision, tool_call, reasoning) |
+| `supported_reasoning_levels` | array of strings | Reasoning effort levels from the model card when the model supports reasoning |
 | `pricing` | object | Pricing information (input, output, cache_read, cache_write) |
 | `icon` | string | Model icon URL |
 | `type` | string | Model type (chat, embedding, image, rerank, moderation, tts, stt) |
 
 ### Response Format (Basic - Default)
 
-When called without the `include` parameter, the endpoint returns only basic fields:
+With “Return full model info from /v1/models” disabled, omitting `include` returns the basic fields.
 
 ```json
 {
@@ -615,7 +617,9 @@ When called without the `include` parameter, the endpoint returns only basic fie
 
 ### Response Format (Extended)
 
-When using `?include=all` or selective fields, the response includes extended metadata:
+Use `?include=all` or select individual fields to request extended metadata.
+
+Enable “Return full model info from /v1/models” in model settings to include extended fields in plain list requests. Empty input modality and reasoning level lists are omitted.
 
 ```json
 {
@@ -634,11 +638,13 @@ When using `?include=all` or selective fields, the response includes extended me
         "input": ["text", "image"],
         "output": ["text"]
       },
+      "input_modalities": ["text", "image"],
       "capabilities": {
         "vision": false,
         "tool_call": true,
         "reasoning": true
       },
+      "supported_reasoning_levels": ["low", "high"],
       "pricing": {
         "input": 30.0,
         "output": 60.0,

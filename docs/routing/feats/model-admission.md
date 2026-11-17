@@ -28,6 +28,10 @@
 - 模型列表：
   - 公开模型列表只下发启用的注册目标及有效别名，不合并渠道独有模型。
   - OpenAI 模型详情使用映射目标的元数据，保留对外别名。
+  - OpenAI 扩展模型响应从注册目标的模型卡输出 `input_modalities` 和 `supported_reasoning_levels`，
+    供 OMP 等客户端自动发现输入类型和推理档位。可用 `include` 指定这两个字段，值为空时省略。
+    模型卡标记支持推理时才输出档位。
+    普通列表请求随「`/v1/models` 默认返回完整模型信息」设置提供扩展字段。
 - 设置：上述三项开关已删除。旧 JSON 键被忽略，不能恢复旁路。
 
 ## 边界
@@ -46,6 +50,7 @@
   - `internal/objects/apikey.go`
   - `internal/server/biz/model.go`
   - `internal/server/api/`
+  - `internal/server/api/openai.go` 提供公开模型的扩展响应。
   - `internal/server/gql/model.resolvers.go`
   - `internal/server/gql/system.graphql`
   - `frontend/src/features/models/components/models-settings-dialog.tsx`
@@ -56,6 +61,7 @@
   - `internal/server/biz/model_test.go`
   - `internal/server/biz/model_list_routability_test.go`
   - `internal/server/api/openai_retrieve_test.go`
+    验证基本列表、按字段查询和默认扩展列表。
   - `internal/server/api/chat_test.go`
   - `internal/server/gql/model_resolvers_test.go`
   - `internal/objects/apikey_test.go`

@@ -561,14 +561,16 @@ AxonHub 提供增强的 `/v1/models` 端点，可列出可用模型并选择性�
 | `context_length` | 整数 | 最大上下文长度（以令牌计） |
 | `max_output_tokens` | 整数 | 最大输出令牌数 |
 | `modalities` | 对象 | 模型支持的输入输出类型（input, output） |
+| `input_modalities` | 字符串数组 | 模型卡中的输入模态，可供 OMP 等客户端发现 |
 | `capabilities` | 对象 | 模型能力（vision, tool_call, reasoning） |
+| `supported_reasoning_levels` | 字符串数组 | 模型支持推理时，返回模型卡中记录的档位 |
 | `pricing` | 对象 | 定价信息（input, output, cache_read, cache_write） |
 | `icon` | 字符串 | 模型图标 URL |
 | `type` | 字符串 | 模型类型（chat, embedding, image, rerank, moderation, tts, stt） |
 
 ### 响应格式（基础 - 默认）
 
-调用时不带 `include` 参数，端点仅返回基础字段：
+关闭「`/v1/models` 默认返回完整模型信息」时，省略 `include` 只返回基础字段。
 
 ```json
 {
@@ -592,7 +594,9 @@ AxonHub 提供增强的 `/v1/models` 端点，可列出可用模型并选择性�
 
 ### 响应格式（扩展）
 
-使用 `?include=all` 或选择字段时，响应包含扩展元数据：
+使用 `?include=all` 或选择字段时，响应包含扩展元数据。
+
+启用模型设置中的「`/v1/models` 默认返回完整模型信息」后，普通列表请求也会返回扩展字段。输入模态或推理档位为空时，对应字段会省略。
 
 ```json
 {
@@ -611,11 +615,13 @@ AxonHub 提供增强的 `/v1/models` 端点，可列出可用模型并选择性�
         "input": ["text", "image"],
         "output": ["text"]
       },
+      "input_modalities": ["text", "image"],
       "capabilities": {
         "vision": false,
         "tool_call": true,
         "reasoning": true
       },
+      "supported_reasoning_levels": ["low", "high"],
       "pricing": {
         "input": 30.0,
         "output": 60.0,

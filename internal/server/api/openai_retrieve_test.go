@@ -286,6 +286,8 @@ func TestOpenAIHandlers_RetrieveModel_ReturnsEmptyModalitiesWhenZeroValue(t *tes
 	require.NotNil(t, got.Modalities.Output, "modalities.output should be [] not null")
 	require.Empty(t, got.Modalities.Input)
 	require.Empty(t, got.Modalities.Output)
+	require.Nil(t, got.InputModalities)
+	require.Nil(t, got.SupportedReasoningLevels)
 }
 
 func TestOpenAIHandlers_RetrieveModel_ReturnsNotFound(t *testing.T) {
@@ -333,9 +335,10 @@ func TestOpenAIHandlers_ListModels_UsesBasicFieldsByDefault(t *testing.T) {
 		SetIcon("openai").
 		SetRemark(remark).
 		SetModelCard(&objects.ModelCard{Vision: true,
-			ToolCall:  true,
-			Reasoning: objects.ModelCardReasoning{Supported: true},
-			Limit:     objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}, {ItemCode: objects.PriceItemCodePromptCachedToken, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.5))}}, {ItemCode: objects.PriceItemCodeWriteCachedTokens, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}}, Modalities: objects.ModelCardModalities{Input: []string{"text", "image"}, Output: []string{"text"}}}).
+			ToolCall:         true,
+			Reasoning:        objects.ModelCardReasoning{Supported: true},
+			ReasoningEfforts: []string{"low", "high"},
+			Limit:            objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}, {ItemCode: objects.PriceItemCodePromptCachedToken, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.5))}}, {ItemCode: objects.PriceItemCodeWriteCachedTokens, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}}, Modalities: objects.ModelCardModalities{Input: []string{"text", "image"}, Output: []string{"text"}}}).
 		SetSettings(&objects.ModelSettings{
 			Associations: []*objects.ModelAssociation{
 				{
@@ -367,6 +370,32 @@ func TestOpenAIHandlers_ListModels_UsesBasicFieldsByDefault(t *testing.T) {
 	require.Nil(t, got.Data[0].Capabilities)
 	require.Nil(t, got.Data[0].Pricing)
 	require.Nil(t, got.Data[0].Modalities)
+	require.Nil(t, got.Data[0].InputModalities)
+	require.Nil(t, got.Data[0].SupportedReasoningLevels)
+
+	for _, tc := range []struct {
+		field    string
+		excluded string
+		want     string
+	}{
+		{"input_modalities", "supported_reasoning_levels", `["text","image"]`},
+		{"supported_reasoning_levels", "input_modalities", `["low","high"]`},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/v1/models?include="+tc.field, nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code)
+			var got struct {
+				Data []map[string]json.RawMessage `json:"data"`
+			}
+			require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
+			require.Len(t, got.Data, 1)
+			require.JSONEq(t, tc.want, string(got.Data[0][tc.field]))
+			require.NotContains(t, got.Data[0], tc.excluded)
+		})
+	}
 }
 
 func TestOpenAIHandlers_ListModels_UsesExtendedFieldsWhenConfiguredAsDefault(t *testing.T) {
@@ -379,7 +408,7 @@ func TestOpenAIHandlers_ListModels_UsesExtendedFieldsWhenConfiguredAsDefault(t *
 
 	createdAt := time.Unix(1712345698, 0)
 	ch, err := client.Channel.Create().
-		SetType(channel.TypeOpenai).
+		SetType(channel.TypeOpenaiResponses).
 		SetName("OpenAI Channel").
 		SetBaseURL("https://api.openai.com/v1").
 		SetCredentials(objects.ChannelCredentials{APIKey: "key"}).
@@ -402,9 +431,10 @@ func TestOpenAIHandlers_ListModels_UsesExtendedFieldsWhenConfiguredAsDefault(t *
 		SetIcon("openai").
 		SetRemark(remark).
 		SetModelCard(&objects.ModelCard{Vision: true,
-			ToolCall:  true,
-			Reasoning: objects.ModelCardReasoning{Supported: true},
-			Limit:     objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}, {ItemCode: objects.PriceItemCodePromptCachedToken, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.5))}}, {ItemCode: objects.PriceItemCodeWriteCachedTokens, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}}, Modalities: objects.ModelCardModalities{Input: []string{"text", "image"}, Output: []string{"text"}}}).
+			ToolCall:         true,
+			Reasoning:        objects.ModelCardReasoning{Supported: true},
+			ReasoningEfforts: []string{"low", "high"},
+			Limit:            objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}, {ItemCode: objects.PriceItemCodePromptCachedToken, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.5))}}, {ItemCode: objects.PriceItemCodeWriteCachedTokens, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(1))}}}}, Modalities: objects.ModelCardModalities{Input: []string{"text", "image"}, Output: []string{"text"}}}).
 		SetSettings(&objects.ModelSettings{
 			Associations: []*objects.ModelAssociation{
 				{
@@ -439,6 +469,8 @@ func TestOpenAIHandlers_ListModels_UsesExtendedFieldsWhenConfiguredAsDefault(t *
 	require.NotNil(t, got.Data[0].Modalities)
 	require.Equal(t, []string{"text", "image"}, got.Data[0].Modalities.Input)
 	require.Equal(t, []string{"text"}, got.Data[0].Modalities.Output)
+	require.Equal(t, []string{"text", "image"}, got.Data[0].InputModalities)
+	require.Equal(t, []string{"low", "high"}, got.Data[0].SupportedReasoningLevels)
 }
 
 func TestOpenAIHandlers_ListModels_ExtendedModeRespectsAPIKeyProfile(t *testing.T) {
@@ -485,8 +517,9 @@ func TestOpenAIHandlers_ListModels_ExtendedModeRespectsAPIKeyProfile(t *testing.
 		SetGroup("gpt").
 		SetIcon("openai").
 		SetModelCard(&objects.ModelCard{Vision: true,
-			ToolCall: true,
-			Limit:    objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}}}}).
+			ToolCall:         true,
+			ReasoningEfforts: []string{"low", "high"},
+			Limit:            objects.ModelCardLimit{Context: 200000, Output: 8192}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(2))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(8))}}}}}).
 		SetSettings(&objects.ModelSettings{
 			Associations: []*objects.ModelAssociation{{
 				Type: "channel_model",
@@ -573,6 +606,8 @@ func TestOpenAIHandlers_ListModels_ExtendedModeRespectsAPIKeyProfile(t *testing.
 	require.Equal(t, "gpt-4.1", got.Data[0].ID)
 	require.Equal(t, "GPT-4.1", got.Data[0].Name)
 	require.NotNil(t, got.Data[0].Capabilities)
+	require.False(t, got.Data[0].Capabilities.Reasoning)
+	require.Nil(t, got.Data[0].SupportedReasoningLevels, "disabled reasoning should hide stored effort levels")
 	require.NotNil(t, got.Data[0].Pricing)
 }
 
