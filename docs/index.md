@@ -18,6 +18,7 @@
 
 - [路由](routing/index.md)：从用户到 AxonHub，包括模型准入、负载均衡策略和会话归属。
 - [渠道](channels/index.md)：从 AxonHub 到渠道上游，包括渠道的配置、列表与测试，发往渠道上游的请求处理，以及供应商模型目录。
+  - [配置 Codex 渠道使用 HTTP/SSE 并保持提示缓存前缀](manuals/configure-codex-http-sse.md)
 - [用量与分析](usage/index.md)：仪表盘分析和 API Key 自助用量页。
 - [计费](billing/index.md)：模型与渠道的价格、倍率，以及请求成本的展示。
 - [部署](deployment/index.md)：镜像构建与发布。
