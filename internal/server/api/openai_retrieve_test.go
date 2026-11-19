@@ -473,6 +473,97 @@ func TestOpenAIHandlers_ListModels_UsesExtendedFieldsWhenConfiguredAsDefault(t *
 	require.Equal(t, []string{"low", "high"}, got.Data[0].SupportedReasoningLevels)
 }
 
+func TestAnthropicHandlers_ListModels_ReturnsDiscoveryMetadata(t *testing.T) {
+	client, channelSvc, systemSvc, _, ctx := setupOpenAIRetrieveTest(t)
+	ch, err := client.Channel.Create().
+		SetType(channel.TypeAnthropic).
+		SetName("Anthropic Channel").
+		SetBaseURL("https://api.anthropic.com").
+		SetCredentials(objects.ChannelCredentials{APIKey: "key"}).
+		SetSupportedModels([]string{"reasoner", "plain"}).
+		SetDefaultTestModel("reasoner").
+		SetStatus(channel.StatusEnabled).
+		Save(ctx)
+	require.NoError(t, err)
+	channelSvc.SetEnabledChannelsForTest([]*biz.Channel{{Channel: ch}})
+
+	for _, fixture := range []struct {
+		id   string
+		card *objects.ModelCard
+	}{
+		{id: "reasoner", card: &objects.ModelCard{
+			Reasoning:        objects.ModelCardReasoning{Supported: true},
+			ReasoningEfforts: []string{"low", "high", "max"},
+			Modalities:       objects.ModelCardModalities{Input: []string{"text", "image"}},
+		}},
+		// Levels stay hidden while the card marks reasoning unsupported.
+		{id: "plain", card: &objects.ModelCard{ReasoningEfforts: []string{"low"}}},
+	} {
+		_, err = client.Model.Create().
+			SetDeveloper("anthropic").
+			SetModelID(fixture.id).
+			SetName(fixture.id).
+			SetType(model.TypeChat).
+			SetGroup("claude").
+			SetIcon("anthropic").
+			SetModelCard(fixture.card).
+			SetSettings(&objects.ModelSettings{Associations: []*objects.ModelAssociation{{
+				Type:         "channel_model",
+				ChannelModel: &objects.ChannelModelAssociation{ChannelID: ch.ID, ModelID: fixture.id},
+			}}}).
+			SetStatus(model.StatusEnabled).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	apiKey := &ent.APIKey{Profiles: &objects.APIKeyProfiles{
+		ActiveProfile: "mapped",
+		Profiles: []objects.APIKeyProfile{{
+			Name:          "mapped",
+			ModelIDs:      []string{"reasoner-alias", "plain"},
+			ModelMappings: []objects.ModelMapping{{From: "reasoner-alias", To: "reasoner"}},
+		}},
+	}}
+	handlers := &AnthropicHandlers{ModelService: biz.NewModelService(biz.ModelServiceParams{
+		ChannelService: channelSvc,
+		SystemService:  systemSvc,
+		Ent:            client,
+	})}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		requestCtx := authz.WithTestBypass(ent.NewContext(c.Request.Context(), client))
+		c.Request = c.Request.WithContext(contexts.WithAPIKey(requestCtx, apiKey))
+		c.Next()
+	})
+	router.GET("/anthropic/v1/models", handlers.ListModels)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/anthropic/v1/models", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var got struct {
+		Data []map[string]json.RawMessage `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
+	require.Len(t, got.Data, 2)
+	rows := make(map[string]map[string]json.RawMessage, len(got.Data))
+	for _, row := range got.Data {
+		var id string
+		require.NoError(t, json.Unmarshal(row["id"], &id))
+		rows[id] = row
+	}
+
+	alias := rows["reasoner-alias"]
+	require.NotNil(t, alias)
+	require.JSONEq(t, `["text","image"]`, string(alias["input_modalities"]))
+	require.JSONEq(t, `["low","high","max"]`, string(alias["supported_reasoning_levels"]))
+
+	plain := rows["plain"]
+	require.NotNil(t, plain)
+	require.NotContains(t, plain, "input_modalities")
+	require.NotContains(t, plain, "supported_reasoning_levels")
+}
+
 func TestOpenAIHandlers_ListModels_ExtendedModeRespectsAPIKeyProfile(t *testing.T) {
 	client, channelSvc, systemSvc, _, ctx := setupOpenAIRetrieveTest(t)
 

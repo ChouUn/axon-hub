@@ -57,6 +57,34 @@ for _, block := range response.Content {
 fmt.Println(responseText)
 ```
 
+### 模型列表
+
+`GET /anthropic/v1/models` 在每个模型上附带模型卡记录的发现字段，供 OMP 等客户端识别输入类型和推理档位：
+
+- `input_modalities` - 输入模态，如 `["text", "image"]`。
+- `supported_reasoning_levels` - 推理档位，如 `["low", "high", "max"]`。模型卡标记支持推理时才返回。
+
+字段值为空时省略。
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "claude-sonnet",
+      "type": "model",
+      "display_name": "claude-sonnet",
+      "created": "2026-01-01T00:00:00Z",
+      "input_modalities": ["text", "image"],
+      "supported_reasoning_levels": ["low", "medium", "high"]
+    }
+  ],
+  "has_more": false,
+  "first_id": "claude-sonnet",
+  "last_id": "claude-sonnet"
+}
+```
+
 ## API 转换能力
 
 AxonHub 自动在 API 格式之间进行转换，实现以下强大场景：

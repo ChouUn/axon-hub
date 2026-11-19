@@ -720,7 +720,7 @@ func convertModelToOpenAIExtended(m *ent.Model, include map[string]bool) OpenAIM
 			}
 		}
 		if shouldInclude("input_modalities") {
-			result.InputModalities = m.ModelCard.Modalities.Input
+			result.InputModalities = modelInputModalities(m)
 		}
 		if shouldInclude("capabilities") {
 			caps := Capabilities{
@@ -730,8 +730,8 @@ func convertModelToOpenAIExtended(m *ent.Model, include map[string]bool) OpenAIM
 			}
 			result.Capabilities = &caps
 		}
-		if shouldInclude("supported_reasoning_levels") && m.ModelCard.Reasoning.Supported {
-			result.SupportedReasoningLevels = m.ModelCard.ReasoningEfforts
+		if shouldInclude("supported_reasoning_levels") {
+			result.SupportedReasoningLevels = modelReasoningLevels(m)
 		}
 		if shouldInclude("context_length") {
 			result.ContextLength = m.ModelCard.Limit.Context
@@ -753,6 +753,23 @@ func convertModelToOpenAIExtended(m *ent.Model, include map[string]bool) OpenAIM
 		}
 	}
 	return result
+}
+
+// modelInputModalities returns the input modalities recorded on the model card.
+func modelInputModalities(m *ent.Model) []string {
+	if m == nil || m.ModelCard == nil {
+		return nil
+	}
+	return m.ModelCard.Modalities.Input
+}
+
+// modelReasoningLevels returns the model card's reasoning levels only when the
+// card marks reasoning as supported.
+func modelReasoningLevels(m *ent.Model) []string {
+	if m == nil || m.ModelCard == nil || !m.ModelCard.Reasoning.Supported {
+		return nil
+	}
+	return m.ModelCard.ReasoningEfforts
 }
 
 func (handlers *OpenAIHandlers) writeOpenAIInternalError(c *gin.Context, requestID string, err error) {

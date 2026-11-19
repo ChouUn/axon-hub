@@ -57,6 +57,34 @@ for _, block := range response.Content {
 fmt.Println(responseText)
 ```
 
+### Model List
+
+`GET /anthropic/v1/models` attaches discovery fields from the model card to each model, so clients such as OMP can detect input types and reasoning levels:
+
+- `input_modalities` - Input modalities, such as `["text", "image"]`.
+- `supported_reasoning_levels` - Reasoning effort levels, such as `["low", "high", "max"]`. Returned only when the model card marks reasoning as supported.
+
+Empty values are omitted.
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "claude-sonnet",
+      "type": "model",
+      "display_name": "claude-sonnet",
+      "created": "2026-01-01T00:00:00Z",
+      "input_modalities": ["text", "image"],
+      "supported_reasoning_levels": ["low", "medium", "high"]
+    }
+  ],
+  "has_more": false,
+  "first_id": "claude-sonnet",
+  "last_id": "claude-sonnet"
+}
+```
+
 ## API Translation Capabilities
 
 AxonHub automatically translates between API formats, enabling powerful scenarios:
