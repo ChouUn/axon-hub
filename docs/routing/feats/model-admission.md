@@ -47,6 +47,7 @@
 - 提交：
   - `569152cc`（`feat(models): 强制注册模型准入并按关联分发渠道`）
   - `fceb30dc`（`feat(models): 补充模型发现的输入模态和推理档位`）
+  - `f881c154`（`feat(models): Anthropic 模型列表下发输入模态和推理档位`）
 - 代码：
   - `internal/server/orchestrator/candidates.go`
   - `internal/server/orchestrator/model_mapper.go`

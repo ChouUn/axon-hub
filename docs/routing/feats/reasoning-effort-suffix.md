@@ -78,7 +78,7 @@
 
 ## 实现与维护
 
-- 提交：待提交。
+- 提交：`74a26251`（`feat(channels): 渠道识别模型名中的推理档位后缀`）
 - 代码：
   - `llm/reasoning.go`：档位后缀的拆分规则，自动推理强度与定价共用。
   - `internal/objects/channel.go`、`internal/server/biz/channel_settings.go`：渠道设置字段 `reasoningEffortModelSuffix`。
