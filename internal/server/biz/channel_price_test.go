@@ -610,6 +610,49 @@ func TestChannelService_EnsureChannelModelPrices_FallsBackToLibraryOnInvalidMerg
 	require.True(t, want.Equals(version.Price))
 }
 
+func TestChannelService_EnsureChannelModelPrices_SkipsLibraryGapThatBreaksTiers(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := channelAutoPriceTestContext(client)
+	modelIDs := []string{"tiered-model"}
+	ch := createAutoPriceTestChannel(t, ctx, client, "Library gap breaks tiers", modelIDs)
+
+	base := objects.ModelPrice{
+		Items: []objects.ModelPriceItem{usageItem("1"), completionItem("2")},
+		VolumeTiers: []objects.ModelPriceVolumeTier{{
+			Above: 200000,
+			Items: []objects.ModelPriceItem{usageItem("2"), completionItem("3")},
+		}},
+	}
+	created, err := svc.SaveChannelModelPrices(ctx, ch.ID, []SaveChannelModelPriceInput{{
+		ModelID: modelIDs[0],
+		Price:   base,
+	}}, nil)
+	require.NoError(t, err)
+	require.Len(t, created, 1)
+
+	// The library has an extra cache-read code the channel's tiers do not carry.
+	cacheRead := usageItem("0.5")
+	cacheRead.ItemCode = objects.PriceItemCodePromptCachedToken
+	createModelLibraryEntry(t, ctx, client, modelIDs[0], model.StatusEnabled, &objects.ModelPrice{
+		Items: []objects.ModelPriceItem{usageItem("9"), completionItem("9"), cacheRead},
+	})
+	endpoint := []channelModelPriceTemplate{{
+		ModelID: modelIDs[0],
+		Price:   objects.ModelPrice{Items: []objects.ModelPriceItem{usageItem("4")}},
+	}}
+
+	changed, err := svc.ensureChannelModelPrices(ctx, ch.ID, modelIDs, endpoint)
+	require.NoError(t, err)
+	require.True(t, changed, "the endpoint rate must sync even when the library gap fill would break the tiers")
+
+	current := queryChannelModelPrice(t, ctx, client, ch.ID, modelIDs[0])
+	want := base
+	want.Items = []objects.ModelPriceItem{usageItem("4"), completionItem("2")}
+	require.True(t, want.Equals(current.Price))
+	require.Equal(t, 2, countChannelModelPriceVersions(t, ctx, client, current.ID))
+}
+
 func endpointSyncTestTieredPrice() objects.ModelPrice {
 	return objects.ModelPrice{
 		Items: []objects.ModelPriceItem{usageItem("1")},

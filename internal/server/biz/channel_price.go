@@ -13,6 +13,7 @@
 //	请求内价格复用保持费用注入与 usage 记录一致，查询错误不缓存。
 //	端点同步仅覆盖已报价的基础费率，保留阶梯和时段价格，按渠道当前倍率生成版本。
 //	合并后不符合定价约束的报价会跳过，首次建价可回退到模型库价格。
+//	模型库补项只在补项后仍满足阶梯约束时采用，否则只叠加端点报价。
 
 package biz
 
@@ -106,11 +107,17 @@ func mergeChannelModelPriceItems(base, overlay objects.ModelPrice, replaceExisti
 
 func mergeEndpointChannelModelPrice(base, endpointPrice objects.ModelPrice, libraryPrice *objects.ModelPrice) objects.ModelPrice {
 	merged := mergeChannelModelPriceItems(base, endpointPrice, true)
-	if libraryPrice != nil {
-		merged = mergeChannelModelPriceItems(merged, *libraryPrice, false)
-	}
 	merged.Multiplier = endpointPrice.Multiplier
-	return merged
+	if libraryPrice == nil {
+		return merged
+	}
+	// Library gap codes extend only the base items; existing volume tiers do not
+	// carry them, so keep the endpoint overlay when the gap fill breaks the tiers.
+	filled := mergeChannelModelPriceItems(merged, *libraryPrice, false)
+	if len(filled.VolumeTiers) != 0 && filled.Validate() != nil && merged.Validate() == nil {
+		return merged
+	}
+	return filled
 }
 
 // endpointChanged checks that a merged endpoint quote would produce a valid new snapshot.
