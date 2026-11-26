@@ -30,9 +30,9 @@ import {
   CreateModelInput,
   createModelInputSchema,
   UpdateModelInput,
-  ModelCard,
   ModelType,
   modelTypeSchema,
+  type ModelCard,
   normalizeModelRoutingPolicyValue,
 } from '../data/schema';
 import { modelCardInputSchema } from '../data/schema';
@@ -64,7 +64,6 @@ export function ModelsActionDialog() {
   const [developerSearchValue, setDeveloperSearchValue] = useState<string>('');
   const [modelIdInput, setModelIdInput] = useState<string>('');
   const [modelIdSearchValue, setModelIdSearchValue] = useState<string>('');
-  const [_selectedModelCard, setSelectedModelCard] = useState<ModelCard>({});
 
   // 用于解决 Dialog 内 Popover 无法滚动的问题
   const [dialogContent, setDialogContent] = useState<HTMLDivElement | null>(null);
@@ -171,7 +170,6 @@ export function ModelsActionDialog() {
       setSelectedProvider(currentRow.developer);
       setModelIdInput(currentRow.modelID);
       setModelIdSearchValue(currentRow.modelID);
-      setSelectedModelCard(currentRow.modelCard || {});
     } else if (!isEdit) {
       form.reset({
         developer: '',
@@ -188,7 +186,6 @@ export function ModelsActionDialog() {
       setDeveloperSearchValue('');
       setModelIdInput('');
       setModelIdSearchValue('');
-      setSelectedModelCard({});
     }
   }, [isEdit, currentRow, form, isOpen]);
 
@@ -212,7 +209,6 @@ export function ModelsActionDialog() {
         form.setValue('name', '');
         form.setValue('group', '');
         form.reset({ ...form.getValues(), modelCard: modelCardFormValues() }, { keepDefaultValues: true });
-        setSelectedModelCard({});
       }
     },
     [form, getDeveloperLabel, isEdit]
@@ -245,7 +241,7 @@ export function ModelsActionDialog() {
         if (normalizedType && modelTypeSchema.safeParse(normalizedType).success) {
           form.setValue('type', normalizedType as ModelType);
         }
-        const modelCard: ModelCard = {
+        const modelCard: CreateModelInput['modelCard'] = {
           reasoning: {
             supported: selectedModel.reasoning?.supported || false,
             default: selectedModel.reasoning?.default || false,
@@ -269,10 +265,6 @@ export function ModelsActionDialog() {
         };
         // Replacing the card must refresh nested price and tier field arrays together.
         form.reset({ ...form.getValues(), modelCard: modelCardFormValues(modelCard) }, { keepDefaultValues: true });
-        setSelectedModelCard(modelCard);
-      } else {
-        const currentModelCard = form.getValues('modelCard');
-        setSelectedModelCard(currentModelCard || {});
       }
     },
     [selectedProviderModels, selectedProvider, form, isEdit]
@@ -292,7 +284,7 @@ export function ModelsActionDialog() {
           settings: data.settings,
           remark: data.remark,
         };
-        await updateModel.mutateAsync({ id: currentRow.id, input: updateData });
+        await updateModel.mutateAsync({ id: currentRow.id, input: updateData, expectedVersion: currentRow.editVersion });
       } else {
         await createModel.mutateAsync(data);
       }
@@ -309,7 +301,6 @@ export function ModelsActionDialog() {
     setDeveloperSearchValue('');
     setModelIdInput('');
     setModelIdSearchValue('');
-    setSelectedModelCard({});
   }, [form, setOpen]);
 
   return (

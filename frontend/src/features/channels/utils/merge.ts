@@ -119,6 +119,7 @@ export function mergeChannelSettingsForUpdate(
     hideMappedModels: pick('hideMappedModels', existing?.hideMappedModels ?? false),
     lowercaseModelId: pick('lowercaseModelId', existing?.lowercaseModelId ?? false),
     reasoningEffortModelSuffix: pick('reasoningEffortModelSuffix', existing?.reasoningEffortModelSuffix ?? false),
+    syncModelPrices: pick('syncModelPrices', existing?.syncModelPrices ?? false),
     bodyOverrideOperations: pick('bodyOverrideOperations', existing?.bodyOverrideOperations ?? []),
     headerOverrideOperations: pick('headerOverrideOperations', existing?.headerOverrideOperations ?? []),
     proxy: pick('proxy', existing?.proxy ?? null),
@@ -133,7 +134,7 @@ export function mergeChannelSettingsForUpdate(
 
     responseTimeout: pick('responseTimeout', existing?.responseTimeout ?? null),
     modelProtocols: pick('modelProtocols', existing?.modelProtocols ?? []),
-apiKeyStrategy: pick('apiKeyStrategy', existing?.apiKeyStrategy ?? null),
+    apiKeyStrategy: pick('apiKeyStrategy', existing?.apiKeyStrategy ?? null),
     apiKeyRoundRobinSwitchAfter: pick('apiKeyRoundRobinSwitchAfter', existing?.apiKeyRoundRobinSwitchAfter ?? null),
     providerQuota: pick('providerQuota', existing?.providerQuota ?? null),
     primaryApiFormat: pick('primaryApiFormat', existing?.primaryApiFormat ?? ''),

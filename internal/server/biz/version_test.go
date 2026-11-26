@@ -31,6 +31,9 @@ func TestCompareVersionsOrdersNumericPrereleases(t *testing.T) {
 		"v1.0.0-rc.3-fork.1",
 		"v1.0.0-rc.4",
 		"v1.0.0-rc.4-fork.1",
+		"v1.0.0-rc.4-fork.3",
+		"v1.0.0-rc.5",
+		"v1.0.0-rc.5-fork.1",
 		"v1.0.0",
 	}
 

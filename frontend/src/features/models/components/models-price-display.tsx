@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
-import type { ModelPrice, ModelPriceItem, Pricing } from '@/features/channels/data/schema';
+import type { ModelPrice, ModelPriceItem } from '@/features/channels/data/schema';
 import { useGeneralSettings } from '@/features/system/data/system';
 
 export function ModelsPriceDisplay({ price, compact = false }: { price?: ModelPrice | null; compact?: boolean }) {
@@ -93,9 +93,10 @@ function PriceItems({ items }: { items: ModelPriceItem[] }) {
   );
 }
 
-function PriceValue({ pricing }: { pricing: Pricing }) {
+function PriceValue({ pricing }: { pricing: ModelPriceItem['pricing'] }) {
   const { t, i18n } = useTranslation();
   const { data: settings } = useGeneralSettings();
+  if (!pricing.mode) return null;
   const amount = (value: string | number | null | undefined) =>
     value == null
       ? '-'

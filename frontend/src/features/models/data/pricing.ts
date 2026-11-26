@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import Decimal from 'decimal.js-light';
-import { modelPriceInputSchema, type ModelPrice, type ModelPriceItem, type Pricing } from '@/features/channels/data/schema';
+import { modelPriceInputSchema, type ModelPrice, type ModelPriceItem } from '@/features/channels/data/schema';
 import type { ProviderModel } from './providers.schema';
 
 const costFields = [
@@ -63,10 +63,11 @@ export function createPriceValidationSchema(t: (key: string) => string) {
     })
     .superRefine((price, ctx) => {
       const issue = (path: Array<string | number>, key: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: t(key) });
-      const validatePricing = (pricing: Pricing, path: Array<string | number>) => {
+      const validatePricing = (pricing: ModelPriceItem['pricing'], path: Array<string | number>) => {
         if (price.volumeTiers?.length && path[0] !== 'schedule' && pricing.mode !== 'usage_per_unit') {
           issue([...path, 'mode'], 'price.validation.perUnitOnly');
         }
+        if (!pricing.mode) return;
         if (pricing.mode === 'flat_fee' || pricing.mode === 'usage_per_unit') {
           const field = pricing.mode === 'flat_fee' ? 'flatFee' : 'usagePerUnit';
           if (!validAmount(pricing[field])) issue([...path, field], 'price.validation.nonnegative');
@@ -153,7 +154,7 @@ export function multiplyPriceItems(items: ModelPriceItem[], multiplier: string |
   const ExactDecimal = Decimal.clone();
   const factor = new ExactDecimal(String(multiplier).trim().replace(/^\+/, ''));
   const factorDigits = factor.precision(false);
-  const scale = (pricing: Pricing): Pricing => {
+  const scale = <T extends ModelPriceItem['pricing']>(pricing: T) => {
     const amount = (value: string | number | null | undefined) => {
       if (!validAmount(value)) return value;
       const decimal = new ExactDecimal(String(value).trim().replace(/^\+/, ''));

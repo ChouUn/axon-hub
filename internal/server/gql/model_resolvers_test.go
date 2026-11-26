@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/99designs/gqlgen/client"
 	"github.com/stretchr/testify/require"
 
 	"github.com/looplj/axonhub/internal/authz"
@@ -108,4 +109,35 @@ func TestQueryModels_ProjectAPIKeyManagerCanReadModels(t *testing.T) {
 	ctxWithoutProject = contexts.WithUser(ctxWithoutProject, userWithEdges)
 	_, err = resolver.QueryModels(ctxWithoutProject, QueryModelsInput{})
 	require.Error(t, err)
+}
+
+func TestUpdateModelExpectedVersionGraphQL(t *testing.T) {
+	db := enttest.NewEntClient(t, "sqlite3", "file:ent?mode=memory&_fk=0")
+	t.Cleanup(func() { _ = db.Close() })
+	srv := NewGraphqlHandlers(Dependencies{Ent: db, ModelService: biz.NewModelService(biz.ModelServiceParams{Ent: db})})
+	api := client.New(srv.Graphql, func(r *client.Request) {
+		r.HTTP = r.HTTP.WithContext(authz.WithTestBypass(r.HTTP.Context()))
+	})
+	var created struct {
+		CreateModel struct{ ID, EditVersion string }
+	}
+	require.NoError(t, api.Post(`mutation {
+		createModel(input: {
+			modelID: "versioned", name: "Original", developer: "dev", icon: "dev", group: "dev",
+			modelCard: {}, settings: {associations: []}
+		}) { id editVersion }
+	}`, &created))
+	require.NotEmpty(t, created.CreateModel.EditVersion)
+	const update = `mutation Update($id: ID!, $version: String!, $name: String!) {
+		updateModel(id: $id, input: {name: $name}, expectedVersion: $version) { name }
+	}`
+	var updated struct {
+		UpdateModel struct{ Name string }
+	}
+	id := client.Var("id", created.CreateModel.ID)
+	version := client.Var("version", created.CreateModel.EditVersion)
+	require.NoError(t, api.Post(update, &updated, id, version, client.Var("name", "Updated")))
+	require.Equal(t, "Updated", updated.UpdateModel.Name)
+	require.ErrorContains(t, api.Post(update, &updated, id, version, client.Var("name", "Stale")), "model changed since it was opened")
+	require.Equal(t, "Updated", db.Model.Query().OnlyX(authz.WithTestBypass(t.Context())).Name)
 }

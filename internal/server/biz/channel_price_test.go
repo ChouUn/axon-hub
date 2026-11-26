@@ -211,6 +211,423 @@ func TestChannelService_SaveChannelModelPrices(t *testing.T) {
 	})
 }
 
+func TestChannelService_UpdateChannelModelPriceEntityKeepsOneActiveVersion(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := authz.WithTestBypass(ent.NewContext(context.Background(), client))
+	ch, err := client.Channel.Create().
+		SetType(channel.TypeOpenai).
+		SetName("Version transition lock").
+		SetBaseURL("https://api.openai.com/v1").
+		SetCredentials(objects.ChannelCredentials{APIKey: "test-key"}).
+		SetSupportedModels([]string{"locked-model"}).
+		SetDefaultTestModel("locked-model").
+		Save(ctx)
+	require.NoError(t, err)
+
+	initialPrice := objects.ModelPrice{Items: []objects.ModelPriceItem{{
+		ItemCode: objects.PriceItemCodeUsage,
+		Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr("1")},
+	}}}
+	created, err := svc.SaveChannelModelPrices(ctx, ch.ID, []SaveChannelModelPriceInput{{
+		ModelID: "locked-model",
+		Price:   initialPrice,
+	}}, nil)
+	require.NoError(t, err)
+	require.Len(t, created, 1)
+
+	now := time.Now().UTC()
+	err = svc.RunInTransaction(ctx, func(txCtx context.Context) error {
+		for index, value := range []string{"2", "3"} {
+			newPrice := objects.ModelPrice{Items: []objects.ModelPriceItem{{
+				ItemCode: objects.PriceItemCodeUsage,
+				Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr(value)},
+			}}}
+			if _, _, err := svc.updateChannelModelPriceEntity(txCtx, created[0], newPrice, true, nil, now.Add(time.Duration(index+1)*time.Second)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	price, err := client.ChannelModelPrice.Query().Where(
+		channelmodelprice.ChannelID(ch.ID),
+		channelmodelprice.ModelID("locked-model"),
+	).Only(ctx)
+	require.NoError(t, err)
+	versions, err := price.QueryVersions().All(ctx)
+	require.NoError(t, err)
+	activeCount := 0
+	for _, version := range versions {
+		if version.Status == channelmodelpriceversion.StatusActive {
+			activeCount++
+			require.Equal(t, price.ReferenceID, version.ReferenceID)
+		}
+	}
+	require.Equal(t, 1, activeCount)
+	require.Equal(t, "3", price.Price.Items[0].Pricing.UsagePerUnit.String())
+}
+
+func usageItem(value string) objects.ModelPriceItem {
+	return objects.ModelPriceItem{
+		ItemCode: objects.PriceItemCodeUsage,
+		Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr(value)},
+	}
+}
+
+func completionItem(value string) objects.ModelPriceItem {
+	return objects.ModelPriceItem{
+		ItemCode: objects.PriceItemCodeCompletion,
+		Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: loToDecimalPtr(value)},
+	}
+}
+
+// Simulates the endpoint-sync vs manual-save race: the sync snapshot is taken
+// before a concurrent manual save changes item X to "7"; the sync then updates
+// the row reporting only item X. The merge must run against the locked row
+// (which also carries the concurrent manual edit to item Y), so Y is not lost.
+func TestChannelService_UpdateChannelModelPriceEntityMergesAgainstLockedRow(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := authz.WithTestBypass(ent.NewContext(context.Background(), client))
+	ch, err := client.Channel.Create().
+		SetType(channel.TypeOpenai).
+		SetName("Locked row merge").
+		SetBaseURL("https://api.openai.com/v1").
+		SetCredentials(objects.ChannelCredentials{APIKey: "test-key"}).
+		SetSupportedModels([]string{"race-model"}).
+		SetDefaultTestModel("race-model").
+		Save(ctx)
+	require.NoError(t, err)
+
+	initialPrice := objects.ModelPrice{Items: []objects.ModelPriceItem{
+		usageItem("1"),
+		completionItem("2"),
+	}}
+	created, err := svc.SaveChannelModelPrices(ctx, ch.ID, []SaveChannelModelPriceInput{{
+		ModelID: "race-model",
+		Price:   initialPrice,
+	}}, nil)
+	require.NoError(t, err)
+	require.Len(t, created, 1)
+
+	err = svc.RunInTransaction(ctx, func(txCtx context.Context) error {
+		// Sync snapshot taken here, before the concurrent manual save.
+		syncPrice := objects.ModelPrice{Items: []objects.ModelPriceItem{usageItem("1")}}
+
+		// Concurrent manual save: whole-row price with X changed to 7.
+		manualPrice := objects.ModelPrice{Items: []objects.ModelPriceItem{
+			usageItem("7"),
+			completionItem("2"),
+		}}
+		_, err := svc.SaveChannelModelPrices(txCtx, ch.ID, []SaveChannelModelPriceInput{{
+			ModelID: "race-model",
+			Price:   manualPrice,
+		}}, nil)
+		if err != nil {
+			return err
+		}
+
+		// Sync now commits; it only reported item X, and the merge must run
+		// against the row state the sync sees under the lock, not the snapshot.
+		_, _, err = svc.updateChannelModelPriceEntity(txCtx, created[0], syncPrice, false, nil, time.Now().UTC())
+		return err
+	})
+	require.NoError(t, err)
+
+	price, err := client.ChannelModelPrice.Query().Where(
+		channelmodelprice.ChannelID(ch.ID),
+		channelmodelprice.ModelID("race-model"),
+	).Only(ctx)
+	require.NoError(t, err)
+	items := lo.KeyBy(price.Price.Items, func(item objects.ModelPriceItem) objects.PriceItemCode {
+		return item.ItemCode
+	})
+	// Item X is the reported code, so the sync value wins over the manual "7".
+	require.Equal(t, "1", items[objects.PriceItemCodeUsage].Pricing.UsagePerUnit.String())
+	// Item Y was not reported, so the concurrent manual save survives.
+	require.Equal(t, "2", items[objects.PriceItemCodeCompletion].Pricing.UsagePerUnit.String())
+}
+
+// Same race but where the sync only reports item Y: the concurrent manual edit
+// to item X must survive untouched.
+func TestChannelService_UpdateChannelModelPriceEntityPreservesUnreportedItems(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := authz.WithTestBypass(ent.NewContext(context.Background(), client))
+	ch, err := client.Channel.Create().
+		SetType(channel.TypeOpenai).
+		SetName("Unreported item merge").
+		SetBaseURL("https://api.openai.com/v1").
+		SetCredentials(objects.ChannelCredentials{APIKey: "test-key"}).
+		SetSupportedModels([]string{"race-model-2"}).
+		SetDefaultTestModel("race-model-2").
+		Save(ctx)
+	require.NoError(t, err)
+
+	created, err := svc.SaveChannelModelPrices(ctx, ch.ID, []SaveChannelModelPriceInput{{
+		ModelID: "race-model-2",
+		Price:   objects.ModelPrice{Items: []objects.ModelPriceItem{usageItem("1")}},
+	}}, nil)
+	require.NoError(t, err)
+	require.Len(t, created, 1)
+
+	err = svc.RunInTransaction(ctx, func(txCtx context.Context) error {
+		// Concurrent manual save changes item X to 7 before the sync update.
+		_, err := svc.SaveChannelModelPrices(txCtx, ch.ID, []SaveChannelModelPriceInput{{
+			ModelID: "race-model-2",
+			Price:   objects.ModelPrice{Items: []objects.ModelPriceItem{usageItem("7")}},
+		}}, nil)
+		if err != nil {
+			return err
+		}
+
+		// Sync reports only item Y; the locked row's item X must be preserved.
+		syncPrice := objects.ModelPrice{Items: []objects.ModelPriceItem{completionItem("5")}}
+		_, _, err = svc.updateChannelModelPriceEntity(txCtx, created[0], syncPrice, false, nil, time.Now().UTC())
+		return err
+	})
+	require.NoError(t, err)
+
+	price, err := client.ChannelModelPrice.Query().Where(
+		channelmodelprice.ChannelID(ch.ID),
+		channelmodelprice.ModelID("race-model-2"),
+	).Only(ctx)
+	require.NoError(t, err)
+	items := lo.KeyBy(price.Price.Items, func(item objects.ModelPriceItem) objects.PriceItemCode {
+		return item.ItemCode
+	})
+	require.Len(t, items, 2)
+	require.Equal(t, "7", items[objects.PriceItemCodeUsage].Pricing.UsagePerUnit.String())
+	require.Equal(t, "5", items[objects.PriceItemCodeCompletion].Pricing.UsagePerUnit.String())
+}
+
+// Regression: the endpoint-sync update path must also fill library gaps for
+// codes the endpoint did not report. A row with only a prompt rate, plus a
+// prompt-only endpoint quote, must gain the library's completion rate (billing
+// would otherwise charge zero for completion tokens).
+func TestChannelService_EnsureChannelModelPrices_UpdateFillsLibraryGaps(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+
+	ctx := channelAutoPriceTestContext(client)
+	ch := createAutoPriceTestChannel(t, ctx, client, "Library gap fill", []string{"gap-model"})
+
+	createModelLibraryEntry(t, ctx, client, "gap-model", model.StatusEnabled, &objects.ModelPrice{
+		Items: []objects.ModelPriceItem{usageItem("1"), completionItem("2")},
+	})
+
+	// Existing row carries only the prompt rate.
+	created, err := svc.SaveChannelModelPrices(ctx, ch.ID, []SaveChannelModelPriceInput{{
+		ModelID: "gap-model",
+		Price:   objects.ModelPrice{Items: []objects.ModelPriceItem{usageItem("1")}},
+	}}, nil)
+	require.NoError(t, err)
+	require.Len(t, created, 1)
+
+	endpointTemplates := []channelModelPriceTemplate{{
+		ModelID: "gap-model",
+		Price:   objects.ModelPrice{Items: []objects.ModelPriceItem{usageItem("1")}},
+	}}
+	_, err = svc.ensureChannelModelPrices(ctx, ch.ID, []string{"gap-model"}, endpointTemplates)
+	require.NoError(t, err)
+
+	updated, err := client.ChannelModelPrice.Query().Where(
+		channelmodelprice.ChannelID(ch.ID),
+		channelmodelprice.ModelID("gap-model"),
+	).Only(ctx)
+	require.NoError(t, err)
+
+	items := lo.KeyBy(updated.Price.Items, func(item objects.ModelPriceItem) objects.PriceItemCode {
+		return item.ItemCode
+	})
+	// The endpoint value wins for the reported code; the library fills the gap.
+	require.Equal(t, "1", items[objects.PriceItemCodeUsage].Pricing.UsagePerUnit.String())
+	require.Equal(t, "2", items[objects.PriceItemCodeCompletion].Pricing.UsagePerUnit.String())
+}
+
+func TestChannelService_EnsureChannelModelPrices_UpdatesTieredPrice(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := channelAutoPriceTestContext(client)
+	modelIDs := []string{"tiered-model"}
+	ch := createAutoPriceTestChannel(t, ctx, client, "Update tiered price", modelIDs)
+
+	base := endpointSyncTestTieredPrice()
+	created, err := svc.SaveChannelModelPrices(ctx, ch.ID, []SaveChannelModelPriceInput{{
+		ModelID: modelIDs[0],
+		Price:   base,
+	}}, nil)
+	require.NoError(t, err)
+	require.Len(t, created, 1)
+
+	multiplier := loToDecimalPtr("0.5")
+	_, err = client.Channel.UpdateOneID(ch.ID).
+		SetSettings(&objects.ChannelSettings{ModelPriceMultiplier: multiplier}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	endpoint := []channelModelPriceTemplate{{
+		ModelID: modelIDs[0],
+		Price:   objects.ModelPrice{Items: []objects.ModelPriceItem{usageItem("4")}},
+	}}
+	changed, err := svc.ensureChannelModelPrices(ctx, ch.ID, modelIDs, endpoint)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	current := queryChannelModelPrice(t, ctx, client, ch.ID, modelIDs[0])
+	want := base
+	want.Items = endpoint[0].Price.Items
+	want.Multiplier = multiplier
+	require.True(t, want.Equals(current.Price))
+	require.NotEqual(t, created[0].ReferenceID, current.ReferenceID)
+	version, err := current.QueryVersions().Where(channelmodelpriceversion.StatusEQ(channelmodelpriceversion.StatusActive)).Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, current.ReferenceID, version.ReferenceID)
+	require.True(t, want.Equals(version.Price))
+
+	changed, err = svc.ensureChannelModelPrices(ctx, ch.ID, modelIDs, endpoint)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, 2, countChannelModelPriceVersions(t, ctx, client, current.ID))
+
+	_, err = client.Channel.UpdateOneID(ch.ID).SetSettings(&objects.ChannelSettings{}).Save(ctx)
+	require.NoError(t, err)
+	changed, err = svc.ensureChannelModelPrices(ctx, ch.ID, modelIDs, endpoint)
+	require.NoError(t, err)
+	require.True(t, changed, "a multiplier-only change must be synced")
+	current = queryChannelModelPrice(t, ctx, client, ch.ID, modelIDs[0])
+	require.Nil(t, current.Price.Multiplier)
+	want.Multiplier = nil
+	require.True(t, want.Equals(current.Price))
+}
+
+func TestChannelService_EnsureChannelModelPrices_CreatesTieredPriceFromLibraryAndEndpoint(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := channelAutoPriceTestContext(client)
+	modelIDs := []string{"tiered-model"}
+	ch := createAutoPriceTestChannel(t, ctx, client, "Create tiered price", modelIDs)
+	multiplier := loToDecimalPtr("0.5")
+	_, err := svc.SaveChannelModelPrices(ctx, ch.ID, nil, multiplier)
+	require.NoError(t, err)
+
+	library := endpointSyncTestTieredPrice()
+	createModelLibraryEntry(t, ctx, client, modelIDs[0], model.StatusEnabled, &library)
+	endpoint := []channelModelPriceTemplate{{
+		ModelID: modelIDs[0],
+		Price:   objects.ModelPrice{Items: []objects.ModelPriceItem{usageItem("4")}},
+	}}
+
+	changed, err := svc.ensureChannelModelPrices(ctx, ch.ID, modelIDs, endpoint)
+	require.NoError(t, err)
+	require.True(t, changed)
+	current := queryChannelModelPrice(t, ctx, client, ch.ID, modelIDs[0])
+	want := library
+	want.Items = endpoint[0].Price.Items
+	want.Multiplier = multiplier
+	require.True(t, want.Equals(current.Price))
+	version, err := current.QueryVersions().Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, channelmodelpriceversion.StatusActive, version.Status)
+	require.Equal(t, current.ReferenceID, version.ReferenceID)
+	require.True(t, want.Equals(version.Price))
+}
+
+func TestChannelService_EnsureChannelModelPrices_KeepsCurrentPriceOnInvalidMerge(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := channelAutoPriceTestContext(client)
+	modelIDs := []string{"tiered-model"}
+	ch := createAutoPriceTestChannel(t, ctx, client, "Keep tiered price", modelIDs)
+	created, err := svc.SaveChannelModelPrices(ctx, ch.ID, []SaveChannelModelPriceInput{{
+		ModelID: modelIDs[0],
+		Price:   endpointSyncTestTieredPrice(),
+	}}, nil)
+	require.NoError(t, err)
+	require.Len(t, created, 1)
+	before, err := client.ChannelModelPriceVersion.Query().
+		Where(channelmodelpriceversion.ChannelModelPriceIDEQ(created[0].ID)).Only(ctx)
+	require.NoError(t, err)
+
+	endpoint := []channelModelPriceTemplate{{
+		ModelID: modelIDs[0],
+		Price:   objects.ModelPrice{Items: []objects.ModelPriceItem{usageItem("4"), completionItem("5")}},
+	}}
+	changed, err := svc.ensureChannelModelPrices(ctx, ch.ID, modelIDs, endpoint)
+	require.NoError(t, err)
+	require.False(t, changed)
+
+	// Exercise the locked validation independently of the preflight check.
+	err = svc.RunInTransaction(ctx, func(txCtx context.Context) error {
+		_, changed, err := svc.updateChannelModelPriceEntity(txCtx, created[0], endpoint[0].Price, false, nil, time.Now().UTC())
+		assert.False(t, changed)
+		return err
+	})
+	require.NoError(t, err)
+
+	current := queryChannelModelPrice(t, ctx, client, ch.ID, modelIDs[0])
+	require.Equal(t, created[0].ReferenceID, current.ReferenceID)
+	require.True(t, created[0].Price.Equals(current.Price))
+	version, err := current.QueryVersions().Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, before.ID, version.ID)
+	require.Equal(t, before.ReferenceID, version.ReferenceID)
+	require.Equal(t, channelmodelpriceversion.StatusActive, version.Status)
+	require.Nil(t, version.EffectiveEndAt)
+	require.True(t, before.Price.Equals(version.Price))
+}
+
+func TestChannelService_EnsureChannelModelPrices_FallsBackToLibraryOnInvalidMerge(t *testing.T) {
+	svc, client := setupTestChannelService(t)
+	defer client.Close()
+	ctx := channelAutoPriceTestContext(client)
+	modelIDs := []string{"tiered-model"}
+	ch := createAutoPriceTestChannel(t, ctx, client, "Fall back to tiered price", modelIDs)
+	multiplier := loToDecimalPtr("0.5")
+	_, err := svc.SaveChannelModelPrices(ctx, ch.ID, nil, multiplier)
+	require.NoError(t, err)
+
+	library := endpointSyncTestTieredPrice()
+	createModelLibraryEntry(t, ctx, client, modelIDs[0], model.StatusEnabled, &library)
+	endpoint := []channelModelPriceTemplate{{
+		ModelID: modelIDs[0],
+		Price:   objects.ModelPrice{Items: []objects.ModelPriceItem{usageItem("4"), completionItem("5")}},
+	}}
+
+	changed, err := svc.ensureChannelModelPrices(ctx, ch.ID, modelIDs, endpoint)
+	require.NoError(t, err)
+	require.True(t, changed)
+	current := queryChannelModelPrice(t, ctx, client, ch.ID, modelIDs[0])
+	want := library
+	want.Multiplier = multiplier
+	require.True(t, want.Equals(current.Price))
+	version, err := current.QueryVersions().Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, channelmodelpriceversion.StatusActive, version.Status)
+	require.Equal(t, current.ReferenceID, version.ReferenceID)
+	require.True(t, want.Equals(version.Price))
+}
+
+func endpointSyncTestTieredPrice() objects.ModelPrice {
+	return objects.ModelPrice{
+		Items: []objects.ModelPriceItem{usageItem("1")},
+		VolumeTiers: []objects.ModelPriceVolumeTier{{
+			Above: 200000,
+			Items: []objects.ModelPriceItem{usageItem("2")},
+		}},
+		Schedule: &objects.PriceSchedule{
+			Timezone: "UTC",
+			Overrides: []objects.PriceOverride{{
+				Name:  "night",
+				When:  objects.OverrideWhen{DailyTime: &objects.DailyTimeRange{Start: "00:00", End: "06:00"}},
+				Items: []objects.ModelPriceItem{usageItem("0.5")},
+			}},
+		},
+	}
+}
+
 func loToDecimalPtr(s string) *decimal.Decimal {
 	d, _ := decimal.NewFromString(s)
 	return &d

@@ -6,8 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useErrorHandler } from '@/hooks/use-error-handler';
 import { modelPriceSchema } from '@/features/channels/data/schema';
-import { Model, ModelConnection, CreateModelInput, UpdateModelInput, modelConnectionSchema, modelSchema } from './schema';
-import { modelCardInputSchema } from './schema';
+import { type ModelConnection, type CreateModelInput, type UpdateModelInput, modelConnectionSchema, modelCardInputSchema } from './schema';
 
 const MODELS_QUERY = `
   query GetModels(
@@ -24,6 +23,7 @@ const MODELS_QUERY = `
           id
           createdAt
           updatedAt
+          editVersion
           developer
           modelID
           icon
@@ -44,6 +44,12 @@ const MODELS_QUERY = `
             }
             vision
             price { ${MODEL_PRICE_FIELDS} }
+            cost {
+              input
+              output
+              cacheRead
+              cacheWrite
+            }
             limit {
               context
               output
@@ -139,97 +145,6 @@ const CREATE_MODEL_MUTATION = `
   mutation CreateModel($input: CreateModelInput!) {
     createModel(input: $input) {
       id
-      createdAt
-      updatedAt
-      developer
-      modelID
-      icon
-      type
-      name
-      group
-      modelCard {
-        reasoning {
-          supported
-          default
-        }
-        reasoningEfforts
-        toolCall
-        temperature
-        modalities {
-          input
-          output
-        }
-        vision
-        price { ${MODEL_PRICE_FIELDS} }
-        limit {
-          context
-          output
-        }
-        knowledge
-        releaseDate
-        lastUpdated
-      }
-      settings {
-        disableDeveloperSettingsInheritance
-        loadBalancerStrategy
-        traceStickyMode
-        associations {
-          type
-          priority
-          disabled
-          when {
-            enabled
-            condition {
-              type
-              logic
-              field
-              operator
-              value
-              conditions {
-                type
-                logic
-                field
-                operator
-                value
-                conditions {
-                  type
-                  logic
-                  field
-                  operator
-                  value
-                }
-              }
-            }
-          }
-          channelModel {
-            channelId
-            modelId
-          }
-          channelRegex {
-            channelId
-            pattern
-          }
-          regex {
-            pattern
-            exclude {
-              channelNamePattern
-              channelIds
-              channelTags
-            }
-          }
-          modelId {
-            modelId
-            exclude {
-              channelNamePattern
-              channelIds
-              channelTags
-            }
-          }
-        }
-      }
-      status
-      remark
-      associatedChannelCount
     }
   }
 `;
@@ -238,196 +153,14 @@ const BULK_CREATE_MODELS_MUTATION = `
   mutation BulkCreateModels($inputs: [CreateModelInput!]!) {
     bulkCreateModels(inputs: $inputs) {
       id
-      createdAt
-      updatedAt
-      developer
-      modelID
-      icon
-      type
-      name
-      group
-      modelCard {
-        reasoning {
-          supported
-          default
-        }
-        reasoningEfforts
-        toolCall
-        temperature
-        modalities {
-          input
-          output
-        }
-        vision
-        price { ${MODEL_PRICE_FIELDS} }
-        limit {
-          context
-          output
-        }
-        knowledge
-        releaseDate
-        lastUpdated
-      }
-      settings {
-        disableDeveloperSettingsInheritance
-        loadBalancerStrategy
-        traceStickyMode
-        associations {
-          type
-          priority
-          disabled
-          when {
-            enabled
-            condition {
-              type
-              logic
-              field
-              operator
-              value
-              conditions {
-                type
-                logic
-                field
-                operator
-                value
-                conditions {
-                  type
-                  logic
-                  field
-                  operator
-                  value
-                }
-              }
-            }
-          }
-          channelModel {
-            channelId
-            modelId
-          }
-          channelRegex {
-            channelId
-            pattern
-          }
-          regex {
-            pattern
-            exclude {
-              channelNamePattern
-              channelIds
-              channelTags
-            }
-          }
-          modelId {
-            modelId
-            exclude {
-              channelNamePattern
-              channelIds
-              channelTags
-            }
-          }
-        }
-      }
-      status
-      remark
-      associatedChannelCount
     }
   }
 `;
 
 const UPDATE_MODEL_MUTATION = `
-  mutation UpdateModel($id: ID!, $input: UpdateModelInput!) {
-    updateModel(id: $id, input: $input) {
+  mutation UpdateModel($id: ID!, $input: UpdateModelInput!, $expectedVersion: String) {
+    updateModel(id: $id, input: $input, expectedVersion: $expectedVersion) {
       id
-      createdAt
-      updatedAt
-      developer
-      modelID
-      icon
-      type
-      name
-      group
-      modelCard {
-        reasoning {
-          supported
-          default
-        }
-        reasoningEfforts
-        toolCall
-        temperature
-        modalities {
-          input
-          output
-        }
-        vision
-        price { ${MODEL_PRICE_FIELDS} }
-        limit {
-          context
-          output
-        }
-        knowledge
-        releaseDate
-        lastUpdated
-      }
-      settings {
-        disableDeveloperSettingsInheritance
-        loadBalancerStrategy
-        traceStickyMode
-        associations {
-          type
-          priority
-          disabled
-          when {
-            enabled
-            condition {
-              type
-              logic
-              field
-              operator
-              value
-              conditions {
-                type
-                logic
-                field
-                operator
-                value
-                conditions {
-                  type
-                  logic
-                  field
-                  operator
-                  value
-                }
-              }
-            }
-          }
-          channelModel {
-            channelId
-            modelId
-          }
-          channelRegex {
-            channelId
-            pattern
-          }
-          regex {
-            pattern
-            exclude {
-              channelNamePattern
-              channelIds
-              channelTags
-            }
-          }
-          modelId {
-            modelId
-            exclude {
-              channelNamePattern
-              channelIds
-              channelTags
-            }
-          }
-        }
-      }
-      status
-      remark
-      associatedChannelCount
     }
   }
 `;
@@ -566,10 +299,9 @@ export function useCreateModel() {
 
   return useMutation({
     mutationFn: async (input: CreateModelInput) => {
-      const data = await graphqlRequest<{ createModel: Model }>(CREATE_MODEL_MUTATION, {
+      await graphqlRequest(CREATE_MODEL_MUTATION, {
         input: { ...input, modelCard: modelCardInputSchema.parse(input.modelCard) },
       });
-      return modelSchema.parse(data.createModel);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['models'] });
@@ -588,10 +320,9 @@ export function useBulkCreateModels() {
 
   return useMutation({
     mutationFn: async (inputs: CreateModelInput[]) => {
-      const data = await graphqlRequest<{ bulkCreateModels: Model[] }>(BULK_CREATE_MODELS_MUTATION, {
+      await graphqlRequest(BULK_CREATE_MODELS_MUTATION, {
         inputs: inputs.map((input) => ({ ...input, modelCard: modelCardInputSchema.parse(input.modelCard) })),
       });
-      return data.bulkCreateModels.map((model) => modelSchema.parse(model));
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['models'] });
@@ -609,12 +340,12 @@ export function useUpdateModel() {
   const { handleError } = useErrorHandler();
 
   return useMutation({
-    mutationFn: async ({ id, input }: { id: string; input: UpdateModelInput }) => {
-      const data = await graphqlRequest<{ updateModel: Model }>(UPDATE_MODEL_MUTATION, {
+    mutationFn: async ({ id, input, expectedVersion }: { id: string; input: UpdateModelInput; expectedVersion?: string }) => {
+      await graphqlRequest(UPDATE_MODEL_MUTATION, {
         id,
         input: { ...input, ...(input.modelCard ? { modelCard: modelCardInputSchema.parse(input.modelCard) } : {}) },
+        expectedVersion,
       });
-      return modelSchema.parse(data.updateModel);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['models'] });

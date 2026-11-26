@@ -1,6 +1,7 @@
 // 职责: 管理模型配置，并通过共享 Model 索引缓存提供模型路由读取。
 // 关联文件:
 //
+//	internal/server/biz/model_catalog_apply.go
 //	internal/server/biz/model_cache.go
 //	internal/server/biz/channel.go
 //	internal/server/orchestrator/candidates.go
@@ -15,9 +16,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
+	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"github.com/samber/lo"
 	"go.uber.org/fx"
@@ -38,6 +41,7 @@ import (
 type ModelServiceParams struct {
 	fx.In
 
+	Catalog    *CatalogService
 	ModelCache *ModelCacheService
 
 	ChannelService *ChannelService
@@ -47,6 +51,7 @@ type ModelServiceParams struct {
 
 func NewModelService(params ModelServiceParams) *ModelService {
 	return &ModelService{
+		catalog:    params.Catalog,
 		modelCache: params.ModelCache,
 		AbstractService: &AbstractService{
 			db: params.Ent,
@@ -59,6 +64,7 @@ func NewModelService(params ModelServiceParams) *ModelService {
 type ModelService struct {
 	*AbstractService
 
+	catalog    *CatalogService
 	modelCache *ModelCacheService
 
 	channelService *ChannelService
@@ -497,6 +503,36 @@ func (svc *ModelService) BulkCreateModels(ctx context.Context, inputs []*ent.Cre
 
 // UpdateModel updates an existing model with the provided input.
 func (svc *ModelService) UpdateModel(ctx context.Context, id int, input *ent.UpdateModelInput) (*ent.Model, error) {
+	return svc.UpdateModelWithVersion(ctx, id, input, nil)
+}
+
+func (svc *ModelService) UpdateModelWithVersion(ctx context.Context, id int, input *ent.UpdateModelInput, expected *string) (*ent.Model, error) {
+	var updated *ent.Model
+	outerTx := ent.TxFromContext(ctx)
+	var unwrap bool
+	err := svc.RunInTransaction(ctx, func(ctx context.Context) error {
+		unwrap = outerTx == nil && ent.TxFromContext(ctx) != nil
+		var err error
+		updated, err = svc.updateModel(ctx, id, input, expected)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if unwrap {
+		updated.Unwrap()
+	}
+	return updated, nil
+}
+
+func lockedModel(ctx context.Context, db *ent.Client, query *ent.ModelQuery) (*ent.Model, error) {
+	if db.Driver().Dialect() != dialect.SQLite {
+		query.Modify(func(s *sql.Selector) { s.ForUpdate() })
+	}
+	return query.Only(ctx)
+}
+
+func (svc *ModelService) updateModel(ctx context.Context, id int, input *ent.UpdateModelInput, expected *string) (*ent.Model, error) {
 	if err := validateModelCard(input.ModelCard); err != nil {
 		return nil, err
 	}
@@ -517,8 +553,30 @@ func (svc *ModelService) UpdateModel(ctx context.Context, id int, input *ent.Upd
 		SetNillableStatus(input.Status).
 		SetNillableIcon(input.Icon)
 
-	if input.ModelCard != nil {
-		mut.SetModelCard(input.ModelCard)
+	if input.ModelCard != nil || expected != nil {
+		if err := model.Policy.EvalMutation(ctx, mut.Mutation()); err != nil {
+			return nil, err
+		}
+		original, err := authz.RunAsHost(ctx, svc.entFromContext(ctx), "preserve-model-catalog-binding", func(ctx context.Context) (*ent.Model, error) {
+			db := ent.FromContext(ctx)
+			return lockedModel(ctx, db, db.Model.Query().Where(model.IDEQ(id)))
+		})
+		if err != nil {
+			return nil, err
+		}
+		if expected != nil {
+			version, err := ModelEditVersion(original)
+			if err != nil {
+				return nil, err
+			}
+			if version != *expected {
+				return nil, xerrors.ValidationError("model changed since it was opened")
+			}
+		}
+		if input.ModelCard != nil {
+			preserveCatalogBinding(original.ModelCard, input.ModelCard)
+			mut.SetModelCard(input.ModelCard)
+		}
 	}
 
 	if input.Settings != nil {
@@ -539,6 +597,22 @@ func (svc *ModelService) UpdateModel(ctx context.Context, id int, input *ent.Upd
 	}
 
 	return model, nil
+}
+
+func preserveCatalogBinding(original, next *objects.ModelCard) {
+	next.CatalogAliases = nil
+	next.CatalogPrice = nil
+	if original == nil {
+		return
+	}
+	next.CatalogAliases = slices.Clone(original.CatalogAliases)
+	if original.CatalogPrice != nil {
+		binding := *original.CatalogPrice
+		if !equalModelPrices(original.Price, next.Price) {
+			binding.Follow = false
+		}
+		next.CatalogPrice = &binding
+	}
 }
 
 // UpdateModelStatus updates the status of a model.
@@ -961,7 +1035,8 @@ func findUnassociatedChannels(channels []*ent.Channel, associations []*objects.M
 }
 
 type ModelIdentify struct {
-	ID string `json:"id"`
+	ID      string              `json:"id"`
+	Pricing *objects.ModelPrice `json:"pricing,omitempty"`
 }
 
 type UnassociatedChannel struct {

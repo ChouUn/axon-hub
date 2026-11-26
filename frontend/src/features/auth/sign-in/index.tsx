@@ -1,5 +1,6 @@
 import { useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
+import { appPath } from '@/lib/app-path';
 import AuthLayout from '../auth-layout';
 import TwoColumnAuth from '../components/two-column-auth';
 import AnimatedLineBackground from './components/animated-line-background';
@@ -20,7 +21,7 @@ export default function SignIn() {
         rightFooter={
           <div className='space-y-2 text-xs leading-relaxed text-slate-500 sm:text-sm'>
             <p>{t('auth.signIn.footer.agreement')}</p>
-            <a href='/self-usage' className='hover:text-foreground inline-block underline underline-offset-2'>
+            <a href={appPath('/self-usage')} className='hover:text-foreground inline-block underline underline-offset-2'>
               {t('auth.signIn.footer.selfUsage')}
             </a>
           </div>

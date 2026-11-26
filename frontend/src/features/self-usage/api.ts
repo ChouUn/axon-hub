@@ -1,3 +1,5 @@
+import { appPath } from '@/lib/app-path';
+
 export type SelfUsageMeta = {
   apiKeyName: string;
   apiKeyType: string;
@@ -76,7 +78,7 @@ const requestsQuery = `query SelfUsageRequests($start: String!, $end: String!, $
 }`;
 
 async function execute<T>(key: string, query: string, variables?: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
-  const response = await fetch('/self-service/v1/graphql', {
+  const response = await fetch(appPath('/self-service/v1/graphql'), {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),

@@ -135,7 +135,7 @@ input DateRangeInput {
 }
 
 input PricingInput {
-  mode: PricingMode!
+  mode: PricingMode
   flatFee: Decimal
   usagePerUnit: Decimal
   usageTiered: TieredPricingInput

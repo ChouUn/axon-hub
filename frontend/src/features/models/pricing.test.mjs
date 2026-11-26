@@ -16,6 +16,7 @@ function moduleURL(path, imports = {}) {
 
 const paginationURL = moduleURL('../../gql/pagination.ts');
 const schemaURL = moduleURL('../channels/data/schema.ts', { '@/gql/pagination': paginationURL });
+const { modelPriceInputSchema } = await import(schemaURL);
 const { multiplyPriceItems, createPriceValidationSchema, priceFromCatalog } = await import(
   moduleURL('./data/pricing.ts', { '@/features/channels/data/schema': schemaURL })
 );
@@ -86,4 +87,44 @@ test('schedule-only pricing can be edited but incomplete override prices are rej
   assert.equal(priceSchema.safeParse(price).success, false);
   price.schedule.overrides = [];
   assert.equal(priceSchema.safeParse(price).success, false);
+});
+
+const variantOnlyCacheWrite = {
+  itemCode: 'prompt_write_cached_tokens',
+  pricing: { mode: '', flatFee: '1', usagePerUnit: '2', usageTiered: { tiers: [{ upTo: null, pricePerUnit: '3' }] } },
+  promptWriteCacheVariants: [
+    { variantCode: 'five_min', pricing: item('', '1.25').pricing },
+    { variantCode: 'one_hour', pricing: item('', '2').pricing },
+  ],
+};
+
+test('variant-only cache write pricing round-trips with a null aggregate mode', () => {
+  const price = { items: [variantOnlyCacheWrite] };
+  const input = modelPriceInputSchema.parse(price);
+  assert.deepEqual(input.items[0].pricing, { mode: null, flatFee: null, usagePerUnit: null, usageTiered: null });
+  assert.deepEqual(input.items[0].promptWriteCacheVariants.map(({ pricing }) => pricing.usagePerUnit), ['1.25', '2']);
+  assert.deepEqual(priceSchema.parse(price), input);
+  assert.deepEqual(priceSchema.parse(input), input);
+});
+
+test('other item codes and cache write variants require a pricing mode', () => {
+  const otherItem = { ...variantOnlyCacheWrite, itemCode: 'prompt_tokens' };
+  assert.equal(modelPriceInputSchema.safeParse({ items: [otherItem] }).success, false);
+  assert.equal(priceSchema.safeParse({ items: [otherItem] }).success, false);
+  assert.equal(modelPriceInputSchema.safeParse({ items: [{ ...variantOnlyCacheWrite, promptWriteCacheVariants: [] }] }).success, false);
+  const invalidVariant = { variantCode: 'five_min', pricing: { mode: null } };
+  assert.equal(
+    modelPriceInputSchema.safeParse({ items: [{ ...variantOnlyCacheWrite, promptWriteCacheVariants: [invalidVariant] }] }).success,
+    false
+  );
+});
+
+test('volume tier items require per-unit pricing even when cache write variants have per-unit prices', () => {
+  const baseItem = { ...variantOnlyCacheWrite, pricing: item('', '1.25').pricing };
+  const price = { items: [baseItem], volumeTiers: [{ above: 200000, items: [variantOnlyCacheWrite] }] };
+  const result = priceSchema.safeParse(price);
+  assert.equal(result.success, false);
+  assert.deepEqual(result.error.issues.map(({ path, message }) => ({ path, message })), [
+    { path: ['volumeTiers', 0, 'items', 0, 'pricing', 'mode'], message: 'price.validation.perUnitOnly' },
+  ]);
 });

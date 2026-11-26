@@ -141,6 +141,17 @@ func (s *LoadBalancedSelector) selectHealthGated(
 		return []*ChannelModelsCandidate{clone}, nil
 	}
 	quotaFallback := quotaFallbackCandidates(fallbackHealthy, quotaFallbackLimit(policy))
+	// A Guardian review prefers its parent's channel when that channel passed the gate,
+	// matching the upstream selector, which pins it after quota admission.
+	if pinned, remaining := extractStickyCandidate(preferred, guardianReviewParentChannelID(ctx)); pinned != nil {
+		pinned.TraceSticky = false
+		fallbacks := s.sortCandidates(ctx, lb, remaining, req, max(requiredCount-1, 0), requiredCount, false)
+		lb.TrackSelection(pinned)
+		result := make([]*ChannelModelsCandidate, 0, 1+len(fallbacks)+len(quotaFallback))
+		result = append(result, pinned)
+		result = append(result, fallbacks...)
+		return append(result, quotaFallback...), nil
+	}
 	if decision.sticky && decision.found && ownerAllowed {
 		if sticky, remaining := extractStickyCandidate(preferred, decision.owner.ChannelID); sticky != nil {
 			sticky.TraceSticky = true
@@ -184,7 +195,7 @@ func cloneHealthGateCandidate(ctx context.Context, req *llm.Request, source *Cha
 		clone.APIFormat = clone.modelAPIFormats[0]
 	} else if indices[0] != 0 {
 		endpoints, forced := applyForcedAPIFormats(ctx, clone.Channel, clone.Models[:1], req.Model, clone.Channel.ResolveEndpoints())
-		clone.APIFormat = selectEndpointAPIFormat(endpoints, req, forced)
+		clone.APIFormat = selectEndpointAPIFormat(ctx, endpoints, req, forced)
 	}
 	clone.healthGate = info
 	return &clone

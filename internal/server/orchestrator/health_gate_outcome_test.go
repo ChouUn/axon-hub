@@ -47,6 +47,7 @@ func TestHealthGateOutcome_Boundaries(t *testing.T) {
 		{"unexpected EOF", io.ErrUnexpectedEOF, biz.HealthGateOutcomeFailure},
 		{"incomplete stream", ErrStreamIncomplete, biz.HealthGateOutcomeFailure},
 		{"incomplete LLM stream", llm.ErrStreamIncomplete, biz.HealthGateOutcomeFailure},
+		{"upstream stream idle timeout", httpclient.ErrStreamIdleTimeout, biz.HealthGateOutcomeFailure},
 		{"connection reset", syscall.ECONNRESET, biz.HealthGateOutcomeFailure},
 		{"broken pipe", syscall.EPIPE, biz.HealthGateOutcomeFailure},
 		{"bad request joined with EOF", errors.Join(&httpclient.Error{StatusCode: 400}, io.EOF), biz.HealthGateOutcomeNeutral},

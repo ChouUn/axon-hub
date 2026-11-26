@@ -60,6 +60,7 @@ type ReasoningEffortMapping {
 type TransformOptions {
   forceArrayInstructions: Boolean!
   forceArrayInputs: Boolean!
+  forceArrayStop: Boolean!
   replaceDeveloperRoleWithSystem: Boolean!
   reasoningEffortMapping: [ReasoningEffortMapping!]
 }
@@ -68,6 +69,9 @@ type SyncChannelModelsPayload {
   channelID: ID!
   supportedModels: [String!]!
   manualModels: [String!]!
+  fallback: Boolean!
+  codexCatalogVersion: CodexCatalogVersion
+  codexCatalogSkippedReason: String
 }
 
 input ReasoningEffortMappingInput {
@@ -78,6 +82,7 @@ input ReasoningEffortMappingInput {
 input TransformOptionsInput {
   forceArrayInstructions: Boolean
   forceArrayInputs: Boolean
+  forceArrayStop: Boolean
   replaceDeveloperRoleWithSystem: Boolean
   reasoningEffortMapping: [ReasoningEffortMappingInput!]
 }
@@ -208,6 +213,7 @@ type ChannelSettings {
   bodyOverrideOperations: [OverrideOperation!]! @goField(forceResolver: true)
   passThroughUserAgent: Boolean
   passThroughBody: Boolean
+  syncModelPrices: Boolean
   rateLimit: ChannelRateLimit
   retryableStatusCodes: [Int!]
   retryableErrorPatterns: [RetryableErrorPattern!]
@@ -287,16 +293,34 @@ input APIKeyAutoDisableRuleInput {
   disableUntilTimezone: String
 }
 
+type ChannelScheduledDisable {
+  disableCron: String!
+  disableTimezone: String
+  reenableMode: String
+  reenableCron: String
+  reenableTimezone: String
+}
+
+input ChannelScheduledDisableInput {
+  disableCron: String!
+  disableTimezone: String
+  reenableMode: String
+  reenableCron: String
+  reenableTimezone: String
+}
+
 type ChannelPolicies {
   stream: CapabilityPolicy
   apiKeyAutoDisableMode: APIKeyAutoDisableMode
   apiKeyAutoDisableRules: [APIKeyAutoDisableRule!]
+  scheduledDisable: ChannelScheduledDisable
 }
 
 input ChannelPoliciesInput {
   stream: CapabilityPolicy
   apiKeyAutoDisableMode: APIKeyAutoDisableMode
   apiKeyAutoDisableRules: [APIKeyAutoDisableRuleInput!]
+  scheduledDisable: ChannelScheduledDisableInput
 }
 
 input ModelMappingInput {
@@ -318,6 +342,7 @@ input ChannelSettingsInput {
   bodyOverrideOperations: [OverrideOperationInput!]
   passThroughUserAgent: Boolean
   passThroughBody: Boolean
+  syncModelPrices: Boolean
   rateLimit: ChannelRateLimitInput
   retryableStatusCodes: [Int!]
   retryableErrorPatterns: [RetryableErrorPatternInput!]
@@ -351,6 +376,7 @@ input UpdateChannelSettingsInput {
   bodyOverrideOperations: [OverrideOperationInput!]
   passThroughUserAgent: Boolean
   passThroughBody: Boolean
+  syncModelPrices: Boolean
   rateLimit: ChannelRateLimitInput
   retryableStatusCodes: [Int!]
   retryableErrorPatterns: [RetryableErrorPatternInput!]
@@ -378,6 +404,7 @@ type ChannelRateLimit {
 }
 
 type ChannelCredentials {
+  isOAuth: Boolean!
   apiKey: String
   apiKeys: [String!]
   vertexApiKeys: [VertexAPIKey!]
@@ -391,6 +418,11 @@ type DisabledAPIKey {
   errorCode: Int!
   reason: String
   expiresAt: Time
+  """
+  True when a proactive provider quota observation owns this disable, which
+  means a later quota check may clear it once the key reports recovery.
+  """
+  quotaDisabled: Boolean!
 }
 
 type OAuthCredentials {
@@ -716,6 +748,7 @@ type APIKeyProfileQuotaUsage {
 }
 
 input FetchModelsInput {
+  proxy: ProxyConfigInput
   channelType: String!
   baseURL: String!
   apiKey: String
@@ -727,10 +760,26 @@ input FetchModelsInput {
 type FetchModelsPayload {
   models: [ModelIdentify!]!
   error: String
+  fallback: Boolean!
+  fallbackReason: ModelCatalogFallbackReason
+  codexCatalogVersion: CodexCatalogVersion
+  codexCatalogSkippedReason: String
+}
+
+enum ModelCatalogFallbackReason {
+  NO_CREDENTIALS
+  AUTHORIZATION
+  UNAVAILABLE
+}
+
+type CodexCatalogVersion {
+  version: String!
+  source: String!
 }
 
 type ModelIdentify {
   id: String!
+  pricing: ModelPrice
 }
 
 type ModelIdentityWithStatus {

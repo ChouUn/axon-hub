@@ -17,7 +17,9 @@ import (
 	"github.com/looplj/axonhub/internal/ent"
 	entprivacy "github.com/looplj/axonhub/internal/ent/privacy"
 	"github.com/looplj/axonhub/internal/log"
+	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/server/biz"
+	"github.com/looplj/axonhub/internal/server/middleware"
 	"github.com/looplj/axonhub/internal/server/orchestrator"
 	"github.com/looplj/axonhub/internal/server/plugin"
 	"github.com/looplj/axonhub/llm"
@@ -379,12 +381,12 @@ func (handlers *OpenAIHandlers) CreateResponse(c *gin.Context) {
 	handlers.ResponseCompletionHandlers.ChatCompletion(c)
 }
 
-func (handlers *OpenAIHandlers) CreateResponseWebSocket(requestTimeout time.Duration) gin.HandlerFunc {
+func (handlers *OpenAIHandlers) CreateResponseWebSocket(streamTimeout time.Duration) gin.HandlerFunc {
 	orch := handlers.ResponseCompletionHandlers.ChatCompletionOrchestrator
 	return func(c *gin.Context) {
 		serveResponsesWebSocket(
 			c,
-			requestTimeout,
+			streamTimeout,
 			orch.Process,
 			func(ctx context.Context, err error) *httpclient.Error {
 				return transformOrchestratorError(ctx, err, orch)
@@ -488,6 +490,8 @@ func (handlers *OpenAIHandlers) CreateImageVariation(c *gin.Context) {
 }
 
 func (handlers *OpenAIHandlers) CreateVideo(c *gin.Context) {
+	cancel := middleware.SelectLLMTimeout(c, false)
+	defer cancel()
 	ctx := c.Request.Context()
 
 	genericReq, err := httpclient.ReadHTTPRequest(c.Request)
@@ -585,12 +589,12 @@ type Capabilities struct {
 }
 
 type Pricing struct {
-	Input      float64 `json:"input"`
-	Output     float64 `json:"output"`
-	CacheRead  float64 `json:"cache_read"`
-	CacheWrite float64 `json:"cache_write"`
-	Unit       string  `json:"unit"`
-	Currency   string  `json:"currency"`
+	Input      *float64 `json:"input,omitempty"`
+	Output     *float64 `json:"output,omitempty"`
+	CacheRead  *float64 `json:"cache_read,omitempty"`
+	CacheWrite *float64 `json:"cache_write,omitempty"`
+	Unit       string   `json:"unit"`
+	Currency   string   `json:"currency"`
 }
 
 type OpenAIModel struct {
@@ -740,14 +744,26 @@ func convertModelToOpenAIExtended(m *ent.Model, include map[string]bool) OpenAIM
 			result.MaxOutputTokens = m.ModelCard.Limit.Output
 		}
 		if shouldInclude("pricing") && m.ModelCard.Price != nil && len(m.ModelCard.Price.Items) != 0 {
-			cost := m.ModelCard.PriceSummary()
 			pricing := Pricing{
-				Input:      cost.Input,
-				Output:     cost.Output,
-				CacheRead:  cost.CacheRead,
-				CacheWrite: cost.CacheWrite,
-				Unit:       "per_1m_tokens",
-				Currency:   "USD",
+				Unit:     "per_1m_tokens",
+				Currency: "USD",
+			}
+			for idx := range m.ModelCard.Price.Items {
+				item := &m.ModelCard.Price.Items[idx]
+				rate, ok := item.BaseTokenRate()
+				if !ok {
+					continue
+				}
+				switch item.ItemCode {
+				case objects.PriceItemCodeUsage:
+					pricing.Input = &rate
+				case objects.PriceItemCodeCompletion:
+					pricing.Output = &rate
+				case objects.PriceItemCodePromptCachedToken:
+					pricing.CacheRead = &rate
+				case objects.PriceItemCodeWriteCachedTokens:
+					pricing.CacheWrite = &rate
+				}
 			}
 			result.Pricing = &pricing
 		}

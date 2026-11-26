@@ -92,6 +92,36 @@ func TestHealthGateSelector_FiltersModelsWithoutMutatingCandidates(t *testing.T)
 	require.NotSame(t, first, result[0])
 }
 
+// A Guardian review prefers its parent's channel only when that channel passes
+// the gate. An open parent falls back to the healthy candidate.
+func TestHealthGateSelector_GuardianReviewPrefersHealthyParent(t *testing.T) {
+	for _, parentOpen := range []bool{false, true} {
+		t.Run(fmt.Sprintf("parentOpen=%v", parentOpen), func(t *testing.T) {
+			now := time.Unix(1000, 0)
+			other := healthGateSelectorCandidate(1, 0, "other")
+			parent := healthGateSelectorCandidate(2, 1, "parent")
+			selector, gate, policy := healthGateSelectorFixture(&now, []*ChannelModelsCandidate{other, parent}, biz.TraceStickyDisabled, nil)
+			if parentOpen {
+				openHealthGateModel(t, gate, policy, parent, "parent")
+			}
+			ctx := WithSafeguardsParent(context.Background())
+			link := ctx.Value(guardianLinkageKey{}).(guardianLinkage)
+			link.parent.attempt = &guardianParentAttempt{channelID: parent.Channel.ID, responseID: "resp_parent"}
+			ctx = WithSafeguardsReview(ctx)
+
+			result, err := selector.Select(ctx, &llm.Request{Model: "alias"})
+			require.NoError(t, err)
+			require.NotEmpty(t, result)
+			if parentOpen {
+				require.Equal(t, []int{other.Channel.ID}, quotaRoutingIDs(result))
+				return
+			}
+			require.Equal(t, []int{parent.Channel.ID, other.Channel.ID}, quotaRoutingIDs(result))
+			require.False(t, result[0].TraceSticky)
+		})
+	}
+}
+
 func TestHealthGateSelector_QuotaFilteringPrecedesHealthGate(t *testing.T) {
 	now := time.Unix(1000, 0)
 	exhausted := healthGateSelectorCandidate(1, 0, "exhausted")

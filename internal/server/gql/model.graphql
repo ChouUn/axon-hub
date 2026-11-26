@@ -212,6 +212,7 @@ type UnassociatedChannel {
 }
 
 extend type Model {
+  editVersion: String! @goField(forceResolver: true)
   associatedChannelCount: Int! @goField(forceResolver: true)
 }
 
@@ -231,11 +232,99 @@ extend type Query {
 extend type Mutation {
   createModel(input: CreateModelInput!): Model!
   bulkCreateModels(inputs: [CreateModelInput!]!): [Model!]!
-  updateModel(id: ID!, input: UpdateModelInput!): Model!
+  updateModel(id: ID!, input: UpdateModelInput!, expectedVersion: String): Model!
   deleteModel(id: ID!): Boolean!
   updateModelStatus(id: ID!, status: ModelStatus!): Boolean!
   bulkArchiveModels(ids: [ID!]!): Boolean!
   bulkDisableModels(ids: [ID!]!): Boolean!
   bulkEnableModels(ids: [ID!]!): Boolean!
   bulkDeleteModels(ids: [ID!]!): Boolean!
+}
+
+input CatalogImportScope {
+  channels: Boolean!
+  providers: [String!]!
+  ignorePrefix: Boolean!
+}
+
+type CatalogImportOffer {
+  provider: String!
+  modelID: String!
+  name: String!
+  developer: String!
+  type: String!
+  identity: String!
+  canonical: String!
+  price: ModelPrice
+  priceDigest: String!
+}
+
+type CatalogImportBinding {
+  provider: String!
+  modelID: String!
+  canonical: String!
+  follow: Boolean!
+}
+
+type CatalogImportMember { id: String!, identity: String! }
+input CatalogImportMemberInput { id: String!, identity: String! }
+type CatalogImportRoute { channelID: Int!, channelName: String!, actual: String!, requests: [String!]! }
+input CatalogRouteChoice { channelID: Int!, actual: String!, request: String! }
+
+type CatalogImportRow {
+  modelID: String!
+  name: String!
+  members: [CatalogImportMember!]!
+  routes: [CatalogImportRoute!]!
+  version: String!
+  mergeTarget: String!
+  mergeTargetOccupied: Boolean!
+  archived: Boolean!
+  changed: Boolean!
+  offers: [CatalogImportOffer!]!
+  preferred: CatalogImportOffer
+  price: ModelPrice
+  binding: CatalogImportBinding
+}
+
+type CatalogImportPreview {
+  source: String!
+  upstreamURL: String!
+  revision: String!
+  providers: [String!]!
+  rows: [CatalogImportRow!]!
+}
+
+enum CatalogPriceAction { FOLLOW REBIND FIX_SOURCE FIX }
+input CatalogImportPriceInput {
+  action: CatalogPriceAction!
+  provider: String! = ""
+  modelID: String! = ""
+  identity: String! = ""
+  expectedDigest: String! = ""
+}
+input CatalogImportSelection {
+  manualMerge: Boolean! = false
+  modelID: String!
+  members: [CatalogImportMemberInput!]!
+  routes: [CatalogRouteChoice!]!
+  version: String!
+  identity: String!
+  name: String!
+  developer: String!
+  provider: String!
+  sourceModelID: String!
+  type: String!
+  price: CatalogImportPriceInput
+}
+enum CatalogImportStatus { applied invalid conflict catalogChanged failed }
+type CatalogImportOutcome {
+  modelID: String!
+  status: CatalogImportStatus!
+}
+extend type Query {
+  catalogImportPreview(scope: CatalogImportScope!): CatalogImportPreview!
+}
+extend type Mutation {
+  applyCatalogImport(scope: CatalogImportScope!, revision: String!, selections: [CatalogImportSelection!]!): [CatalogImportOutcome!]!
 }

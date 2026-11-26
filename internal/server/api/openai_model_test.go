@@ -49,10 +49,18 @@ func TestConvertModelToOpenAIExtended_CompleteData(t *testing.T) {
 		Icon:      "openai",
 		Remark:    &remark,
 		CreatedAt: time.Unix(1686935002, 0),
-		ModelCard: &objects.ModelCard{Vision: true,
+		ModelCard: &objects.ModelCard{
+			Vision:    true,
 			ToolCall:  true,
 			Reasoning: objects.ModelCardReasoning{Supported: true},
-			Limit:     objects.ModelCardLimit{Context: 8192, Output: 4096}, Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{{ItemCode: objects.PriceItemCodeUsage, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.03))}}, {ItemCode: objects.PriceItemCodeCompletion, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.06))}}, {ItemCode: objects.PriceItemCodePromptCachedToken, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.015))}}, {ItemCode: objects.PriceItemCodeWriteCachedTokens, Pricing: objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(0.03))}}}}},
+			Limit:     objects.ModelCardLimit{Context: 8192, Output: 4096},
+			Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{
+				perUnitPriceItem(objects.PriceItemCodeUsage, 0.03),
+				perUnitPriceItem(objects.PriceItemCodeCompletion, 0.06),
+				perUnitPriceItem(objects.PriceItemCodePromptCachedToken, 0.015),
+				perUnitPriceItem(objects.PriceItemCodeWriteCachedTokens, 0.03),
+			}},
+		},
 	}
 
 	result := convertModelToOpenAIExtended(m, nil)
@@ -67,12 +75,19 @@ func TestConvertModelToOpenAIExtended_CompleteData(t *testing.T) {
 	assert.Equal(t, 8192, result.ContextLength)
 	assert.Equal(t, 4096, result.MaxOutputTokens)
 	assert.NotNil(t, result.Pricing)
-	assert.Equal(t, 0.03, result.Pricing.Input)
-	assert.Equal(t, 0.06, result.Pricing.Output)
-	assert.Equal(t, 0.015, result.Pricing.CacheRead)
-	assert.Equal(t, 0.03, result.Pricing.CacheWrite)
+	assert.Equal(t, 0.03, *result.Pricing.Input)
+	assert.Equal(t, 0.06, *result.Pricing.Output)
+	assert.Equal(t, 0.015, *result.Pricing.CacheRead)
+	assert.Equal(t, 0.03, *result.Pricing.CacheWrite)
 	assert.Equal(t, "per_1m_tokens", result.Pricing.Unit)
 	assert.Equal(t, "USD", result.Pricing.Currency)
+}
+
+func perUnitPriceItem(code objects.PriceItemCode, rate float64) objects.ModelPriceItem {
+	return objects.ModelPriceItem{
+		ItemCode: code,
+		Pricing:  objects.Pricing{Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromFloat(rate))},
+	}
 }
 
 func TestConvertModelToOpenAIExtended_NilRemark(t *testing.T) {
@@ -103,11 +118,41 @@ func TestConvertModelToOpenAIExtended_PriceAuthority(t *testing.T) {
 	}
 	m := &ent.Model{ModelID: "free", ModelCard: card}
 	result := convertModelToOpenAIExtended(m, nil)
-	if assert.NotNil(t, result.Pricing) {
-		assert.Zero(t, result.Pricing.Input)
+	if assert.NotNil(t, result.Pricing) && assert.NotNil(t, result.Pricing.Input) {
+		assert.Zero(t, *result.Pricing.Input)
 	}
 	card.Price = nil
 	assert.Nil(t, convertModelToOpenAIExtended(m, nil).Pricing)
 	card.Price = &objects.ModelPrice{Items: []objects.ModelPriceItem{}}
 	assert.Nil(t, convertModelToOpenAIExtended(m, nil).Pricing)
+}
+
+func TestConvertModelToOpenAIExtended_MissingPriceAndKnownZero(t *testing.T) {
+	m := &ent.Model{ModelCard: &objects.ModelCard{
+		Price: &objects.ModelPrice{Items: []objects.ModelPriceItem{
+			{
+				ItemCode: objects.PriceItemCodeCompletion,
+				Pricing: objects.Pricing{
+					Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.Zero),
+				},
+			},
+			{
+				ItemCode: objects.PriceItemCodeWriteCachedTokens,
+				PromptWriteCacheVariants: []objects.PromptWriteCacheVariant{{
+					VariantCode: objects.PromptWriteCacheVariantCode1Hour,
+					Pricing: objects.Pricing{
+						Mode: objects.PricingModeUsagePerUnit, UsagePerUnit: lo.ToPtr(decimal.NewFromInt(2)),
+					},
+				}},
+			},
+		}},
+	}}
+	result := convertModelToOpenAIExtended(m, nil)
+	if assert.NotNil(t, result.Pricing) {
+		assert.Nil(t, result.Pricing.Input)
+		assert.Nil(t, result.Pricing.CacheWrite)
+		if assert.NotNil(t, result.Pricing.Output) {
+			assert.Zero(t, *result.Pricing.Output)
+		}
+	}
 }

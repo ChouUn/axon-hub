@@ -158,6 +158,7 @@ export const modelSchema = z.object({
   id: z.string(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
+  editVersion: z.string().optional(),
   developer: z.string(),
   modelID: z.string(),
   type: modelTypeSchema,

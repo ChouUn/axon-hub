@@ -25,6 +25,14 @@ type ModelCardCost struct {
 	CacheWrite float64 `json:"cacheWrite"`
 }
 
+// CatalogPrice records the source of the model's full price and whether it follows that source.
+type CatalogPrice struct {
+	Canonical string `json:"canonical,omitempty"`
+	Provider  string `json:"provider,omitempty"`
+	ModelID   string `json:"modelID,omitempty"`
+	Follow    bool   `json:"follow,omitempty"`
+}
+
 type ModelCardLimit struct {
 	Context int `json:"context"`
 	Output  int `json:"output"`
@@ -41,12 +49,14 @@ type ModelCard struct {
 	Vision           bool                `json:"vision"`
 	// Price is authoritative. Keep null in JSON to distinguish an unpriced card
 	// from legacy cost-only persisted data, including old cache entries.
-	Price       *ModelPrice    `json:"price"`
-	Cost        ModelCardCost  `json:"cost"`
-	Limit       ModelCardLimit `json:"limit"`
-	Knowledge   string         `json:"knowledge"`
-	ReleaseDate string         `json:"releaseDate"`
-	LastUpdated string         `json:"lastUpdated"`
+	Price          *ModelPrice    `json:"price"`
+	CatalogAliases []string       `json:"catalogAliases,omitempty"`
+	CatalogPrice   *CatalogPrice  `json:"catalogPrice,omitempty"`
+	Cost           ModelCardCost  `json:"cost"`
+	Limit          ModelCardLimit `json:"limit"`
+	Knowledge      string         `json:"knowledge"`
+	ReleaseDate    string         `json:"releaseDate"`
+	LastUpdated    string         `json:"lastUpdated"`
 }
 
 // UnmarshalJSON upgrades legacy persisted cards without changing database or
@@ -108,23 +118,12 @@ func (c *ModelCard) PriceSummary() ModelCardCost {
 	if c == nil || c.Price == nil {
 		return summary
 	}
-	for _, item := range c.Price.Items {
-		var rate decimal.Decimal
-		switch item.Pricing.Mode {
-		case PricingModeUsagePerUnit:
-			if item.Pricing.UsagePerUnit == nil {
-				continue
-			}
-			rate = *item.Pricing.UsagePerUnit
-		case PricingModeTiered, PricingModeVolume:
-			if item.Pricing.UsageTiered == nil || len(item.Pricing.UsageTiered.Tiers) == 0 {
-				continue
-			}
-			rate = item.Pricing.UsageTiered.Tiers[0].PricePerUnit
-		default:
+	for idx := range c.Price.Items {
+		item := &c.Price.Items[idx]
+		value, ok := item.BaseTokenRate()
+		if !ok {
 			continue
 		}
-		value := rate.InexactFloat64()
 		switch item.ItemCode {
 		case PriceItemCodeUsage:
 			summary.Input = value
@@ -137,6 +136,21 @@ func (c *ModelCard) PriceSummary() ModelCardCost {
 		}
 	}
 	return summary
+}
+
+// BaseTokenRate returns the aggregate per-token rate represented in a model summary.
+func (i *ModelPriceItem) BaseTokenRate() (float64, bool) {
+	switch i.Pricing.Mode {
+	case PricingModeUsagePerUnit:
+		if i.Pricing.UsagePerUnit != nil {
+			return i.Pricing.UsagePerUnit.InexactFloat64(), true
+		}
+	case PricingModeTiered, PricingModeVolume:
+		if tiered := i.Pricing.UsageTiered; tiered != nil && len(tiered.Tiers) != 0 {
+			return tiered.Tiers[0].PricePerUnit.InexactFloat64(), true
+		}
+	}
+	return 0, false
 }
 
 type ModelSettings struct {
