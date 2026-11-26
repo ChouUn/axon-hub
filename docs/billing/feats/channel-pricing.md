@@ -61,6 +61,16 @@
 - 导入导出：
   - 新版导出同时保存倍率与基础价格。
   - 旧数组格式导入按倍率 1 承接。
+- 从服务商同步模型价格：
+  - 上游 `v1.0.0-rc.5` 的渠道设置「从服务商同步模型价格」（`4af46665`，PR #3038）按服务商模型列表的报价
+    覆盖渠道已保存的价格，只覆盖报价里出现的计费项。
+  - 本 fork 写入时保留渠道价格的全量阶梯与时间覆盖，倍率取渠道当前设置，倍率变化同样生成新版本。
+  - 首次建价以模型库的完整价格为底，再叠加服务商报价。
+  - 已有渠道价格时，模型库只补服务商和渠道都没有的计费项。补项会让基础档与全量阶梯的计费项不一致时，
+    不补这些项，只写入服务商报价。
+  - 合并后的价格不满足定价约束（如全量阶梯与基础计费项不一致）时跳过该模型并记日志，不改当前价格与版本；
+    首次建价则改用模型库价格，模型库价格也无效时不建价。
+  - 服务商报价若已是实际售价，需把该渠道的倍率设为 1，否则会再乘一次倍率。
 
 ### 边界
 
@@ -74,6 +84,8 @@
   - `0af05bef`（价格对话框转发校验错误的类型修正）
   - `55ca6e74`（模型库价格兜底乘渠道倍率）
   - `0212f0ec`、`f87aa4b6`（兜底计费的测试适配上游的共享模型缓存）
+  - `5d12065b`（合入上游 `v1.0.0-rc.5`：服务商价格同步保留渠道倍率、全量阶梯与时间覆盖，加锁后校验；`PricingInput.mode` 可空）
+  - `3dbe8df4`（服务商价格同步的模型库补项破坏阶梯时只写入服务商报价）
 - 代码：
   - `frontend/src/features/channels/components/channels-model-price-dialog.tsx`
   - `frontend/src/components/model-price-editor.tsx`
@@ -83,12 +95,15 @@
   - `internal/server/biz/cost_calc.go`
   - `internal/objects/channel.go`
   - `internal/objects/price.go`
-  - `internal/server/gql/price.graphql`
+  - `internal/server/gql/price.graphql`：`PricingInput.mode` 可为 null，见[模型权威定价与全量阶梯](model-pricing-tiers.md)的「兼容」。
 - 迁移：无新增表字段或迁移。
   - 渠道设置、当前价格及历史版本使用兼容的 JSON 可选字段，旧数据缺省倍率为 1。
   - 备份保留倍率快照，不从当前渠道设置重算历史价格。
 - 测试：无新增 fixture。
   - `internal/server/biz/channel_price_test.go`
+    - 服务商同步：`TestChannelService_EnsureChannelModelPrices_UpdatesTieredPrice`、
+      `..._CreatesTieredPriceFromLibraryAndEndpoint`、`..._KeepsCurrentPriceOnInvalidMerge`、
+      `..._FallsBackToLibraryOnInvalidMerge`、`..._SkipsLibraryGapThatBreaksTiers`。
   - `internal/server/biz/cost_calc_test.go`
   - `internal/server/biz/channel_auto_model_price_test.go`
   - `internal/server/biz/channel_model_sync_test.go`
@@ -100,6 +115,10 @@
   - 上游 `03ffac6f`（PR #2662，随上游 `v1.0.0-rc1` 发布）在价格对话框从模型库填价时乘汇率，默认 7.14。
     本 fork 的对话框改为引用标准价、不从外部目录填充，没有这段填价代码，所以合入时保留 fork 的整份对话框，不采用汇率。
   - 上游再改 `channels-model-price-dialog.tsx` 时，以 fork 的文件为准，只取与引用、倍率无关的改动。
+  - 上游 `0a08d645`（PR #3060，随上游 `v1.0.0-rc.5` 发布）在同一对话框保存默认汇率，同样不采用；
+    对应的 `base.json` 汇率文案只被上游对话框使用，合入时未保留。
+  - 上游再改服务商价格同步（`ensureChannelModelPrices`、`updateChannelModelPriceEntity`）时，
+    核对合并结果仍保留 `VolumeTiers`、`Schedule` 与渠道倍率，并在加锁后校验。
   - 上游再改 `modelLibraryPriceSuffixes` 时，以共享的 `llm.SplitReasoningEffortModelSuffix` 为准，不恢复独立的后缀列表。
 
 ## 上游模型价格时间戳修复回补

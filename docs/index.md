@@ -32,6 +32,7 @@
 - [上游 v1.0.0-rc2 同步记录](reports/upstream-sync-v1.0.0-rc2.md)
 - [上游 v1.0.0-rc.3 同步记录](reports/upstream-sync-v1.0.0-rc.3.md)
 - [上游 v1.0.0-rc.4 同步记录](reports/upstream-sync-v1.0.0-rc.4.md)
+- [上游 v1.0.0-rc.5 同步记录](reports/upstream-sync-v1.0.0-rc.5.md)
 
 ## 外部项目对照
 

@@ -33,6 +33,8 @@
     模型卡标记支持推理时才输出档位。
     - OpenAI 扩展模型响应可用 `include` 指定这两个字段，普通列表请求随「`/v1/models` 默认返回完整模型信息」设置提供。
     - `/anthropic/v1/models` 的普通请求即可获取满足上述条件的字段。
+  - OpenAI 扩展模型响应的 `pricing` 同样取注册目标的模型卡，按[模型权威定价与全量阶梯](../../billing/feats/model-pricing-tiers.md)
+    的 `price` 基础计费项生成。
 - 设置：上述三项开关已删除。旧 JSON 键被忽略，不能恢复旁路。
 
 ## 边界
@@ -48,6 +50,7 @@
   - `569152cc`（`feat(models): 强制注册模型准入并按关联分发渠道`）
   - `fceb30dc`（`feat(models): 补充模型发现的输入模态和推理档位`）
   - `f881c154`（`feat(models): Anthropic 模型列表下发输入模态和推理档位`）
+  - `5d12065b`（合入上游 `v1.0.0-rc.5`：`/v1/models` 的价格改由 `price` 生成）
 - 代码：
   - `internal/server/orchestrator/candidates.go`
   - `internal/server/orchestrator/model_mapper.go`

@@ -162,6 +162,7 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - `58f73057`、`1c5509ae`
   - `6b164ba7`（汇总与趋势的中文文案随上游 `v1.0.0-rc.3` 改用「词元」）
   - `699a7d8f`（请求日志的命中率与首字耗时接入上游 `v1.0.0-rc.4` 的指标配色）
+  - `5d12065b`（合入上游 `v1.0.0-rc.5`：接口地址与登录页链接改用 `appPath`）
 - 代码，新文件：
   - `internal/server/middleware/self_service_auth.go`：严格 Bearer、仅 user/personal、无 noauth 回退、
     IP 白名单。
@@ -206,3 +207,7 @@ D 编号是确定形态的决策，R 编号是行为规则。
   - 新路由组在 `internal/server/routes.go` 追加。
   - 上游 `v1.0.0-rc1` 起插件主体不能提升为 System（`6c5cfe6e`，PR #2917）。自助页的路由只接受 user/personal API Key，
     插件主体走不到 `self_usage.go` 的 bypass，所以保留。上游让插件主体也能进入这组路由时，改用 `authz.RunAsHost`。
+  - 上游 `2a3e6f3a`（PR #3058，随上游 `v1.0.0-rc.5` 发布）支持 `server.base_path`：服务端剥掉前缀后再路由，
+    `/self-service` 路由组与 `apiPrefixes` 无需改动。前端的接口地址与登录页链接改用 `appPath`
+    （`frontend/src/features/self-usage/api.ts`、`frontend/src/features/auth/sign-in/index.tsx`）。
+    上游再新增直接写根路径的前端地址时，自助页的地址同样经 `appPath`。

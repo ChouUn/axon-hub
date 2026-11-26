@@ -114,6 +114,10 @@ stateDiagram-v2
       - 首选与兜底都没有健康候选时，才按 R5 进入最后一试。
     - 没有余量充足的候选时，配额路由放回这些渠道，新会话也可使用，再进入门控判定。
   - 过滤后没有候选时返回额度耗尽错误，不进入最后一试。
+  - Codex Guardian 审查请求（上游 `9f5cef8c`，PR #3078，随上游 `v1.0.0-rc.5` 发布）优先使用其父请求的渠道：
+    - 上游在配额路由过滤后把父渠道固定为首个候选。
+    - 本策略只在父渠道通过门控（未熔断，或取得试探名额）时固定它，排在会话归属的粘性渠道之前，
+      不记为粘性命中。父渠道熔断时按常规门控排序，不为审查请求放行熔断的组合。
 
 ### 会话归属与决策记录
 
@@ -190,6 +194,9 @@ stateDiagram-v2
       或上游的 `IsUpstreamTransportError`（`internal/server/orchestrator/upstream_transport_error.go`）判定为传输错误。
       后者自上游 `d8455a8d`（PR #2910，随上游 `v1.0.0-rc.3` 发布）起含 HTTP/2 的流重置（`INTERNAL_ERROR`、`REFUSED_STREAM`）与 GOAWAY，
       读取响应体时遇到的这类错误不带 `net.Error`，由它识别。
+      上游 `5e31b7f4`（PR #2905，随上游 `v1.0.0-rc.5` 发布）新增 `server.llm_stream_idle_timeout`（默认 600s），
+      渠道上游的流超过该时长不发数据时以 `httpclient.ErrStreamIdleTimeout` 终止，它同样判定为传输错误：
+      首个 token 前计数失败，首个 token 后按下文「仅不稳」处理。
     - 超时，含 408 与首事件、非流式响应超时。
     - 首个 token 前的流中断。
     - 空响应检测命中。
@@ -343,6 +350,7 @@ stateDiagram-v2
   - `c0fb9cba`（删除透传关闭时的等待，以及只在等待存在时启用的原始事件补终态）
   - `9a2036ad`（健康详情与异常筛选读取渠道当前配置改用 `authz.RunAsHost`，插件 GraphQL 入口可用）
   - `9092b950`（接入上游 `v1.0.0-rc.3` 配额路由的兜底渠道）
+  - `5d12065b`（合入上游 `v1.0.0-rc.5`：Guardian 审查只固定通过门控的父渠道，接上 `selectEndpointAPIFormat` 的新签名）
 - 代码，新文件（新策略与健康状态不改上游熔断实现）：
   - `internal/server/biz/health_gate.go`：状态机。
   - `internal/server/biz/system_health_gate.go`：配置。
@@ -408,6 +416,10 @@ stateDiagram-v2
     依赖关闭时已同步收完尾部。
   - 上游改动 `RequestSettings` 快照或 `PersistenceState` 时，保留 `HealthGatePolicyProvider`，配置仍按当前设置解析。
   - 管理端读取渠道当前配置用 `authz.RunAsHost`，不用 system bypass：上游 `v1.0.0-rc1` 起插件主体不能提升为 System。
+  - 上游改动 Guardian 审查的父渠道固定（`guardianReviewParentChannelID`、`LoadBalancedSelector.Select` 中的固定顺序）时，
+    对照 D8 中的 Guardian 一条，保持「只固定通过门控的父渠道」。
+    对应测试为 `health_gate_selector_test.go` 的 `TestHealthGateSelector_GuardianReviewPrefersHealthyParent`，
+    流空闲超时的失败口径见 `health_gate_outcome_test.go`。
 
 ### 会话归属与决策记录
 

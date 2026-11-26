@@ -21,7 +21,7 @@
 ## 形态
 
 - 保存与展示：
-  - 模型新建、编辑及目录批量导入统一保存完整标准价格。
+  - 模型新建、编辑、「批量添加模型」及「导入与同步」统一保存完整标准价格。
   - 列表和详情展示基础价格、全量阶梯及缓存写入变体。
   - 直接展示并编辑已有价格，不设「模型定价」开关，不因开关清空或重建价格。
   - 零价与未填写价格区分。
@@ -46,6 +46,16 @@
 - 目录选模：
   - 切换模型时同步重置价格及阶梯表单数组，无阶梯时清空数组。
   - 价格行与阶梯开关按已导入数据正确回显，不残留旧模型档位。
+- 「导入与同步」（上游 `v1.0.0-rc.5` 的 `85502c5a`，PR #3067）：
+  - 上游按输入、输出、读缓存、写缓存四个单价逐项选择来源与动作，写入 `cost`，可把某一档阶梯固定为单价。
+    本 fork 的 `cost` 只是 `price` 的只读摘要，逐项写入会丢掉阶梯和缓存变体，因此改为按模型整体选择。
+  - 每个模型选一个来源，按与「批量添加模型」相同的规则（`priceFromCatalog`）换算成完整 `price` 整体写入，
+    含全量阶梯与 Anthropic 一小时写缓存变体。
+  - 应用方式：「保留当前价格」「同步来源价格」「确认来源并跟随」「采用来源价格（不跟随）」「固定当前价格」。
+    后两者不再跟随来源，「固定当前价格」只对已跟随来源的模型提供。
+  - 来源绑定保存在模型卡的 `catalogPrice`（provider、模型 ID、canonical、是否跟随），每个模型一条。
+  - 预览返回来源价格的摘要 `priceDigest`，应用时比对，来源在审阅后变化则拒绝写入，结果为 `catalogChanged`。
+  - 在模型页修改价格后自动取消跟随，别名与来源绑定保留。
 
 ## 边界
 
@@ -56,10 +66,18 @@
 - 兼容：
   - 只有 `cost`、没有 `price` 的存量模型卡在 JSON 读取时转换为完整价格 `price`。
     `cost` 由 `price` 生成，仅作只读摘要。
+  - 上游 `v1.0.0-rc.5` 的服务商价格同步允许写缓存计费项只靠 `five_min`、`one_hour` 变体计价，
+    聚合定价的 `mode` 为空。后端读写为空字符串，前端编辑器显示未选模式。
+    上游的 GraphQL `PricingInput.mode` 为非空枚举，保存这类价格会被拒绝（gqlparser 报
+    `mode  is not a valid PricingMode`）。本 fork 把它改为可空，前端提交 null，后端按空模式校验。
+  - `/v1/models` 的 `pricing` 由 `price` 的基础计费项生成，计费项缺失时省略该字段，明确的零价照常输出。
+  - Pi 配置导出沿用上游 `v1.0.0-rc.4` 的行为：基础摘要的四个单价中至少一项为正时输出四个单价，缺失项为 0；
+    全部为 0 或缺失时省略 `cost`。
   - `price` 被明确清除（写为 null）后，不会从 `cost` 恢复。
   - 已有渠道价格和历史价格版本不变。
   - 计费项上各自配置的阶梯模式（`usage_tiered`、`usage_volume`）计算不变。
     全量阶梯是价格级的 `volumeTiers`，不是这两种模式。
+  - 上游 `v1.0.0-rc.5` 的逐项来源记录 `catalogPrices` 与 `Missing` 标记在本 fork 不存在，没有需要迁移的存量数据。
 
 ## 链接
 
@@ -72,6 +90,7 @@
   - `2eca7c59`：渠道完整价格引用、倍率衔接与阶梯填充交互。
   - `bf37dae1`：Anthropic 官方目录一小时写缓存价。
   - `6b164ba7`：统一全量阶梯的中文说明与校验提示随上游 `v1.0.0-rc.3` 改用「词元」。
+  - `5d12065b`：合入上游 `v1.0.0-rc.5`，「导入与同步」改为按模型写入完整价格，`PricingInput.mode` 可空，`/v1/models` 价格按 `price` 生成。
 - 代码：
   - `frontend/src/features/models/components/models-price-editor.tsx`
   - `frontend/src/features/models/data/pricing.ts`
@@ -82,6 +101,13 @@
   - `internal/objects/price.go`
   - `internal/server/biz/model.go`
   - `internal/server/biz/cost_calc.go`
+  - `internal/server/biz/model_catalog_price.go`：目录报价换算与摘要。
+  - `internal/server/biz/model_catalog_preview.go`、`internal/server/biz/model_catalog_apply.go`
+  - `internal/server/gql/model.graphql`、`internal/server/gql/price.graphql`
+  - `internal/server/api/openai.go`
+  - `frontend/src/features/models/components/models-catalog-import.tsx`、
+    `frontend/src/features/models/components/models-catalog-prices.tsx`
+  - `frontend/src/features/channels/data/schema.ts`：空模式只允许出现在带变体的写缓存计费项。
 - 用户文档：`docs/{zh,en}/guides/cost-tracking.md`。
 - 迁移：无新增表字段或迁移，兼容既有数据库及缓存中的模型卡 JSON。
 - 测试：无新增 fixture。
@@ -90,8 +116,18 @@
     - `internal/objects/price_test.go`
     - `internal/server/biz/model_validation_test.go`
     - `frontend/src/features/models/pricing.test.mjs`
+    - `internal/server/biz/model_catalog_test.go`：`TestCatalogImportVolumeTiers`、`TestPriceFromCatalogAnthropicVariants`、
+      `TestPriceFromCatalogRejectsInvalidQuotes`、`TestCatalogImportUnpricedOffer`、
+      `TestCatalogImportPreservesStoredPriceAndAllowsWriteOnlyEditor`
+    - `internal/server/gql/model_resolvers_test.go`：`TestUpdateModelExpectedVersionGraphQL`
+    - `internal/server/api/openai_model_test.go`：`TestConvertModelToOpenAIExtended_PriceAuthority`
+    - `frontend/src/features/apikeys/data/pi-models-config.test.mjs`
+    - `frontend/tests/models-catalog-import.spec.ts`
   - 覆盖：
     - 旧价格兼容、全量阶梯校验、价格保存与清除、整档填充、零价与未填写价格的区分。
     - Anthropic 来源的一小时价格、各阶梯独立计算、其他来源与缺价时不推算。
-- 同步上游：上游调整目录导入或提供独立的一小时写缓存价时，核对 `priceFromCatalog` 并优先使用目录值，
-  避免重复推算。
+- 同步上游：
+  - 上游调整目录导入或提供独立的一小时写缓存价时，核对前端 `priceFromCatalog` 与后端
+    `model_catalog_price.go` 的同名函数，两处规则保持一致，并优先使用目录值，避免重复推算。
+  - 上游再改「导入与同步」时，保留按模型整体写入 `price` 与单条 `catalogPrice` 绑定，不恢复逐项写入 `cost`。
+  - 上游若把 `PricingInput.mode` 改为可空或换成别的空模式表示，以上游为准并核对前端提交值。

@@ -78,7 +78,9 @@
 
 ## 实现与维护
 
-- 提交：`74a26251`（`feat(channels): 渠道识别模型名中的推理档位后缀`）
+- 提交：
+  - `74a26251`（`feat(channels): 渠道识别模型名中的推理档位后缀`）
+  - `5d12065b`（合入上游 `v1.0.0-rc.5`：档位后缀模型的尝试先放弃透传请求体，不经上游的推理强度映射）
 - 代码：
   - `llm/reasoning.go`：档位后缀的拆分规则，自动推理强度与定价共用。
   - `internal/objects/channel.go`、`internal/server/biz/channel_settings.go`：渠道设置字段 `reasoningEffortModelSuffix`。
@@ -110,3 +112,6 @@
     保留别名生成、聚合前选档和指定渠道选档。
   - 上游调整自动推理强度的后缀列表时，同步 `llm.ModelSuffixReasoningEfforts` 与前端的列表。
   - 上游的价格兜底后缀来自 `cc1c7e5d`（PR #2655），本功能把它换成共享的拆分规则；上游再改这份列表时以共享规则为准。
+  - 上游 `e89eaf77`（PR #3052，随上游 `v1.0.0-rc.5` 发布）在回放透传请求体时套用渠道「推理强度映射」。
+    选中档位后缀模型的尝试仍先放弃透传请求体，不经这一步；其他透传请求照常套用映射。
+    `applyPassThroughRequestBody` 与 `applyResponsesTransportRequestBody` 都先判断 `currentEntryUsesEffortSuffix`。

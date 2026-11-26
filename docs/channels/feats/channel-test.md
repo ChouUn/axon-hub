@@ -26,10 +26,13 @@
 - 配置 `server.channel_test_timeout`，默认 `180s`。
 - 三个测试入口用 `xcontext.DetachWithTimeout` 脱离请求 deadline，以该值为上限。
 - 测试脱离请求取消：控制台断开后，测试仍跑到结束或超时。
-- `http.Server` 的 `WriteTimeout` 取 `request_timeout`、`llm_request_timeout` 与该值三者的最大值。
+- `http.Server` 的 `WriteTimeout` 取上游 `writeTimeout()` 与该值的较大者。
+  上游 `writeTimeout()` 自 `v1.0.0-rc.5` 起是 `request_timeout`、`llm_request_timeout`、`llm_stream_request_timeout`
+  三者的最大值。
 - 设为 `0` 时保持上游行为。
 - GraphQL 事务中间件对三个测试 mutation 按字段跳过事务。
-  上游按操作名跳过的 `bulkImportChannels` 并入同一份字段列表。
+  上游 `v1.0.0-rc.5` 起自己的 `skipGraphqlTransaction` 已按字段跳过 `bulkImportChannels` 等 mutation，
+  但对渠道测试仍只按操作名 `TestChannel`、`TestChannelAPIKeys` 跳过。本 fork 在同一 switch 中追加三个测试字段。
 - 测试与 Playground 指定渠道时，渠道有原样的模型名就不经「自动推理强度」拆分，
   `gemini-4-hydrogen-xhigh` 这类带档位后缀的渠道模型能直接测试，见[渠道识别档位后缀](../../routing/feats/reasoning-effort-suffix.md)。
 
@@ -44,6 +47,7 @@
 - 提交：
   - `321cfba5`（`fix(channels): 渠道测试改用独立的 channel_test_timeout`）
   - `ea465c71`（`fix(channels): 渠道测试 mutation 按字段跳过请求事务`）
+  - `5d12065b`（合入上游 `v1.0.0-rc.5`：测试字段并入上游 `skipGraphqlTransaction`，`WriteTimeout` 与上游的流式超时取较大者）
 - 代码：
   - `conf/conf.go`
   - `internal/server/config.go`
@@ -56,7 +60,7 @@
 - 测试：
   - `internal/server/orchestrator/tester_timeout_test.go` 的 `TestTestChannelOutlivesRequestDeadline`：
     用本地慢响应 mock 复现，修复前报同样错误。
-  - `internal/server/gql/graphql_skip_tx_test.go`。
+  - `internal/server/gql/graphql_transaction_skip_test.go` 的渠道测试用例：匿名操作、任意操作名的多 Key 测试、单 Key 测试。
   - `internal/server/orchestrator/auto_reasoning_effort_test.go` 的 `TestAutoReasoningEffortMiddleware_PinnedChannelKeepsServedName`。
   - 本机 Docker（`axonhub:local`，SQLite）对照验证，mock 的生图渠道上游 45 秒返回：
     - 默认配置下 `testChannel` 与 `testChannelAPIKey` 均 45 秒成功。
@@ -66,3 +70,6 @@
   - 上游为 GraphQL 路由或渠道测试引入自己的超时后，以上游为准并移除本配置。
   - 上游 `v1.0.0-rc1` 在三个测试入口加了插件主体的拒绝（`6c5cfe6e`，PR #2917）。合入后先做这项拒绝，再脱离请求 deadline。
   - 上游 `v1.0.0-rc1` 的 GraphQL 处理器仍按操作名跳过事务，合入时两个处理器都换成按字段跳过。
+  - 上游 `v1.0.0-rc.5` 起事务跳过集中到 `skipGraphqlTransaction`（`328b27eb`，PR #2995 引入，#3067 等追加字段）。
+    fork 原有的跳过函数与 `graphql_skip_tx_test.go` 随之移除，测试字段并入上游函数，用例并入
+    `graphql_transaction_skip_test.go`。上游若改为按字段跳过渠道测试，删去 fork 的 case。
