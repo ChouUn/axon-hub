@@ -47,6 +47,8 @@
   - 版本比较按数值排序预发布号后（见
     [上游 v1.0.0-beta11 同步记录](../../reports/upstream-sync-v1.0.0-beta11.md)的「迁移器版本比较」），
     部署 fork 的发布版本 `v1.0.0-beta10-fork.N` 会正常抬高 `system_version`。
+- 不发布每日 unstable 镜像：上游的 `docker-unstable.yml` 推送到上游的 `looplj/axonhub`，fork 没有写权限。
+  fork 给它的 `prepare` job 加了 `github.repository_owner == 'looplj'` 条件，后续 job 依赖它，整条流程在 fork 中跳过。
 
 ## 实现与维护
 
@@ -57,11 +59,14 @@
   - `c0ce0483`（合入上游 `v1.0.0-rc1`，保留 fork 的整份文件）
   - `f2225b75`（`Dockerfile` 的构建镜像改用 Go 1.27.4，回补上游 `c42d57de`）
   - `7d9536f5`（合入上游 `v1.0.0-rc.4`，保留 fork 的整份文件）
-- 代码：`.github/workflows/docker-publish.yml`。
+- 代码：
+  - `.github/workflows/docker-publish.yml`
+  - `.github/workflows/docker-unstable.yml`：`prepare` job 的仓库条件。
 - 迁移与测试：无。
 - 同步上游：
   - 上游改动 `docker-publish.yml` 时在该文件冲突，保留 fork 的整份文件。
   - 上游对构建步骤的改动落在 `docker-build.yml`，需要时手工移到 fork 的 `docker-publish.yml`。
+  - 上游改动 `docker-unstable.yml` 时保留 `prepare` job 的 `if` 条件。
   - 上游升级 `go.mod` 的 Go 版本时，核对 `Dockerfile` 构建镜像的版本。
     官方 Go 镜像设了 `GOTOOLCHAIN=local`，版本低于 `go.mod` 时镜像内的 `scripts/verify-go-sse-dependency.sh` 失败，镜像构建不出来。
     - 上游 `v1.0.0-rc.3` 把 `go.mod` 升到 1.27.4 而 `Dockerfile` 仍为 1.27.3。

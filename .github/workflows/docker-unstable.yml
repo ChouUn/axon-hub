@@ -8,6 +8,8 @@ on:
 jobs:
   prepare:
     name: Pin commit & date
+    # Pushes to the upstream-owned looplj/axonhub image, which forks cannot write.
+    if: github.repository_owner == 'looplj'
     runs-on: ubuntu-slim
     permissions:
       contents: read
