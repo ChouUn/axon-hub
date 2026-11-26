@@ -63,6 +63,7 @@ const createModelMappingFormSchema = (supportedModels: string[]) =>
     hideOriginalModels: z.boolean().optional(),
     hideMappedModels: z.boolean().optional(),
     lowercaseModelId: z.boolean().optional(),
+    reasoningEffortModelSuffix: z.boolean().optional(),
   });
 
 const extractAliasFromModelPath = (modelPath: string): string => {
@@ -116,6 +117,7 @@ export function ChannelsModelMappingDialog({ open, onOpenChange, currentRow }: P
       hideOriginalModels: currentRow.settings?.hideOriginalModels || false,
       hideMappedModels: currentRow.settings?.hideMappedModels || false,
       lowercaseModelId: currentRow.settings?.lowercaseModelId || false,
+      reasoningEffortModelSuffix: currentRow.settings?.reasoningEffortModelSuffix || false,
     },
   });
 
@@ -218,6 +220,7 @@ export function ChannelsModelMappingDialog({ open, onOpenChange, currentRow }: P
       hideOriginalModels: currentRow.settings?.hideOriginalModels || false,
       hideMappedModels: currentRow.settings?.hideMappedModels || false,
       lowercaseModelId: currentRow.settings?.lowercaseModelId || false,
+      reasoningEffortModelSuffix: currentRow.settings?.reasoningEffortModelSuffix || false,
     });
     exitInlineEditing();
   }, [currentRow, open, form]);
@@ -301,6 +304,7 @@ export function ChannelsModelMappingDialog({ open, onOpenChange, currentRow }: P
         hideOriginalModels: values.hideOriginalModels,
         hideMappedModels: values.hideMappedModels,
         lowercaseModelId: values.lowercaseModelId,
+        reasoningEffortModelSuffix: values.reasoningEffortModelSuffix,
       };
       const nextSettings = mergeChannelSettingsForUpdate(currentRow.settings, modelNameSettings);
 
@@ -470,6 +474,27 @@ export function ChannelsModelMappingDialog({ open, onOpenChange, currentRow }: P
                       className='cursor-pointer text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70'
                     >
                       {t('channels.dialogs.settings.lowercaseModelId.label')}
+                    </label>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className='text-lg'>{t('channels.dialogs.settings.reasoningEffortModelSuffix.title')}</CardTitle>
+                  <CardDescription>{t('channels.dialogs.settings.reasoningEffortModelSuffix.description')}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className='flex items-start gap-3'>
+                    <Checkbox
+                      id='reasoningEffortModelSuffix'
+                      checked={form.watch('reasoningEffortModelSuffix') || false}
+                      onCheckedChange={(checked) => form.setValue('reasoningEffortModelSuffix', checked === true)}
+                    />
+                    <label
+                      htmlFor='reasoningEffortModelSuffix'
+                      className='cursor-pointer text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70'
+                    >
+                      {t('channels.dialogs.settings.reasoningEffortModelSuffix.label')}
                     </label>
                   </div>
                 </CardContent>

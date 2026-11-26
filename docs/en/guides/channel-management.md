@@ -143,7 +143,30 @@ When enabled, model name matching keys are converted to lowercase. Enable when c
 
 **Example**: Converts `GLM-5.1` to `glm-5.1`, allowing the channel to share load with other channels that provide `glm-5.1`.
 
-> **Note**: When enabled, model names that differ only in case (e.g., `GPT-4` and `gpt-4`) are treated as the same model. In case of collision, the highest-priority entry wins (direct > auto_trim > mapping > prefix).
+> **Note**: When enabled, model names that differ only in case (e.g., `GPT-4` and `gpt-4`) are treated as the same model. In case of collision, the highest-priority entry wins (direct > auto_trim > mapping > prefix > effort_suffix).
+
+### Recognize Effort Suffix
+
+Some upstreams put the reasoning effort in the model name, such as `gemini-4-hydrogen-xhigh` or `gemini-4-argon-high`. When enabled, a channel model whose name ends with `-low`, `-medium`, `-high`, `-xhigh`, or `-max` also makes the channel accept the base name without the suffix. Each request is sent to the upstream model that matches its reasoning effort.
+
+**Example:**
+- Supported Models: `gemini-4-argon-low`, `gemini-4-argon-high`, `gemini-4-hydrogen-xhigh`
+- The channel accepts `gemini-4-argon` and `gemini-4-hydrogen`; the original names still work
+- `gemini-4-argon` with reasoning effort `high` → sends `gemini-4-argon-high` upstream
+- `gemini-4-argon` without a reasoning effort → prefers `-medium`, otherwise the effort closest to medium, with ties going to the lower effort; here `gemini-4-argon-low`
+- `gemini-4-hydrogen` with reasoning effort `high` → the channel has no `-high` model, so it does not serve the request
+
+When a suffixed model is selected through the base name, the request's reasoning parameters are not sent upstream; the effort in the model name applies. With Auto Reasoning Effort enabled, a client request for `gemini-4-argon-high` is also split into `gemini-4-argon` plus `high` first and follows the same rule; only channel tests and Playground requests pinned to a channel send the original name and keep the reasoning parameters.
+
+Rules:
+- An explicit reasoning effort is matched exactly; it is never raised or lowered to a nearby effort.
+- Only when the channel lacks that effort is the channel's Reasoning Effort Mapping consulted, once. For example, with `high → xhigh` on the channel above, `gemini-4-hydrogen` with `high` sends `gemini-4-hydrogen-xhigh`, while `gemini-4-argon` with `high` still sends `gemini-4-argon-high`.
+- If the channel already has a model with the base name, that model is used and no alias is created.
+- A manual mapping whose request name carries an effort suffix joins the base model only when its target has the same effort; for example, `m-high → upstream-low` does not make `m` claim a `high` effort.
+- The `-max` in `qwen` model names is part of the name, not an effort.
+- If every matching channel lacks the requested effort, the request fails with an invalid model error that names the missing effort.
+
+> **Tip**: Register the base name (e.g., `gemini-4-hydrogen`) in Model Management and associate it with a global exact model match; no regex is needed. With the system setting Auto Reasoning Effort enabled, a client request for `gemini-4-hydrogen-xhigh` is split into the base model and effort `xhigh`, and also reaches the `-xhigh` model.
 
 ### Visibility Controls
 

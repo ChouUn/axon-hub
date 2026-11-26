@@ -118,6 +118,7 @@ export function mergeChannelSettingsForUpdate(
     hideOriginalModels: pick('hideOriginalModels', existing?.hideOriginalModels ?? false),
     hideMappedModels: pick('hideMappedModels', existing?.hideMappedModels ?? false),
     lowercaseModelId: pick('lowercaseModelId', existing?.lowercaseModelId ?? false),
+    reasoningEffortModelSuffix: pick('reasoningEffortModelSuffix', existing?.reasoningEffortModelSuffix ?? false),
     bodyOverrideOperations: pick('bodyOverrideOperations', existing?.bodyOverrideOperations ?? []),
     headerOverrideOperations: pick('headerOverrideOperations', existing?.headerOverrideOperations ?? []),
     proxy: pick('proxy', existing?.proxy ?? null),

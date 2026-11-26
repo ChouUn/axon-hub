@@ -30,6 +30,8 @@
 - 设为 `0` 时保持上游行为。
 - GraphQL 事务中间件对三个测试 mutation 按字段跳过事务。
   上游按操作名跳过的 `bulkImportChannels` 并入同一份字段列表。
+- 测试与 Playground 指定渠道时，渠道有原样的模型名就不经「自动推理强度」拆分，
+  `gemini-4-hydrogen-xhigh` 这类带档位后缀的渠道模型能直接测试，见[渠道识别档位后缀](../../routing/feats/reasoning-effort-suffix.md)。
 
 ## 边界
 
@@ -47,6 +49,7 @@
   - `internal/server/config.go`
   - `internal/server/server.go`
   - `internal/server/orchestrator/tester.go`
+  - `internal/server/orchestrator/auto_reasoning_effort.go`：指定渠道时不拆分渠道自有的模型名。
   - `internal/server/gql/resolver.go`
   - `internal/server/gql/graphql.go`
 - 迁移：无。
@@ -54,6 +57,7 @@
   - `internal/server/orchestrator/tester_timeout_test.go` 的 `TestTestChannelOutlivesRequestDeadline`：
     用本地慢响应 mock 复现，修复前报同样错误。
   - `internal/server/gql/graphql_skip_tx_test.go`。
+  - `internal/server/orchestrator/auto_reasoning_effort_test.go` 的 `TestAutoReasoningEffortMiddleware_PinnedChannelKeepsServedName`。
   - 本机 Docker（`axonhub:local`，SQLite）对照验证，mock 的生图渠道上游 45 秒返回：
     - 默认配置下 `testChannel` 与 `testChannelAPIKey` 均 45 秒成功。
     - `channel_test_timeout=0` 时两者 30 秒失败并报同样错误。

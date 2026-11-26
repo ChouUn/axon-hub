@@ -715,7 +715,13 @@ func (p *PersistentOutboundTransformer) TransformRequest(ctx context.Context, ll
 
 	// Apply channel transform options to create a new request
 	llmRequest = applyTransformOptions(llmRequest, candidate.Channel.Settings)
-	llmRequest = applyReasoningEffortMapping(llmRequest, candidate.Channel.Settings)
+	if entry.EffortVariants != nil {
+		// The variant's model name already carries the effort; the channel effort
+		// mapping was consumed while resolving the variant.
+		llmRequest = clearReasoningForEffortSuffix(llmRequest)
+	} else {
+		llmRequest = applyReasoningEffortMapping(llmRequest, candidate.Channel.Settings)
+	}
 	llmRequest = applyModelDefaultMaxTokens(llmRequest, candidate, outboundFormat)
 	for _, middleware := range p.outboundLlmRequestMiddlewares {
 		transformedRequest, err := middleware.OnOutboundLlmRequest(ctx, llmRequest, outboundFormat)

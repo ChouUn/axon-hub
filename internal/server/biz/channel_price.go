@@ -4,10 +4,12 @@
 //	internal/server/biz/channel.go
 //	internal/server/biz/model_cache.go
 //	internal/server/biz/usage_log.go
+//	llm/reasoning.go
 //
 // 注意事项:
 //
-//	精确模型优先于去后缀模型；归档模型不参与价格回退。
+//	精确模型优先于去推理强度后缀的基础模型；归档模型不参与价格回退。
+//	去后缀规则与自动推理强度共用 llm.SplitReasoningEffortModelSuffix。
 //	请求内价格复用保持费用注入与 usage 记录一致，查询错误不缓存。
 
 package biz
@@ -34,6 +36,7 @@ import (
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/pkg/xtime"
 	"github.com/looplj/axonhub/internal/scopes"
+	"github.com/looplj/axonhub/llm"
 )
 
 type SaveChannelModelPriceInput struct {
@@ -129,27 +132,18 @@ func modelLibraryPriceReferenceMultiplier(referenceID string) (decimal.Decimal, 
 
 // modelLibraryPriceModelIDCandidates returns the model ids to try, in order,
 // when resolving a model library price. The exact id is tried first, then the
-// base model with a known effort/tier suffix stripped (e.g.
+// base model with a reasoning effort suffix stripped (e.g.
 // "gemini-3.8-flash-high" -> "gemini-3.8-flash"). Providers expose the same
 // underlying model under several suffixed names, and the model library usually
-// only carries the base id.
+// only carries the base id. The suffix rule is llm.SplitReasoningEffortModelSuffix,
+// shared with auto reasoning effort and channel effort-suffix aliases.
 func modelLibraryPriceModelIDCandidates(modelID string) []string {
-	candidates := []string{modelID}
-
-	for _, suffix := range modelLibraryPriceSuffixes {
-		if base, ok := strings.CutSuffix(modelID, suffix); ok && base != "" {
-			candidates = append(candidates, base)
-		}
+	if base, _, ok := llm.SplitReasoningEffortModelSuffix(modelID); ok {
+		return []string{modelID, base}
 	}
 
-	return lo.Uniq(candidates)
+	return []string{modelID}
 }
-
-// modelLibraryPriceSuffixes are the effort/tier suffixes stripped when the exact
-// model library id has no price. Keep this list in sync with the provider model
-// naming conventions (e.g. Antigravity "gemini-3-flash" / "-low" / "-medium" /
-// "-high").
-var modelLibraryPriceSuffixes = []string{"-high", "-medium", "-low"}
 
 // modelLibraryPriceMemo caches model-library price resolutions for the duration
 // of a single request. Cost injection and usage-log creation both resolve the

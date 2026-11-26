@@ -188,7 +188,7 @@ func TestAutoReasoningEffortRunsBeforeModelAccess(t *testing.T) {
 
 	normalized, err := applyAutoReasoningEffort(&RequestSettings{
 		ModelSettings: biz.SystemModelSettings{AutoReasoningEffort: true},
-	}).OnInboundLlmRequest(ctx, request)
+	}, nil).OnInboundLlmRequest(ctx, request)
 	require.NoError(t, err)
 	require.NotNil(t, normalized)
 	assert.Equal(t, "gpt-5.4", normalized.Model)

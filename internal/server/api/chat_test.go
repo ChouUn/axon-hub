@@ -991,6 +991,16 @@ func TestPlaygroundHandleError_OtherError_Returns500(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, errResp.Status)
 }
 
+func TestPlaygroundHandleError_ReasoningEffortUnavailable_Returns422WithEffort(t *testing.T) {
+	handlers := &PlaygroundHandlers{}
+
+	errResp := handlers.HandleError(&orchestrator.ReasoningEffortUnavailableError{ModelName: "m", Effort: "low"})
+
+	assert.Equal(t, http.StatusUnprocessableEntity, errResp.Status)
+	assert.Equal(t, http.StatusUnprocessableEntity, errResp.Error.Code)
+	assert.Contains(t, errResp.Error.Message, `"low"`)
+}
+
 func TestFormatStreamError_LlmResponseError_PassesCodeAndRequestID(t *testing.T) {
 	respErr := &llm.ResponseError{
 		Detail: llm.ErrorDetail{

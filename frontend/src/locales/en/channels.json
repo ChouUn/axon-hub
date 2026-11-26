@@ -506,6 +506,9 @@
   "channels.dialogs.settings.lowercaseModelId.title": "Lowercase Model Name",
   "channels.dialogs.settings.lowercaseModelId.description": "Convert model names to lowercase. Enable when channel-provided model names contain uppercase letters, to balance load with other lowercase model names. For example, converts 'GLM-5.1' to 'glm-5.1'",
   "channels.dialogs.settings.lowercaseModelId.label": "Enable lowercase model name",
+  "channels.dialogs.settings.reasoningEffortModelSuffix.title": "Recognize Effort Suffix",
+  "channels.dialogs.settings.reasoningEffortModelSuffix.description": "When a channel model name ends with -low/-medium/-high/-xhigh/-max, also expose the base model without the suffix, such as gemini-4-hydrogen-xhigh → gemini-4-hydrogen. Requests use the upstream model matching the reasoning effort. When no effort is specified, medium is preferred, otherwise the closest effort to medium is used. If a requested effort is unavailable on this channel, the channel is used only when an effort mapping selects another effort. An existing channel model with the same name takes precedence.",
+  "channels.dialogs.settings.reasoningEffortModelSuffix.label": "Enable effort suffix recognition",
   "channels.dialogs.settings.autoTrimedModelPrefixes.title": "Auto-Trimmed Model Prefixes",
   "channels.dialogs.settings.autoTrimedModelPrefixes.description": "Configure prefixes to automatically trim from model names. For example: with prefix 'deepseek-ai', model 'deepseek-ai/deepseek-chat' becomes 'deepseek-chat'; both 'deepseek-ai/deepseek-chat' and 'deepseek-chat' can access this channel",
   "channels.dialogs.settings.autoTrimedModelPrefixes.placeholder": "e.g., openai, deepseek",
@@ -1073,5 +1076,6 @@
   "channels.modelPreview.sources.direct": "Lowercase name",
   "channels.modelPreview.sources.mapping": "Alias",
   "channels.modelPreview.sources.prefix": "Prefixed name",
-  "channels.modelPreview.sources.auto_trim": "Trimmed prefix"
+  "channels.modelPreview.sources.auto_trim": "Trimmed prefix",
+  "channels.modelPreview.sources.effort_suffix": "Effort suffix"
 }

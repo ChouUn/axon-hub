@@ -33,6 +33,7 @@ type UpdateChannelSettingsInput struct {
 	HideOriginalModels          *bool                                 `json:"hideOriginalModels"`
 	HideMappedModels            *bool                                 `json:"hideMappedModels"`
 	LowercaseModelID            *bool                                 `json:"lowercaseModelId"`
+	ReasoningEffortModelSuffix  *bool                                 `json:"reasoningEffortModelSuffix"`
 	Proxy                       *httpclient.ProxyConfig               `json:"proxy"`
 	TransformOptions            *objects.TransformOptions             `json:"transformOptions"`
 	HeaderOverrideOperations    []objects.OverrideOperation           `json:"headerOverrideOperations"`
@@ -79,6 +80,9 @@ func (i *UpdateChannelSettingsInput) Apply(base *objects.ChannelSettings) object
 	}
 	if i.LowercaseModelID != nil {
 		merged.LowercaseModelID = *i.LowercaseModelID
+	}
+	if i.ReasoningEffortModelSuffix != nil {
+		merged.ReasoningEffortModelSuffix = *i.ReasoningEffortModelSuffix
 	}
 	if i.Proxy != nil {
 		merged.Proxy = i.Proxy

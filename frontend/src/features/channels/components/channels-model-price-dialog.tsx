@@ -17,6 +17,7 @@ import { AutoCompleteSelect } from '@/components/auto-complete-select';
 import { CompleteModelPriceEditor } from '@/features/models/components/models-price-editor';
 import { fetchModelStandardPrices, useModelStandardPrices, type ModelStandardPrice } from '@/features/models/data/models';
 import { createPriceValidationSchema, isValidPriceMultiplier } from '@/features/models/data/pricing';
+import { firstStandardPrice, priceModelIdCandidates } from '@/features/models/data/reasoning-efforts';
 import { useChannels } from '../context/channels-context';
 import { useChannelModelPrices, useSaveChannelModelPrices } from '../data/channels';
 import {
@@ -253,9 +254,10 @@ function ChannelPriceDialog({ channel, onClose }: { channel: Channel; onClose: (
       const rowId = fieldsRef.current[index]?.id;
       setReferenceBusy(true);
       try {
-        const models = await fetchModelStandardPrices([modelId]);
+        const candidates = priceModelIdCandidates(modelId, channel.settings?.autoTrimedModelPrefixes);
+        const models = await fetchModelStandardPrices(candidates);
         if (!activeRef.current || fieldsRef.current[index]?.id !== rowId || getValues(`prices.${index}.modelId`) !== modelId) return;
-        const price = models.find((model) => model.modelID === modelId)?.modelCard.price;
+        const price = firstStandardPrice(candidates, new Map(models.map((model) => [model.modelID, model.modelCard.price])));
         if (!price) toast.warning(t('price.apply.notFound', { modelId }));
         else replacePrice(index, price);
       } catch {
@@ -264,22 +266,26 @@ function ChannelPriceDialog({ channel, onClose }: { channel: Channel; onClose: (
         if (activeRef.current) setReferenceBusy(false);
       }
     },
-    [getValues, replacePrice, t]
+    [channel.settings?.autoTrimedModelPrefixes, getValues, replacePrice, t]
   );
   const matchAndFill = async () => {
     setReferenceBusy(true);
     try {
-      const models = await fetchModelStandardPrices(supportedModels);
+      const candidateLists = supportedModels.map((modelId) =>
+        priceModelIdCandidates(modelId, channel.settings?.autoTrimedModelPrefixes)
+      );
+      const candidateIds = [...new Set(candidateLists.flat())];
+      const models = await fetchModelStandardPrices(candidateIds);
       if (!activeRef.current) return;
-      const byId = new Map(models.map((model) => [model.modelID, model]));
+      const pricesById = new Map(models.map((model) => [model.modelID, model.modelCard.price]));
       const prices = getValues('prices');
       const existing = new Map(prices.map((price, index) => [price.modelId, index]));
       let applied = 0;
       let added = 0;
       const missed: string[] = [];
       const additions: PriceFormData['prices'] = [];
-      for (const modelId of supportedModels) {
-        const price = byId.get(modelId)?.modelCard.price;
+      for (const [modelIndex, modelId] of supportedModels.entries()) {
+        const price = firstStandardPrice(candidateLists[modelIndex] ?? [], pricesById);
         if (!price) {
           missed.push(modelId);
           continue;

@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash"
 	"hash/fnv"
@@ -115,6 +116,10 @@ func (s *DefaultSelector) Select(ctx context.Context, req *llm.Request) ([]*Chan
 			return nil, fmt.Errorf("%w: %q", biz.ErrInvalidModel, req.Model)
 		}
 
+		if _, ok := errors.AsType[*ReasoningEffortUnavailableError](err); ok {
+			return nil, err
+		}
+
 		return nil, fmt.Errorf("%w: %q", err, req.Model)
 	}
 
@@ -171,12 +176,17 @@ func (s *DefaultSelector) selectModelCandidates(ctx context.Context, req *llm.Re
 		return nil, fmt.Errorf("failed to resolve associations: %w", err)
 	}
 
-	candidates := filterResolvedCandidatesForRequest(ctx, req, resolvedCandidates)
+	candidates, effortUnavailable := filterResolvedCandidatesForRequest(ctx, req, resolvedCandidates)
 	if len(candidates) == 0 {
 		if log.DebugEnabled(ctx) {
 			log.Debug(ctx, "no candidates matched request conditions",
 				log.String("model", req.Model),
+				log.Bool("reasoning_effort_unavailable", effortUnavailable),
 			)
+		}
+
+		if effortUnavailable {
+			return nil, &ReasoningEffortUnavailableError{ModelName: req.Model, Effort: req.ReasoningEffort}
 		}
 
 		return []*ChannelModelsCandidate{}, nil
@@ -1093,25 +1103,19 @@ func NewSpecifiedChannelSelector(channelService *biz.ChannelService, channelID o
 }
 
 func (s *SpecifiedChannelSelector) Select(ctx context.Context, req *llm.Request) ([]*ChannelModelsCandidate, error) {
-	var channel *biz.Channel
-	var err error
-	if s.SelectedAPIKey != "" {
-		channel, err = s.ChannelService.GetChannelWithKey(ctx, s.ChannelID.ID, s.SelectedAPIKey)
-	} else {
-		channel, err = s.ChannelService.GetChannel(ctx, s.ChannelID.ID)
-	}
+	channel, err := s.channel(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get channel for test: %w", err)
+		return nil, err
 	}
 
-	entries := channel.GetModelEntries()
-
-	entry, ok := entries[req.Model]
-	if !ok {
-		entry, ok = channel.GetDirectModelEntries()[req.Model]
-	}
+	entry, ok := specifiedChannelEntry(channel, req.Model)
 	if !ok {
 		return nil, fmt.Errorf("model %s not supported in channel %s", req.Model, channel.Name)
+	}
+
+	entry, ok = channel.ResolveReasoningEffortEntry(entry, req.ReasoningEffort)
+	if !ok {
+		return nil, &ReasoningEffortUnavailableError{ModelName: req.Model, Effort: req.ReasoningEffort}
 	}
 
 	endpoints, forced := applyForcedAPIFormatsForRequest(ctx, channel, []biz.ChannelModelEntry{entry}, req.Model, req.RequestType, channel.ResolveEndpoints())
@@ -1128,4 +1132,43 @@ func (s *SpecifiedChannelSelector) Select(ctx context.Context, req *llm.Request)
 	}
 
 	return []*ChannelModelsCandidate{candidate}, nil
+}
+
+// ServesModelName reports whether the pinned channel accepts model under that
+// exact name. Channel tests and playground probes send the channel's own model
+// names, so the auto reasoning effort split must not rename them first.
+func (s *SpecifiedChannelSelector) ServesModelName(ctx context.Context, model string) bool {
+	channel, err := s.channel(ctx)
+	if err != nil {
+		return false
+	}
+
+	_, ok := specifiedChannelEntry(channel, model)
+
+	return ok
+}
+
+func (s *SpecifiedChannelSelector) channel(ctx context.Context) (*biz.Channel, error) {
+	var channel *biz.Channel
+	var err error
+	if s.SelectedAPIKey != "" {
+		channel, err = s.ChannelService.GetChannelWithKey(ctx, s.ChannelID.ID, s.SelectedAPIKey)
+	} else {
+		channel, err = s.ChannelService.GetChannel(ctx, s.ChannelID.ID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get channel for test: %w", err)
+	}
+
+	return channel, nil
+}
+
+func specifiedChannelEntry(channel *biz.Channel, model string) (biz.ChannelModelEntry, bool) {
+	if entry, ok := channel.GetModelEntries()[model]; ok {
+		return entry, true
+	}
+
+	entry, ok := channel.GetDirectModelEntries()[model]
+
+	return entry, ok
 }

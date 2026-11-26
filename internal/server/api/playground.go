@@ -136,6 +136,21 @@ func (handlers *PlaygroundHandlers) HandleError(rawErr error) *PlaygroundRespons
 		}
 	}
 
+	// Invalid models, including a reasoning effort the pinned channel lacks,
+	// keep their message, as the OpenAI-compatible inbounds return them.
+	if errors.Is(rawErr, transformer.ErrInvalidModel) {
+		return &PlaygroundResponseError{
+			Status: http.StatusUnprocessableEntity,
+			Error: struct {
+				Code    int    `json:"code,omitempty"`
+				Message string `json:"message"`
+			}{
+				Code:    http.StatusUnprocessableEntity,
+				Message: rawErr.Error(),
+			},
+		}
+	}
+
 	if httpErr, ok := xerrors.As[*httpclient.Error](rawErr); ok {
 		// Prefer upstream error message when available
 		msg := tryExtractUpstreamErrorMessage(httpErr.Body)

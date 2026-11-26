@@ -135,14 +135,14 @@ func FilterEndpointsByAPIFormats(endpoints []objects.ChannelEndpoint, allowed []
 
 // forcedAPIFormatsForCandidate returns the union of ModelProtocols overrides that
 // apply to this candidate. Overrides may be keyed by the request model, any
-// channel-side model entry, or its mapped actual model. Formats keep configuration
-// order; duplicates are removed.
+// channel-side model entry, the effort-suffix variant an alias resolved to, or
+// its mapped actual model. Formats keep configuration order; duplicates are removed.
 func forcedAPIFormatsForCandidate(ch *biz.Channel, entries []biz.ChannelModelEntry, requestModel string) []string {
 	if ch == nil || ch.Channel == nil || ch.Settings == nil || len(ch.Settings.ModelProtocols) == 0 {
 		return nil
 	}
 
-	names := make([]string, 0, len(entries)*2+1)
+	names := make([]string, 0, len(entries)*3+1)
 	if requestModel != "" {
 		names = append(names, requestModel)
 	}
@@ -150,6 +150,10 @@ func forcedAPIFormatsForCandidate(ch *biz.Channel, entries []biz.ChannelModelEnt
 	for _, entry := range entries {
 		if entry.RequestModel != "" && entry.RequestModel != requestModel {
 			names = append(names, entry.RequestModel)
+		}
+
+		if variantModel, ok := entry.SelectedVariantRequestModel(); ok && variantModel != requestModel {
+			names = append(names, variantModel)
 		}
 
 		if entry.ActualModel == "" || entry.ActualModel == requestModel {

@@ -201,6 +201,7 @@ type ChannelSettings {
   hideOriginalModels: Boolean
   hideMappedModels: Boolean
   lowercaseModelId: Boolean
+  reasoningEffortModelSuffix: Boolean
   proxy: ProxyConfig
   transformOptions: TransformOptions
   headerOverrideOperations: [OverrideOperation!]! @goField(forceResolver: true)
@@ -310,6 +311,7 @@ input ChannelSettingsInput {
   hideOriginalModels: Boolean
   hideMappedModels: Boolean
   lowercaseModelId: Boolean
+  reasoningEffortModelSuffix: Boolean
   proxy: ProxyConfigInput
   transformOptions: TransformOptionsInput
   headerOverrideOperations: [OverrideOperationInput!]
@@ -342,6 +344,7 @@ input UpdateChannelSettingsInput {
   hideOriginalModels: Boolean
   hideMappedModels: Boolean
   lowercaseModelId: Boolean
+  reasoningEffortModelSuffix: Boolean
   proxy: ProxyConfigInput
   transformOptions: TransformOptionsInput
   headerOverrideOperations: [OverrideOperationInput!]

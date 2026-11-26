@@ -8,4 +8,5 @@
 
 - [模型入口校验与渠道分发](feats/model-admission.md)
 - [健康门控](feats/health-gate.md)
+- [渠道识别档位后缀](feats/reasoning-effort-suffix.md)
 - [请求列表的协议提示](feats/request-protocol-indicator.md)

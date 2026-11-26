@@ -919,6 +919,14 @@ func findUnassociatedChannels(channels []*ent.Channel, associations []*objects.M
 				ModelID:   entry.RequestModel,
 			}
 			associatedMap[key] = true
+
+			// An associated effort-suffix alias routes to every variant, so the
+			// variants' own names are covered too.
+			if entry.EffortVariants != nil {
+				for _, variant := range entry.EffortVariants.Variants() {
+					associatedMap[ChannelModelKey{ChannelID: conn.Channel.ID, ModelID: variant.RequestModel}] = true
+				}
+			}
 		}
 	}
 

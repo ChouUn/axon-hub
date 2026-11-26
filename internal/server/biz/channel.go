@@ -44,7 +44,12 @@ type ChannelModelEntry struct {
 	ActualModel string
 
 	// Source indicates how this model is supported
-	Source string // "direct", "prefix", "auto_trim", "mapping"
+	Source string // "direct", "prefix", "auto_trim", "mapping", "effort_suffix"
+
+	// EffortVariants is set only for effort_suffix aliases. ActualModel then holds
+	// the default variant; ResolveReasoningEffortEntry picks the variant per request.
+	// Shared by cached entries: read only.
+	EffortVariants *ReasoningEffortVariants `json:"-"`
 }
 
 type Channel struct {

@@ -192,6 +192,12 @@ type ChannelSettings struct {
 	// balancing where providers use different casing for the same model.
 	LowercaseModelID bool `json:"lowercaseModelId"`
 
+	// ReasoningEffortModelSuffix exposes "<base>" as an alias of the channel's
+	// "<base>-<effort>" models (effort in low/medium/high/xhigh/max). Each request
+	// is routed to the variant matching its reasoning effort, so upstreams that
+	// carry the effort in the model name can serve the registered base model.
+	ReasoningEffortModelSuffix bool `json:"reasoningEffortModelSuffix,omitempty"`
+
 	// OverrideParameters sets the channel override the request body.
 	// A json string.
 	// e.g. {"max_tokens": 100}, {"temperature": 0.7}

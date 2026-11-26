@@ -141,7 +141,30 @@ AxonHub 在渠道层面提供多种模型重命名和别名机制。当请求到
 
 **示例**：将 `GLM-5.1` 转换为 `glm-5.1`，使该渠道可与其他下发 `glm-5.1` 的渠道共同负载均衡。
 
-> **注意**：启用此选项后，仅大小写不同的模型名（如 `GPT-4` 和 `gpt-4`）会被视为同一个模型。冲突时保留优先级最高的条目（direct > auto_trim > mapping > prefix）。
+> **注意**：启用此选项后，仅大小写不同的模型名（如 `GPT-4` 和 `gpt-4`）会被视为同一个模型。冲突时保留优先级最高的条目（direct > auto_trim > mapping > prefix > effort_suffix）。
+
+### 识别档位后缀（Recognize Effort Suffix）
+
+部分上游把推理强度写进模型名，例如 `gemini-4-hydrogen-xhigh`、`gemini-4-argon-high`。启用后，渠道模型名以 `-low`、`-medium`、`-high`、`-xhigh`、`-max` 结尾时，渠道额外接受去掉后缀的基础模型名，按请求的推理强度选择发往上游的模型。
+
+**示例：**
+- 支持模型：`gemini-4-argon-low`、`gemini-4-argon-high`、`gemini-4-hydrogen-xhigh`
+- 渠道接受 `gemini-4-argon` 和 `gemini-4-hydrogen`，原始模型名仍然有效
+- `gemini-4-argon` + 推理强度 `high` → 发送 `gemini-4-argon-high` 给上游
+- `gemini-4-argon` 未指定推理强度 → 优先 `-medium`，没有时取最接近 medium 的档位，距离相同时取较低档，这里是 `gemini-4-argon-low`
+- `gemini-4-hydrogen` + 推理强度 `high` → 渠道没有 `-high`，不走该渠道
+
+通过基础模型名选中带后缀的模型后，请求中的推理强度参数不再发给上游，以模型名中的档位为准。开启「自动推理强度」时，客户端请求 `gemini-4-argon-high` 也会先拆成 `gemini-4-argon` 加 `high`，走同一规则；只有渠道测试和 Playground 指定渠道时按原名发送，推理强度参数照常保留。
+
+规则：
+- 请求指定推理强度时只做精确匹配，不就近升降档。
+- 渠道缺少该档位时，才查渠道的「推理强度映射」，按映射结果再找一次。例如为上例渠道配置 `high → xhigh`，`gemini-4-hydrogen` + `high` 会发送 `gemini-4-hydrogen-xhigh`，`gemini-4-argon` + `high` 仍发送 `gemini-4-argon-high`。
+- 渠道已有与基础模型同名的模型时，以已有模型为准，不生成别名。
+- 手动映射的请求名带档位后缀时，映射目标的档位须相同才计入基础模型，例如 `m-high → upstream-low` 不会让 `m` 声称有 `high` 档。
+- `qwen` 系列的 `-max` 是模型名的一部分，不视为档位。
+- 所有匹配的渠道都缺少请求的档位时，请求返回无效模型错误，错误信息写明缺少的推理强度。
+
+> **提示**：在模型管理里注册基础模型名（如 `gemini-4-hydrogen`），用「全局精准匹配模型」关联即可匹配到这类渠道，不需要写正则。开启系统设置中的「自动推理强度」后，客户端请求 `gemini-4-hydrogen-xhigh` 会拆成基础模型加推理强度 `xhigh`，同样路由到 `-xhigh` 模型。
 
 ### 可见性控制
 

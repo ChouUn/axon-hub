@@ -527,12 +527,14 @@ export function useModelStandardPrices(search: string, enabled: boolean) {
   });
 }
 
+// Automatic price matching uses the same eligibility as backend auto-fill and
+// billing fallback: archived models never supply a price.
 export async function fetchModelStandardPrices(modelIDs: string[]): Promise<ModelStandardPrice[]> {
   if (!modelIDs.length) return [];
   const models: ModelStandardPrice[] = [];
   let after: string | undefined;
   do {
-    const page = await queryModelStandardPricePage({ modelIDIn: modelIDs }, after);
+    const page = await queryModelStandardPricePage({ modelIDIn: modelIDs, statusIn: ['enabled', 'disabled'] }, after);
     models.push(...page.edges.map(({ node }) => node));
     after = page.pageInfo.hasNextPage ? (page.pageInfo.endCursor ?? undefined) : undefined;
   } while (after);

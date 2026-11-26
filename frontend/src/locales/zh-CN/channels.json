@@ -503,6 +503,9 @@
   "channels.dialogs.settings.lowercaseModelId.title": "模型名称转小写",
   "channels.dialogs.settings.lowercaseModelId.description": "将模型名称转换为小写，在渠道下发模型名包含大写字母时开启，可实现与其他小写模型名共同负载均衡。例如将'GLM-5.1'转换成'glm-5.1'",
   "channels.dialogs.settings.lowercaseModelId.label": "启用模型名称转小写",
+  "channels.dialogs.settings.reasoningEffortModelSuffix.title": "识别档位后缀",
+  "channels.dialogs.settings.reasoningEffortModelSuffix.description": "渠道模型名以 -low/-medium/-high/-xhigh/-max 结尾时，额外提供去掉后缀的基础模型名（如 gemini-4-hydrogen-xhigh → gemini-4-hydrogen）；请求按推理强度选择对应的上游模型，未指定推理强度时优先 medium，否则取最接近 medium 的档位；指定了渠道没有的档位时，仅在配置了推理强度映射时按映射改用其他档位，否则不走该渠道；渠道已有同名模型时以已有模型为准。",
+  "channels.dialogs.settings.reasoningEffortModelSuffix.label": "启用识别档位后缀",
   "channels.dialogs.settings.autoTrimedModelPrefixes.title": "自动裁剪模型前缀",
   "channels.dialogs.settings.autoTrimedModelPrefixes.description": "配置需要自动裁剪的模型前缀。例如：配置前缀为 'deepseek-ai'，则模型 'deepseek-ai/deepseek-chat' 将变为 'deepseek-chat'，则 'deepseek-ai/deepseek-chat' 和 'deepseek-chat' 都可以访问该渠道",
   "channels.dialogs.settings.autoTrimedModelPrefixes.placeholder": "例如: openai, deepseek",
@@ -1073,5 +1076,6 @@
   "channels.modelPreview.sources.direct": "小写名称",
   "channels.modelPreview.sources.mapping": "别名",
   "channels.modelPreview.sources.prefix": "添加前缀",
-  "channels.modelPreview.sources.auto_trim": "去除前缀"
+  "channels.modelPreview.sources.auto_trim": "去除前缀",
+  "channels.modelPreview.sources.effort_suffix": "档位后缀"
 }

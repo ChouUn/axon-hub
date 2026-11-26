@@ -60,7 +60,7 @@ func TestFilterResolvedCandidatesForRequest_ReasoningEffort(t *testing.T) {
 					models:   []biz.ChannelModelEntry{{ActualModel: "test-model"}},
 				},
 			}
-			got := filterResolvedCandidatesForRequest(context.Background(), &llm.Request{
+			got, _ := filterResolvedCandidatesForRequest(context.Background(), &llm.Request{
 				Model:           "test-model",
 				ReasoningEffort: tc.effort,
 			}, candidates)

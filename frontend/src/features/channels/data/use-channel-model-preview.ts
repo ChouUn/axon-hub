@@ -6,7 +6,7 @@ import { channelModelEntrySchema, type ChannelModelEntry, type ChannelSettings }
 
 export type ModelPreviewSettings = Pick<
   ChannelSettings,
-  'extraModelPrefix' | 'modelMappings' | 'autoTrimedModelPrefixes' | 'hideOriginalModels' | 'hideMappedModels' | 'lowercaseModelId'
+  'extraModelPrefix' | 'modelMappings' | 'autoTrimedModelPrefixes' | 'hideOriginalModels' | 'hideMappedModels' | 'lowercaseModelId' | 'reasoningEffortModelSuffix'
 >;
 
 const CHANNEL_MODEL_PREVIEW_QUERY = `
@@ -30,6 +30,7 @@ export function useChannelModelPreview(models: string[], settings: ModelPreviewS
       hideOriginalModels: settings?.hideOriginalModels ?? false,
       hideMappedModels: settings?.hideMappedModels ?? false,
       lowercaseModelId: settings?.lowercaseModelId ?? false,
+      reasoningEffortModelSuffix: settings?.reasoningEffortModelSuffix ?? false,
     },
   });
   const debounced = useDebounce(serialized, 300);

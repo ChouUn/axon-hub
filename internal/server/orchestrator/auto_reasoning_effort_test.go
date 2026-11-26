@@ -156,7 +156,7 @@ func TestAutoReasoningEffortMiddleware_OnInboundLlmRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			middleware := applyAutoReasoningEffort(&RequestSettings{ModelSettings: tt.settings})
+			middleware := applyAutoReasoningEffort(&RequestSettings{ModelSettings: tt.settings}, nil)
 			result, err := middleware.OnInboundLlmRequest(context.Background(), tt.request)
 			require.NoError(t, err)
 			require.NotNil(t, result)
@@ -164,4 +164,32 @@ func TestAutoReasoningEffortMiddleware_OnInboundLlmRequest(t *testing.T) {
 			assert.Equal(t, tt.wantEffort, result.ReasoningEffort)
 		})
 	}
+}
+
+type stubModelNameServer struct {
+	CandidateSelector
+
+	served map[string]bool
+}
+
+func (s stubModelNameServer) ServesModelName(_ context.Context, model string) bool {
+	return s.served[model]
+}
+
+// A channel test or playground probe pinned to a channel sends the channel's own
+// model names; splitting them would ask the channel for a base name it lacks.
+func TestAutoReasoningEffortMiddleware_PinnedChannelKeepsServedName(t *testing.T) {
+	settings := &RequestSettings{ModelSettings: biz.SystemModelSettings{AutoReasoningEffort: true}}
+	selector := stubModelNameServer{served: map[string]bool{"gemini-4-hydrogen-xhigh": true}}
+	middleware := applyAutoReasoningEffort(settings, selector)
+
+	kept, err := middleware.OnInboundLlmRequest(context.Background(), &llm.Request{Model: "gemini-4-hydrogen-xhigh"})
+	require.NoError(t, err)
+	assert.Equal(t, "gemini-4-hydrogen-xhigh", kept.Model)
+	assert.Empty(t, kept.ReasoningEffort)
+
+	split, err := middleware.OnInboundLlmRequest(context.Background(), &llm.Request{Model: "gpt-5.4-high"})
+	require.NoError(t, err)
+	assert.Equal(t, "gpt-5.4", split.Model)
+	assert.Equal(t, "high", split.ReasoningEffort)
 }

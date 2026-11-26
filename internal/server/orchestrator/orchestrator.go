@@ -327,7 +327,7 @@ func (processor *ChatCompletionOrchestrator) Process(ctx context.Context, reques
 	// Add inbound middlewares (executed after inbound.TransformRequest)
 	middlewares = append(middlewares,
 		enforceQuota(inbound, processor.QuotaService),
-		applyAutoReasoningEffort(settings),
+		applyAutoReasoningEffort(settings, processor.channelSelector),
 		checkApiKeyModelAccess(inbound),
 		applyModelMapping(inbound),
 		selectCandidates(inbound, processor.quotaProvider),

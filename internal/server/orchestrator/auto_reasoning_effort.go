@@ -2,24 +2,23 @@ package orchestrator
 
 import (
 	"context"
-	"strings"
 
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/pipeline"
 )
 
-var supportedAutoReasoningEfforts = map[string]struct{}{
-	"max":    {},
-	"xhigh":  {},
-	"high":   {},
-	"medium": {},
-	"low":    {},
+// modelNameServer is implemented by selectors pinned to one channel. When that
+// channel accepts the requested name as is (for example a channel test of
+// "gemini-4-hydrogen-xhigh"), the name is not split into base model and effort.
+type modelNameServer interface {
+	ServesModelName(ctx context.Context, model string) bool
 }
 
-func applyAutoReasoningEffort(settings *RequestSettings) pipeline.Middleware {
+func applyAutoReasoningEffort(settings *RequestSettings, selector CandidateSelector) pipeline.Middleware {
 	return &autoReasoningEffortMiddleware{
 		settings: settings,
+		selector: selector,
 	}
 }
 
@@ -27,6 +26,7 @@ type autoReasoningEffortMiddleware struct {
 	pipeline.DummyMiddleware
 
 	settings *RequestSettings
+	selector CandidateSelector
 }
 
 func (m *autoReasoningEffortMiddleware) Name() string {
@@ -47,6 +47,10 @@ func (m *autoReasoningEffortMiddleware) OnInboundLlmRequest(ctx context.Context,
 		return llmRequest, nil
 	}
 
+	if pinned, isPinned := m.selector.(modelNameServer); isPinned && pinned.ServesModelName(ctx, llmRequest.Model) {
+		return llmRequest, nil
+	}
+
 	originalModel := llmRequest.Model
 	llmRequest.Model = baseModel
 	llmRequest.ReasoningEffort = reasoningEffort
@@ -61,37 +65,5 @@ func (m *autoReasoningEffortMiddleware) OnInboundLlmRequest(ctx context.Context,
 }
 
 func splitAutoReasoningEffortModel(model string) (baseModel string, reasoningEffort string, ok bool) {
-	lastDash := strings.LastIndex(model, "-")
-	if lastDash <= 0 || lastDash == len(model)-1 {
-		return "", "", false
-	}
-
-	effort := strings.ToLower(model[lastDash+1:])
-	if _, supported := supportedAutoReasoningEfforts[effort]; !supported {
-		return "", "", false
-	}
-
-	if effort == "max" && isQwenMaxModel(model) {
-		return "", "", false
-	}
-
-	base := model[:lastDash]
-	if base == "" {
-		return "", "", false
-	}
-
-	return base, effort, true
-}
-
-func isQwenMaxModel(model string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(model))
-	if !strings.HasSuffix(normalized, "-max") {
-		return false
-	}
-
-	if lastSlash := strings.LastIndex(normalized, "/"); lastSlash >= 0 {
-		normalized = normalized[lastSlash+1:]
-	}
-
-	return strings.HasPrefix(normalized, "qwen")
+	return llm.SplitReasoningEffortModelSuffix(model)
 }

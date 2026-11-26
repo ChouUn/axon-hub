@@ -86,12 +86,13 @@ type channelModelCacheDiagnosticsChannelCached struct {
 }
 
 type channelModelCacheDiagnosticsSettings struct {
-	ExtraModelPrefix        string                                     `json:"extraModelPrefix,omitempty"`
-	AutoTrimedModelPrefixes []string                                   `json:"autoTrimedModelPrefixes,omitempty"`
-	HideMappedModels        bool                                       `json:"hideMappedModels"`
-	HideOriginalModels      bool                                       `json:"hideOriginalModels"`
-	LowercaseModelID        bool                                       `json:"lowercaseModelId"`
-	ModelMappings           []channelModelCacheDiagnosticsModelMapping `json:"modelMappings,omitempty"`
+	ExtraModelPrefix           string                                     `json:"extraModelPrefix,omitempty"`
+	AutoTrimedModelPrefixes    []string                                   `json:"autoTrimedModelPrefixes,omitempty"`
+	HideMappedModels           bool                                       `json:"hideMappedModels"`
+	HideOriginalModels         bool                                       `json:"hideOriginalModels"`
+	LowercaseModelID           bool                                       `json:"lowercaseModelId"`
+	ReasoningEffortModelSuffix bool                                       `json:"reasoningEffortModelSuffix"`
+	ModelMappings              []channelModelCacheDiagnosticsModelMapping `json:"modelMappings,omitempty"`
 }
 
 type channelModelCacheDiagnosticsModelMapping struct {
@@ -254,11 +255,12 @@ func buildSettingsSnapshot(settings *objects.ChannelSettings) channelModelCacheD
 	}
 
 	return channelModelCacheDiagnosticsSettings{
-		ExtraModelPrefix:        settings.ExtraModelPrefix,
-		AutoTrimedModelPrefixes: append([]string(nil), settings.AutoTrimedModelPrefixes...),
-		HideMappedModels:        settings.HideMappedModels,
-		HideOriginalModels:      settings.HideOriginalModels,
-		LowercaseModelID:        settings.LowercaseModelID,
+		ExtraModelPrefix:           settings.ExtraModelPrefix,
+		AutoTrimedModelPrefixes:    append([]string(nil), settings.AutoTrimedModelPrefixes...),
+		HideMappedModels:           settings.HideMappedModels,
+		HideOriginalModels:         settings.HideOriginalModels,
+		LowercaseModelID:           settings.LowercaseModelID,
+		ReasoningEffortModelSuffix: settings.ReasoningEffortModelSuffix,
 		ModelMappings: lo.Map(settings.ModelMappings, func(mapping objects.ModelMapping, _ int) channelModelCacheDiagnosticsModelMapping {
 			return channelModelCacheDiagnosticsModelMapping{
 				From: mapping.From,

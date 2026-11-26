@@ -147,7 +147,7 @@ func applyResponsesTransportRequestBody(outbound *PersistentOutboundTransformer)
 		}
 
 		llmRequest := outbound.state.LlmRequest
-		if !outbound.allowPassThroughBody(ctx, llmRequest, request) {
+		if outbound.currentEntryUsesEffortSuffix() || !outbound.allowPassThroughBody(ctx, llmRequest, request) {
 			return request, nil
 		}
 		source := llmRequest.APIFormat
@@ -206,7 +206,7 @@ func applyPassThroughRequestBody(outbound *PersistentOutboundTransformer, hooks 
 
 		channel := outbound.GetCurrentChannel()
 		llmReq := outbound.state.LlmRequest
-		if !outbound.allowPassThroughBody(ctx, llmReq, request) {
+		if outbound.currentEntryUsesEffortSuffix() || !outbound.allowPassThroughBody(ctx, llmReq, request) {
 			return request, nil
 		}
 
@@ -261,6 +261,19 @@ func applyPassThroughRequestBody(outbound *PersistentOutboundTransformer, hooks 
 
 		return request, nil
 	})
+}
+
+// currentEntryUsesEffortSuffix reports whether the current attempt targets an
+// effort-suffix variant. Such attempts never replay the inbound body: it still
+// carries the client's reasoning parameters, which TransformRequest removed so
+// the variant's model name is the only effort signal sent upstream.
+func (p *PersistentOutboundTransformer) currentEntryUsesEffortSuffix() bool {
+	candidate := p.state.CurrentCandidate
+	if candidate == nil || p.state.CurrentModelIndex >= len(candidate.Models) {
+		return false
+	}
+
+	return candidate.Models[p.state.CurrentModelIndex].EffortVariants != nil
 }
 
 func (p *PersistentOutboundTransformer) allowPassThroughBody(ctx context.Context, llmReq *llm.Request, providerReq *httpclient.Request) bool {

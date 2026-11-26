@@ -16,23 +16,28 @@ import (
 // filterResolvedCandidatesForRequest evaluates `When` only after association
 // resolution. This keeps the matching step focused on static association
 // structure and makes request-dependent filtering easier to follow.
+// Effort-suffix aliases are resolved to the request's variant before
+// aggregation, so (channel, actual model) deduplication sees the real upstream
+// model. effortUnavailable reports that the requested effort removed every
+// candidate; later endpoint filtering does not set it.
 func filterResolvedCandidatesForRequest(
 	ctx context.Context,
 	req *llm.Request,
 	resolvedCandidates []*resolvedAssociationCandidate,
-) []*ChannelModelsCandidate {
+) (candidates []*ChannelModelsCandidate, effortUnavailable bool) {
 	if len(resolvedCandidates) == 0 {
-		return []*ChannelModelsCandidate{}
+		return []*ChannelModelsCandidate{}, false
 	}
 
 	hasConditionalCandidates := lo.ContainsBy(resolvedCandidates, func(candidate *resolvedAssociationCandidate) bool {
 		return candidate != nil && candidate.when != nil
 	})
 	if !hasConditionalCandidates {
-		candidates := aggregateChannelModelCandidates(resolvedCandidates)
+		resolvedCandidates, effortUnavailable = resolveReasoningEffortCandidates(req, resolvedCandidates)
+		candidates = aggregateChannelModelCandidates(resolvedCandidates)
 		candidates = populateAPIFormat(ctx, candidates, req)
 
-		return candidates
+		return candidates, effortUnavailable
 	}
 
 	promptTokens := estimatePromptTokens(req)
@@ -56,7 +61,8 @@ func filterResolvedCandidatesForRequest(
 		filtered = append(filtered, candidate)
 	}
 
-	candidates := aggregateChannelModelCandidates(filtered)
+	filtered, effortUnavailable = resolveReasoningEffortCandidates(req, filtered)
+	candidates = aggregateChannelModelCandidates(filtered)
 
 	if log.DebugEnabled(ctx) {
 		log.Debug(ctx, "evaluated conditional associations",
@@ -67,7 +73,7 @@ func filterResolvedCandidatesForRequest(
 
 	candidates = populateAPIFormat(ctx, candidates, req)
 
-	return candidates
+	return candidates, effortUnavailable
 }
 
 func populateAPIFormat(ctx context.Context, candidates []*ChannelModelsCandidate, req *llm.Request) []*ChannelModelsCandidate {

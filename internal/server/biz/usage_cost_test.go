@@ -1121,6 +1121,11 @@ func TestModelLibraryPriceModelIDCandidates(t *testing.T) {
 	require.Equal(t, []string{"m-high", "m"}, modelLibraryPriceModelIDCandidates("m-high"))
 	require.Equal(t, []string{"m-low", "m"}, modelLibraryPriceModelIDCandidates("m-low"))
 	require.Equal(t, []string{"m-medium", "m"}, modelLibraryPriceModelIDCandidates("m-medium"))
+	// The shared effort suffix list also covers xhigh/max, case-insensitively.
+	require.Equal(t, []string{"gemini-4-hydrogen-xhigh", "gemini-4-hydrogen"}, modelLibraryPriceModelIDCandidates("gemini-4-hydrogen-xhigh"))
+	require.Equal(t, []string{"m-MAX", "m"}, modelLibraryPriceModelIDCandidates("m-MAX"))
+	// Qwen "-max" is part of the model name, not an effort.
+	require.Equal(t, []string{"qwen3-max"}, modelLibraryPriceModelIDCandidates("qwen3-max"))
 	// A trailing dash is not a known suffix; nothing is stripped.
 	require.Equal(t, []string{"m-high-"}, modelLibraryPriceModelIDCandidates("m-high-"))
 }

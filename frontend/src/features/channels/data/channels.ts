@@ -121,6 +121,7 @@ const CREATE_CHANNEL_MUTATION = `
         hideOriginalModels
         hideMappedModels
         lowercaseModelId
+        reasoningEffortModelSuffix
         quotaRoutingMode
         proxy {
           type
@@ -224,6 +225,7 @@ const DUPLICATE_CHANNEL_MUTATION = `
         hideOriginalModels
         hideMappedModels
         lowercaseModelId
+        reasoningEffortModelSuffix
         quotaRoutingMode
         proxy {
           type
@@ -327,6 +329,7 @@ const BULK_CREATE_CHANNELS_MUTATION = `
         hideOriginalModels
         hideMappedModels
         lowercaseModelId
+        reasoningEffortModelSuffix
         quotaRoutingMode
         proxy {
           type
@@ -429,6 +432,7 @@ const CHANNEL_FIELDS_FRAGMENT = `
         hideOriginalModels
         hideMappedModels
         lowercaseModelId
+        reasoningEffortModelSuffix
         quotaRoutingMode
         proxy {
           type
@@ -681,6 +685,7 @@ const BULK_IMPORT_CHANNELS_MUTATION = `
           hideOriginalModels
           hideMappedModels
           lowercaseModelId
+          reasoningEffortModelSuffix
           quotaRoutingMode
           transformOptions {
             forceArrayInstructions
@@ -921,6 +926,7 @@ const BULK_UPDATE_CHANNEL_ORDERING_MUTATION = `
           hideOriginalModels
           hideMappedModels
           lowercaseModelId
+          reasoningEffortModelSuffix
           quotaRoutingMode
           transformOptions {
             forceArrayInstructions
@@ -1158,6 +1164,7 @@ const CHANNEL_QUERY_FULL_NODE_SELECTION = `
             hideOriginalModels
             hideMappedModels
             lowercaseModelId
+            reasoningEffortModelSuffix
             quotaRoutingMode
             bodyOverrideOperations {
               op

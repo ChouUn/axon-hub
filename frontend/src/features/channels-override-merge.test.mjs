@@ -114,6 +114,7 @@ test('mergeChannelSettingsForUpdate preserves quotaRoutingMode through a patch m
   const merged = mergeChannelSettingsForUpdate(existing, { lowercaseModelId: true });
   assert.equal(merged.quotaRoutingMode, 'BACKPRESSURE');
   assert.equal(merged.lowercaseModelId, true);
+  assert.equal(merged.reasoningEffortModelSuffix, false);
   assert.equal(merged.extraModelPrefix, 'prefix-');
 
   // Explicit patch value wins.
@@ -123,4 +124,9 @@ test('mergeChannelSettingsForUpdate preserves quotaRoutingMode through a patch m
   // No existing mode stays unset so the backend keeps its INHERIT semantics.
   const unset = mergeChannelSettingsForUpdate({ extraModelPrefix: 'x' }, {});
   assert.equal(unset.quotaRoutingMode, undefined);
+});
+
+test('mergeChannelSettingsForUpdate preserves reasoning effort suffix setting', () => {
+  assert.equal(mergeChannelSettingsForUpdate({}, {}).reasoningEffortModelSuffix, false);
+  assert.equal(mergeChannelSettingsForUpdate({}, { reasoningEffortModelSuffix: true }).reasoningEffortModelSuffix, true);
 });

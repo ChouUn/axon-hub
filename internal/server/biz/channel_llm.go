@@ -68,7 +68,7 @@ type AutoRefresher interface {
 
 // sourcePriority defines the tie-breaking order when two model entries
 // collide after lowercasing — higher number wins.
-var sourcePriority = map[string]int{"direct": 4, "auto_trim": 3, "mapping": 2, "prefix": 1}
+var sourcePriority = map[string]int{"direct": 4, "auto_trim": 3, "mapping": 2, "prefix": 1, ChannelModelSourceEffortSuffix: 0}
 
 func setupAutoRefresh(ch *Channel, refresher AutoRefresher, opts oauth.AutoRefreshOptions) {
 	ch.startTokenProvider = func() {
@@ -2058,9 +2058,15 @@ func (ch *Channel) GetModelEntries() map[string]ChannelModelEntry {
 		}
 	}
 
-	// 5. Hide original models if configured
+	// 5. Effort-suffix aliases ("<base>" for "<base>-<effort>"). Built before
+	// hiding so a channel can expose only the base names.
+	if ch.Settings.ReasoningEffortModelSuffix {
+		addReasoningEffortAliases(entries, ch.Settings.LowercaseModelID)
+	}
+
+	// 6. Hide original models if configured
 	// When hideOriginalModels is enabled, remove direct models from the entries
-	// This allows only transformed models (prefix, auto_trim, mapping) to be exposed
+	// This allows only transformed models (prefix, auto_trim, mapping, effort_suffix) to be exposed
 	if ch.Settings.HideOriginalModels {
 		for key, entry := range entries {
 			if entry.Source == "direct" {
@@ -2069,17 +2075,20 @@ func (ch *Channel) GetModelEntries() map[string]ChannelModelEntry {
 		}
 	}
 
-	// 6. Lowercase model IDs if configured
+	// 7. Lowercase model IDs if configured
 	// When enabled, the matching keys (RequestModel) are lowercased so that
 	// models with different casing can match across channels for failover.
 	// ActualModel is NOT changed — the provider must receive the original casing.
 	if ch.Settings.LowercaseModelID {
 		// If two entries collide after lowercasing (e.g., "GPT-4" and "gpt-4"),
-		// the one with higher source priority wins: direct > auto_trim > mapping > prefix.
+		// the one with higher source priority wins: direct > auto_trim > mapping > prefix > effort_suffix.
 		lowercased := make(map[string]ChannelModelEntry, len(entries))
 		for key, entry := range entries {
 			lowerKey := strings.ToLower(key)
 			entry.RequestModel = strings.ToLower(entry.RequestModel)
+			if entry.EffortVariants != nil {
+				entry.EffortVariants = entry.EffortVariants.lowercaseRequestModels()
+			}
 			if existing, exists := lowercased[lowerKey]; !exists || sourcePriority[entry.Source] > sourcePriority[existing.Source] {
 				lowercased[lowerKey] = entry
 			}
