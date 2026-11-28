@@ -106,14 +106,14 @@ if len(response2.Candidates) > 0 {
 
 ### 模型发现列表
 
-`GET /gemini/v1beta/models` 按 Gemini 原生形状返回 `models[]`。按 OpenAI 列表发现模型的客户端（如 OMP 的 `openai-models-list`）会在 Gemini 推理根后补 `/v1/models`，`GET /gemini/v1beta/v1/models` 为它们返回 OpenAI 形状的同一组模型，每行附带模型卡记录的发现字段：
+`GET /gemini/v1beta/models` 按 Gemini 原生形状返回 `models[]`。`GET /gemini/v1beta/v1/models` 按 OpenAI 列表形状返回模型，供在 Gemini 推理根后请求 `/v1/models` 的客户端（如 OMP 的 `openai-models-list`）发现模型，每行附带模型卡记录的发现字段：
 
 - `context_length` - 上下文窗口的最大令牌数。
 - `max_output_tokens` - 输出的最大令牌数。
 - `input_modalities` - 输入模态，如 `["text", "image"]`。
 - `supported_reasoning_levels` - 推理档位。模型卡标记支持推理时才返回。
 
-字段值为空或为 0 时省略，字段名与取值和 `/v1/models`、`/anthropic/v1/models` 相同。
+字段值为空或为 0 时省略。同一 API Key 请求时，模型集合与 `GET /gemini/v1beta/models`、未带 `include` 的 `/v1/models`、`/anthropic/v1/models` 相同，上述发现字段的名称与取值和后两者相同。
 
 认证方式与其他 Gemini 端点相同：`?key=` 优先，其次读请求头，`Authorization: Bearer <your-api-key>` 也可用。
 

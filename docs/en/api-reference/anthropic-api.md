@@ -66,7 +66,7 @@ fmt.Println(responseText)
 - `input_modalities` - Input modalities, such as `["text", "image"]`.
 - `supported_reasoning_levels` - Reasoning effort levels, such as `["low", "high", "max"]`. Returned only when the model card marks reasoning as supported.
 
-Empty or zero values are omitted. Field names and values match `/v1/models`.
+Empty or zero values are omitted. For requests with the same API key, the discovery fields above have the same names and values as `/v1/models` without `include`.
 
 ```json
 {

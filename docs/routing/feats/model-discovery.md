@@ -12,14 +12,14 @@ OpenAI、Anthropic、Gemini 三条协议线路的模型列表从注册模型的�
 
 ## 动机
 
-OMP 19.2.1 一种协议配一个 provider，三个 provider 都用读 OpenAI 形状列表的发现方式 `openai-models-list`：请求 `{baseUrl}/v1/models`（`baseUrl` 以 `/v1` 结尾时不补 `/v1`），只读 `data[]`，丢弃 `baseUrl` 的查询串。
+OMP 19.2.1 发现出的模型沿用所在 provider 的协议，客户端因此按协议各配一个 provider。provider 用读 OpenAI 形状列表的发现方式 `openai-models-list` 时，请求 `{baseUrl}/v1/models`（`baseUrl` 以 `/v1` 结尾时不补 `/v1`），只读 `data[]`，丢弃 `baseUrl` 的查询串。
 没有本功能时：
 
 - Anthropic 列表缺上下文窗口与输出上限，OMP 取内置目录或默认值。
-- Gemini 只有 `models[]`，`/gemini/v1beta/v1/models` 返回 404，Gemini Contents 的 provider 只能静态声明模型。
+- Gemini 只有 `models[]`，Gemini 推理根下的 `/v1/models`（如 `/gemini/v1beta/v1/models`）返回 404，Gemini Contents 的 provider 无法用 `openai-models-list` 发现模型。
 - `/v1/models` 的这四个字段随「`/v1/models` 默认返回完整模型信息」设置下发，OMP 带不上 `include`，关闭设置的实例拿不到。
 
-同一模型在三条线路上因此得到不同的上下文窗口与输出上限。
+客户端因此无法从三条线路的列表可靠地发现同一组模型及其上下文窗口和输出上限。
 
 ## 形态
 
@@ -43,13 +43,13 @@ OMP 19.2.1 一种协议配一个 provider，三个 provider 都用读 OpenAI 形
   | Gemini | `GET /gemini/{版本}/v1/models`、`GET /v1beta/v1/models` | 总带。返回 OpenAI 形状 `{"object":"list","data":[…]}`，每行有 `id`、`object`、`created`、`owned_by` 与发现字段 |
 
   - 「`/v1/models` 默认返回完整模型信息」只控制列表的 `name`、`pricing`、`capabilities` 等其余扩展字段，不影响发现字段，也不影响 `GET /v1/models/{id}`。
-  - Gemini 原生列表 `GET /gemini/{版本}/models` 的 `models[]` 不变，供 Gemini 原生客户端读。新路由与它鉴权相同，`?key=` 优先，其次请求头，`Authorization: Bearer` 可用。
-  - 三个列表的模型集合与[模型列表](model-admission.md)相同，都是启用的注册模型及指向它们的有效别名。
-- OMP 配置：三个 provider 都用 `discovery.type: openai-models-list`，`injectV1` 取默认值，推理仍走各自的 `baseUrl`。Gemini Contents 的 provider 用 `api: google-generative-ai`，`baseUrl` 为 Gemini 推理根 `/gemini/v1beta`，发现请求落到 `/gemini/v1beta/v1/models`。
+  - Gemini 原生列表 `GET /gemini/{版本}/models` 的 `models[]` 不变，供 Gemini 原生客户端读。Gemini 的发现列表与它鉴权相同，`?key=` 优先，其次请求头，`Authorization: Bearer` 可用。
+  - 三个列表按请求的 API Key 收录模型，与[模型列表](model-admission.md)相同，都是启用的注册模型及指向它们的有效别名。同一 API Key 请求的三个列表模型集合相同。
+- OMP 配置：各协议的 provider 都用 `discovery.type: openai-models-list`，`injectV1` 取默认值，推理仍走各自的 `baseUrl`。Gemini Contents 的 provider 用 `api: google-generative-ai`，`baseUrl` 为 `/gemini/v1beta` 或 `/v1beta`，发现请求落到其下的 `/v1/models`。`/gemini/v1` 以 `/v1` 结尾，OMP 不补 `/v1`，发现请求落到 Gemini 原生列表，读不到 `data[]`。
 
 ## 边界
 
-- 一致性：网关保证三个列表的发现字段同值或同时省略。该行带 `max_output_tokens` 或 OMP 内置目录有这个 id 时，OMP 发现出的输出上限三条线路一致。
+- 一致性：同一 API Key 请求三个列表、`/v1/models` 未带 `include` 时，网关保证三个列表的发现字段同值或同时省略。该行带正的 `max_output_tokens`，或 OMP 内置目录为这个 id 提供输出上限时，OMP 发现出的输出上限三条线路一致。目录可能收录该 id 而未提供输出上限。
   - OMP 19.2.1 的输出上限依次取列表行、内置目录、协议默认值，取到的值再以上下文窗口封顶。协议默认值在 `api: anthropic-messages` 的 provider 为 8,192，其余为 32,768，因此两者都缺时输出上限为 `min(上下文窗口, 协议默认值)`，上下文窗口大于 8,192 时 Anthropic 线路与另两条不同。例如上下文窗口 16,384 时 Anthropic 线路得到 8,192，另两条得到 16,384。
   - 补齐的办法是给模型卡填输出上限。模型卡的输出上限同时是发往 Anthropic Messages 渠道、客户端未指定输出上限时的默认 `max_tokens`。
   - 上下文窗口与输入模态在 OMP 的默认值与协议无关，不受此影响。
@@ -63,6 +63,7 @@ OMP 19.2.1 一种协议配一个 provider，三个 provider 都用读 OpenAI 形
 - 提交：
   - `fceb30dc`（`feat(models): 补充模型发现的输入模态和推理档位`）
   - `f881c154`（`feat(models): Anthropic 模型列表下发输入模态和推理档位`）
+  - `4106842f`（`feat(models): 三条协议线路的模型列表下发一致的发现字段`）
 - 代码：
   - `internal/server/api/model_discovery.go`：从模型卡生成发现字段，三条线路共用。
   - `internal/server/api/openai.go`：`/v1/models` 与 `/v1/models/{id}` 在 `include` 省略或为空时带发现字段。

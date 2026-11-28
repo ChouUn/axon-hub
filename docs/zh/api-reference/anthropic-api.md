@@ -66,7 +66,7 @@ fmt.Println(responseText)
 - `input_modalities` - 输入模态，如 `["text", "image"]`。
 - `supported_reasoning_levels` - 推理档位，如 `["low", "high", "max"]`。模型卡标记支持推理时才返回。
 
-字段值为空或为 0 时省略。字段名与取值和 `/v1/models` 相同。
+字段值为空或为 0 时省略。同一 API Key 请求时，上述发现字段的名称与取值和未带 `include` 的 `/v1/models` 相同。
 
 ```json
 {

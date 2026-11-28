@@ -106,14 +106,14 @@ if len(response2.Candidates) > 0 {
 
 ### Model Discovery List
 
-`GET /gemini/v1beta/models` returns `models[]` in the native Gemini shape. Clients that discover models from an OpenAI list (such as OMP's `openai-models-list`) append `/v1/models` to the Gemini inference root, and `GET /gemini/v1beta/v1/models` returns the same models to them in the OpenAI shape, with discovery fields from the model card on each row:
+`GET /gemini/v1beta/models` returns `models[]` in the native Gemini shape. `GET /gemini/v1beta/v1/models` returns models in the OpenAI list shape for clients that request `/v1/models` under the Gemini inference root (such as OMP's `openai-models-list`), with discovery fields from the model card on each row:
 
 - `context_length` - Maximum tokens in the context window.
 - `max_output_tokens` - Maximum output tokens.
 - `input_modalities` - Input modalities, such as `["text", "image"]`.
 - `supported_reasoning_levels` - Reasoning effort levels. Returned only when the model card marks reasoning as supported.
 
-Empty or zero values are omitted, and field names and values match `/v1/models` and `/anthropic/v1/models`.
+Empty or zero values are omitted. For requests with the same API key, the model set matches `GET /gemini/v1beta/models`, `/v1/models` without `include`, and `/anthropic/v1/models`, and the discovery fields above have the same names and values as the latter two.
 
 Authentication is the same as for the other Gemini endpoints: `?key=` takes precedence, then request headers, and `Authorization: Bearer <your-api-key>` is also accepted.
 

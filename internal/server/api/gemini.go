@@ -204,8 +204,8 @@ func (handlers *GeminiHandlers) ListModels(c *gin.Context) {
 }
 
 // ListDiscoveryModels lists the same models as ListModels in the OpenAI list
-// shape with model-card discovery fields. OMP's openai-models-list discovery
-// requests {baseUrl}/v1/models, so the Gemini groups serve it beside models[].
+// shape with model-card discovery fields, for clients that discover Gemini
+// models from an OpenAI-shaped list, such as OMP's openai-models-list.
 func (handlers *GeminiHandlers) ListDiscoveryModels(c *gin.Context) {
 	models, err := handlers.ModelService.ListEnabledModels(c.Request.Context())
 	if err != nil {
