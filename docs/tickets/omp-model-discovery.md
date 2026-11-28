@@ -105,3 +105,78 @@
 - 每条线路选定的做法与理由，以及三条线路的元数据是否共用同一处代码、是否依赖 `default_model_api_include_all`。
 - 实现所在的提交与代码位置，所属功能的文档，以及部署后三个 provider 要改的配置，至少写明 `fo-ai-contents` 的完整 provider 配置。
 - 怎么验证：用 `Authorization: Bearer` 请求上表三个 OMP 将要请求的列表，三者都是 `data[]`、模型集合相同，`claude-opus-5-5` 与 `gemini-4-neon` 两行在三个列表里的 `context_length`、`max_output_tokens`、`input_modalities` 与 `supported_reasoning_levels` 相同；Gemini 的 `models[]` 与各列表原有字段不变。OMP 侧由 ai-master 验证：三个 provider 下出现同一组模型，`gemini-4-neon` 上下文 1,048,576、输出 65,536，推理走各自的推理根；加上思考配置的覆写后，`gemini-4-neon:high` 的请求体带 `generationConfig.thinkingConfig.thinkingLevel`，不带 `thinkingBudget`。
+
+---
+
+## 第 2 轮：axon-hub，2026-11-28
+
+已实施并部署到 `https://ai.chouun.com`，版本 `v1.0.0-rc.5-fork.2`。行为、边界与维护记录见功能文档[模型发现字段](../routing/feats/model-discovery.md)。
+
+### 做法
+
+- 三条线路共用 `ModelDiscoveryFields` 与 `modelDiscoveryFields`，从注册模型的模型卡生成 `context_length`、`max_output_tokens`、`input_modalities` 与 `supported_reasoning_levels`。
+- 发现字段不依赖 `default_model_api_include_all`。这个设置只控制 `/v1/models` 的 `name`、`pricing`、`capabilities` 等其余扩展字段。
+- 各线路：
+
+  | 线路 | 做法 | 理由 |
+  | --- | --- | --- |
+  | OpenAI Responses | `/v1/models` 与 `/v1/models/{id}` 在 `include` 省略或为空时总带发现字段 | OMP 带不上 `include`，上游的设置默认关闭，Anthropic 列表已无条件下发同类字段 |
+  | Anthropic Messages | 采用候选做法：`AnthropicModel` 加 `context_length` 与 `max_output_tokens`，与 `/v1/models` 同名同值 | 补齐后四个字段与另两条线路相同 |
+  | Gemini Contents | 采用第二个候选：`/gemini/{版本}` 与 `/v1beta` 两个路由组注册 `GET /v1/models`，返回 OpenAI 形状的 `data[]` | 不给每个 Gemini 客户端的 `models[]` 加字段，也不引入会随推理请求发送的切换头。OMP 用默认的 `injectV1` 即可 |
+
+- 一致性的边界与 OMP 缺输出上限时的回退见功能文档的[边界](../routing/feats/model-discovery.md#边界)。
+
+### 提交与代码
+
+- 提交：
+  - `4106842f`（`feat(models): 三条协议线路的模型列表下发一致的发现字段`）
+  - `f24a1310`（`docs(models): 补记模型发现字段的提交并修正一致性条件与客户端表述`）
+- 代码：
+  - `internal/server/api/model_discovery.go:19-44`：`ModelDiscoveryFields` 与 `modelDiscoveryFields`。
+  - `internal/server/api/openai.go:607`、`:663-674`、`:827-916`：`OpenAIModel` 嵌入发现字段，`convertModelFacadeToOpenAIModel` 在 `include` 省略或为空时填入，`RetrieveModel` 与 `ListModels` 读 `include`。
+  - `internal/server/api/anthropic.go:90`、`:128`：`AnthropicModel` 嵌入发现字段，`ListModels` 填入。
+  - `internal/server/api/gemini.go:206-222`：`ListDiscoveryModels`。
+  - `internal/server/routes.go:320-325`：两个 Gemini 路由组注册 `GET /v1/models`。
+  - `internal/server/api/openai_retrieve_test.go`：`TestModelLists_DiscoveryFieldsMatchAcrossProtocols` 等，覆盖三个列表字段一致、`include` 省略与为空、设置开关。
+
+### 配置
+
+- `fo-ai-resp`、`fo-ai-msg`：发现配置不用改。`fo-ai-resp` 拿到发现字段不再依赖网关的 `default_model_api_include_all`，`fo-ai-msg` 现在多拿到上下文窗口与输出上限。
+- `modelOverrides` 覆写的上下文窗口或输出上限会替换发现出的值。例如 `fo-ai-msg` 用 `medium-window` 把 `claude-opus-5-5` 的 `contextWindow` 覆写为 500,000，`fo-ai-resp` 没有覆写，OMP 里它在 `fo-ai-resp` 是网关下发的 1,000,000。要三个 provider 相同，同一模型的 `contextWindow` 与 `maxTokens` 覆写要么一致，要么都去掉。各协议的思考配置（如下面 Gemini 的 `google-level`）不在此列。[覆写替换发现值](https://github.com/can1357/oh-my-pi/blob/v19.2.1/packages/coding-agent/src/config/model-patch.ts#L298-L315)
+- `fo-ai-contents`：把 `providers.fo-ai-contents` 换成下面的配置，删掉静态的 `models`，改用发现。`gemini-4-neon` 的思考配置按第 1 轮的计划写进 `modelOverrides`，`efforts` 与网关下发的档位相同：
+
+  ```yaml
+  providers:
+    fo-ai-contents:
+      baseUrl: https://ai.chouun.com/gemini/v1beta
+      api: google-generative-ai
+      auth: apiKey
+      apiKey: FO_AI_API_KEY
+      discovery:
+        type: openai-models-list
+      modelOverrides:
+        gemini-4-neon:
+          thinking:
+            mode: google-level
+            efforts: [low, medium, high, xhigh]
+            defaultLevel: high
+  ```
+
+  - 网关为 `gemini-4-neon` 下发的 `input_modalities` 是 `text, image, video, audio, pdf`。OMP 19.2.1 只区分文本与图像，发现出的 `input` 是 `[text, image]`，与原静态配置相同。[模态解析](https://github.com/can1357/oh-my-pi/blob/v19.2.1/packages/coding-agent/src/config/model-discovery.ts#L942-L958)
+
+### 验证
+
+- 部署后，2026-11-28 用同一个 API Key 以 `Authorization: Bearer` 请求 `https://ai.chouun.com`：
+
+  | 检查 | 结果 |
+  | --- | --- |
+  | `/v1/models`、`/anthropic/v1/models`、`/gemini/v1beta/v1/models` | 都是 200、`data[]`，各 31 行，模型集合相同 |
+  | 31 行的四个发现字段在三个列表里 | 逐行比对，没有不同 |
+  | `claude-opus-5-5` | `context_length` 1,000,000，`max_output_tokens` 128,000，`input_modalities` `text, image, pdf`，档位 `low` 到 `max` |
+  | `gemini-4-neon` | `context_length` 1,048,576，`max_output_tokens` 65,536，`input_modalities` `text, image, video, audio, pdf`，档位 `low` 到 `xhigh` |
+  | `/gemini/v1beta/models` | 200，`models[]` 31 行，`baseModelId` 与发现列表的 `id` 集合相同。每行仍只有 `name`、`baseModelId`、`version`、`displayName`、`description`、`supportedGenerationMethods`，`gemini-4-neon` 一行与第 1 轮记录的 JSON 逐字段相同 |
+  | 各列表原有字段 | 保留。Anthropic 行仍有 `type`、`display_name`、`created`，OpenAI 行仍有设置开启时的扩展字段 |
+
+- 部署前在本地用 PostgreSQL 起服务验证路由与鉴权：`/v1beta/v1/models` 与 `/gemini/v1beta/v1/models` 结果相同，不带鉴权返回 401，`?key=` 可用。`/v1/models?include=name` 不带发现字段，缺输出上限的模型在三个列表里都省略 `max_output_tokens`。
+- 已知差异：`gpt-image-2.5-flare`、`gpt-image-2.5-sunburst` 的模型卡没有输出上限，OMP 内置目录也没有，上下文窗口 10,000。按 OMP 19.2.1 的回退，预计 `fo-ai-msg` 得到输出上限 8,192，另两个 provider 得到 10,000。网关给这两个模型卡补上输出上限后消除。
+- OMP 侧的验证按第 1 轮由 ai-master 做：三个 provider 下出现同一组模型，`gemini-4-neon` 的上下文与输出上限，推理走各自的推理根，以及 `gemini-4-neon:high` 的请求体带 `thinkingLevel`、不带 `thinkingBudget`。

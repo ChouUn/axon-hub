@@ -64,6 +64,7 @@ OMP 19.2.1 发现出的模型沿用所在 provider 的协议，客户端因此�
   - `fceb30dc`（`feat(models): 补充模型发现的输入模态和推理档位`）
   - `f881c154`（`feat(models): Anthropic 模型列表下发输入模态和推理档位`）
   - `4106842f`（`feat(models): 三条协议线路的模型列表下发一致的发现字段`）
+  - `f24a1310`（`docs(models): 补记模型发现字段的提交并修正一致性条件与客户端表述`）
 - 代码：
   - `internal/server/api/model_discovery.go`：从模型卡生成发现字段，三条线路共用。
   - `internal/server/api/openai.go`：`/v1/models` 与 `/v1/models/{id}` 在 `include` 省略或为空时带发现字段。
