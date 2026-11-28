@@ -59,12 +59,14 @@ fmt.Println(responseText)
 
 ### 模型列表
 
-`GET /anthropic/v1/models` 在每个模型上附带模型卡记录的发现字段，供 OMP 等客户端识别输入类型和推理档位：
+`GET /anthropic/v1/models` 在每个模型上附带模型卡记录的发现字段，供 OMP 等客户端识别上下文窗口、输出上限、输入类型和推理档位：
 
+- `context_length` - 上下文窗口的最大令牌数。
+- `max_output_tokens` - 输出的最大令牌数。
 - `input_modalities` - 输入模态，如 `["text", "image"]`。
 - `supported_reasoning_levels` - 推理档位，如 `["low", "high", "max"]`。模型卡标记支持推理时才返回。
 
-字段值为空时省略。
+字段值为空或为 0 时省略。字段名与取值和 `/v1/models` 相同。
 
 ```json
 {
@@ -75,6 +77,8 @@ fmt.Println(responseText)
       "type": "model",
       "display_name": "claude-sonnet",
       "created": "2026-01-01T00:00:00Z",
+      "context_length": 200000,
+      "max_output_tokens": 64000,
       "input_modalities": ["text", "image"],
       "supported_reasoning_levels": ["low", "medium", "high"]
     }

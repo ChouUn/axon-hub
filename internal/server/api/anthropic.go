@@ -83,12 +83,11 @@ func (handlers *AnthropicHandlers) CreateMessage(c *gin.Context) {
 }
 
 type AnthropicModel struct {
-	ID                       string    `json:"id"`
-	Type                     string    `json:"type"`
-	DisplayName              string    `json:"display_name"`
-	CreatedAt                time.Time `json:"created"`
-	InputModalities          []string  `json:"input_modalities,omitempty"`
-	SupportedReasoningLevels []string  `json:"supported_reasoning_levels,omitempty"`
+	ID          string    `json:"id"`
+	Type        string    `json:"type"`
+	DisplayName string    `json:"display_name"`
+	CreatedAt   time.Time `json:"created"`
+	ModelDiscoveryFields
 }
 
 // ListModels returns all available models.
@@ -122,12 +121,11 @@ func (handlers *AnthropicHandlers) ListModels(c *gin.Context) {
 	anthropicModels := make([]AnthropicModel, 0, len(models))
 	for _, model := range models {
 		anthropicModels = append(anthropicModels, AnthropicModel{
-			ID:                       model.ID,
-			Type:                     "model",
-			DisplayName:              model.DisplayName,
-			CreatedAt:                model.CreatedAt,
-			InputModalities:          modelInputModalities(model.ConfiguredModel),
-			SupportedReasoningLevels: modelReasoningLevels(model.ConfiguredModel),
+			ID:                   model.ID,
+			Type:                 "model",
+			DisplayName:          model.DisplayName,
+			CreatedAt:            model.CreatedAt,
+			ModelDiscoveryFields: modelDiscoveryFields(model.ConfiguredModel),
 		})
 	}
 

@@ -3,6 +3,8 @@
 > Parent: [../index.md](../index.md)
 > Audience: developer — 开发和演进项目的人或 agent
 > Genre: feat — 这个 feature 是什么、为什么值得、什么形态
+> Persistence: durable — 主体长期存在，内容跨多次变更累积
+> Describes: target — 写应该是什么样，与代码不一致时不照代码改
 > Visibility: public — 他人可读，避免写入本机环境
 > Maintain: living — 持续更新，保持内容有效
 
@@ -28,11 +30,7 @@
 - 模型列表：
   - 公开模型列表只下发启用的注册目标及有效别名，不合并渠道独有模型。
   - OpenAI 模型详情使用映射目标的元数据，保留对外别名。
-  - OpenAI 与 Anthropic 模型列表从注册目标的模型卡输出 `input_modalities` 和 `supported_reasoning_levels`，
-    供 OMP 等客户端在两条线路上自动发现输入类型和推理档位。值为空时省略。
-    模型卡标记支持推理时才输出档位。
-    - OpenAI 扩展模型响应可用 `include` 指定这两个字段，普通列表请求随「`/v1/models` 默认返回完整模型信息」设置提供。
-    - `/anthropic/v1/models` 的普通请求即可获取满足上述条件的字段。
+  - 三条协议线路的模型列表从注册目标的模型卡下发发现字段，见[模型发现字段](model-discovery.md)。
   - OpenAI 扩展模型响应的 `pricing` 同样取注册目标的模型卡，按[模型权威定价与全量阶梯](../../billing/feats/model-pricing-tiers.md)
     的 `price` 基础计费项生成。
 - 设置：上述三项开关已删除。旧 JSON 键被忽略，不能恢复旁路。
@@ -48,7 +46,7 @@
 
 - 提交：
   - `569152cc`（`feat(models): 强制注册模型准入并按关联分发渠道`）
-  - `fceb30dc`（`feat(models): 补充模型发现的输入模态和推理档位`）
+  - `fceb30dc`（`feat(models): 补充模型发现的输入模态和推理档位`），发现字段的现状见[模型发现字段](model-discovery.md)
   - `f881c154`（`feat(models): Anthropic 模型列表下发输入模态和推理档位`）
   - `5d12065b`（合入上游 `v1.0.0-rc.5`：`/v1/models` 的价格改由 `price` 生成）
 - 代码：
@@ -57,8 +55,7 @@
   - `internal/objects/apikey.go`
   - `internal/server/biz/model.go`
   - `internal/server/api/`
-  - `internal/server/api/openai.go` 提供公开模型的扩展响应和两个列表共用的模型卡字段读取。
-  - `internal/server/api/anthropic.go` 在 Anthropic 模型列表下发输入模态和推理档位。
+  - `internal/server/api/openai.go` 提供公开模型的扩展响应。
   - `internal/server/gql/model.resolvers.go`
   - `internal/server/gql/system.graphql`
   - `frontend/src/features/models/components/models-settings-dialog.tsx`
@@ -69,7 +66,7 @@
   - `internal/server/biz/model_test.go`
   - `internal/server/biz/model_list_routability_test.go`
   - `internal/server/api/openai_retrieve_test.go`
-    验证基本列表、按字段查询、默认扩展列表，以及 Anthropic 列表对别名、空值和未开启推理的处理。
+    验证基本列表、按字段查询、默认扩展列表，以及别名与映射目标的元数据。
   - `internal/server/api/chat_test.go`
   - `internal/server/gql/model_resolvers_test.go`
   - `internal/objects/apikey_test.go`

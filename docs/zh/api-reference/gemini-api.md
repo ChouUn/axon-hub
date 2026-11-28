@@ -20,6 +20,8 @@ GenerateContent 请求也接受 `system_instruction`、`inline_data` 和 `mime_t
 - `POST /v1beta/models/{model}:generateContent` - 文本和多模态内容生成 (可选)
 - `GET /gemini/v1beta/models` - 列出可用模型
 - `GET /v1beta/models` - 列出可用模型 (可选)
+- `GET /gemini/v1beta/v1/models` - 以 OpenAI 形状列出可用模型及发现字段
+- `GET /v1beta/v1/models` - 以 OpenAI 形状列出可用模型及发现字段 (可选)
 
 **示例请求：**
 ```go
@@ -99,6 +101,37 @@ if err != nil {
 if len(response2.Candidates) > 0 {
     text := response2.Candidates[0].Content.Parts[0].Text
     fmt.Println(*text)  // 应该包含 "Alice"
+}
+```
+
+### 模型发现列表
+
+`GET /gemini/v1beta/models` 按 Gemini 原生形状返回 `models[]`。按 OpenAI 列表发现模型的客户端（如 OMP 的 `openai-models-list`）会在 Gemini 推理根后补 `/v1/models`，`GET /gemini/v1beta/v1/models` 为它们返回 OpenAI 形状的同一组模型，每行附带模型卡记录的发现字段：
+
+- `context_length` - 上下文窗口的最大令牌数。
+- `max_output_tokens` - 输出的最大令牌数。
+- `input_modalities` - 输入模态，如 `["text", "image"]`。
+- `supported_reasoning_levels` - 推理档位。模型卡标记支持推理时才返回。
+
+字段值为空或为 0 时省略，字段名与取值和 `/v1/models`、`/anthropic/v1/models` 相同。
+
+认证方式与其他 Gemini 端点相同：`?key=` 优先，其次读请求头，`Authorization: Bearer <your-api-key>` 也可用。
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "gemini-2.5-pro",
+      "object": "model",
+      "created": 1767225600,
+      "owned_by": "configured",
+      "context_length": 1048576,
+      "max_output_tokens": 65536,
+      "input_modalities": ["text", "image"],
+      "supported_reasoning_levels": ["low", "medium", "high"]
+    }
+  ]
 }
 ```
 

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 	"go.uber.org/fx"
 
 	entprivacy "github.com/looplj/axonhub/internal/ent/privacy"
@@ -181,21 +182,7 @@ func (handlers *GeminiHandlers) ListModels(c *gin.Context) {
 
 	models, err := handlers.ModelService.ListEnabledModels(ctx)
 	if err != nil {
-		status := http.StatusInternalServerError
-		errorStatus := "internal_server_error"
-		if errors.Is(err, entprivacy.Deny) {
-			status = http.StatusForbidden
-			errorStatus = "permission_error"
-		}
-		_ = c.Error(err)
-		c.JSON(status, gemini.GeminiError{
-			Error: gemini.ErrorDetail{
-				Message: err.Error(),
-				Code:    status,
-				Status:  errorStatus,
-			},
-		})
-
+		writeGeminiListModelsError(c, err)
 		return
 	}
 
@@ -213,5 +200,40 @@ func (handlers *GeminiHandlers) ListModels(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"models": geminiModels,
+	})
+}
+
+// ListDiscoveryModels lists the same models as ListModels in the OpenAI list
+// shape with model-card discovery fields. OMP's openai-models-list discovery
+// requests {baseUrl}/v1/models, so the Gemini groups serve it beside models[].
+func (handlers *GeminiHandlers) ListDiscoveryModels(c *gin.Context) {
+	models, err := handlers.ModelService.ListEnabledModels(c.Request.Context())
+	if err != nil {
+		writeGeminiListModelsError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data": lo.Map(models, func(m biz.ModelFacade, _ int) OpenAIModel {
+			return convertModelFacadeToOpenAIModel(m, true)
+		}),
+	})
+}
+
+func writeGeminiListModelsError(c *gin.Context, err error) {
+	status := http.StatusInternalServerError
+	errorStatus := "internal_server_error"
+	if errors.Is(err, entprivacy.Deny) {
+		status = http.StatusForbidden
+		errorStatus = "permission_error"
+	}
+	_ = c.Error(err)
+	c.JSON(status, gemini.GeminiError{
+		Error: gemini.ErrorDetail{
+			Message: err.Error(),
+			Code:    status,
+			Status:  errorStatus,
+		},
 	})
 }

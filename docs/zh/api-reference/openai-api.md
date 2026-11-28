@@ -570,7 +570,7 @@ AxonHub 提供增强的 `/v1/models` 端点，可列出可用模型并选择性�
 
 ### 响应格式（基础 - 默认）
 
-关闭「`/v1/models` 默认返回完整模型信息」时，省略 `include` 只返回基础字段。
+关闭「`/v1/models` 默认返回完整模型信息」时，省略 `include` 返回基础字段和发现字段。`GET /v1/models/{model}` 不受该设置影响，省略 `include` 时总返回基础字段和发现字段。
 
 ```json
 {
@@ -580,7 +580,11 @@ AxonHub 提供增强的 `/v1/models` 端点，可列出可用模型并选择性�
       "id": "gpt-4",
       "object": "model",
       "created": 1686935002,
-      "owned_by": "openai"
+      "owned_by": "configured",
+      "context_length": 8192,
+      "max_output_tokens": 4096,
+      "input_modalities": ["text", "image"],
+      "supported_reasoning_levels": ["low", "high"]
     }
   ]
 }
@@ -591,12 +595,13 @@ AxonHub 提供增强的 `/v1/models` 端点，可列出可用模型并选择性�
 - `object` - 始终为 "model"
 - `created` - 模型创建的 Unix 时间戳
 - `owned_by` - 拥有该模型的组织
+- 发现字段 `context_length`、`max_output_tokens`、`input_modalities`、`supported_reasoning_levels` - 取自模型卡，含义见[可用字段](#可用字段)，供 OMP 等不能附带 `include` 的客户端发现模型。值为空或为 0 时省略。
 
 ### 响应格式（扩展）
 
-使用 `?include=all` 或选择字段时，响应包含扩展元数据。
+使用 `?include=all` 或选择字段时，响应包含扩展元数据。选择字段时只返回列出的扩展字段（包括发现字段），基础字段始终返回。
 
-启用模型设置中的「`/v1/models` 默认返回完整模型信息」后，普通列表请求也会返回扩展字段。输入模态或推理档位为空时，对应字段会省略。
+启用模型设置中的「`/v1/models` 默认返回完整模型信息」后，普通列表请求也会返回全部扩展字段。输入模态或推理档位为空时，对应字段会省略。
 
 ```json
 {
@@ -725,7 +730,7 @@ for model in models.data:
 
 ### 字段可用性说明
 
-> **注意：** 扩展字段仅在模型配置了 ModelCard 数据时才会填充。没有 ModelCard 数据的模型将为扩展字段返回 `null`。
+> **注意：** 扩展字段取自模型的配置。来自模型卡的字段（`context_length`、`max_output_tokens`、`input_modalities`、`supported_reasoning_levels`）在模型卡缺值时省略。模型没有 ModelCard 数据时，`modalities`、`capabilities` 和 `pricing` 也会省略。
 
 ## 认证
 

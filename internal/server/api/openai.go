@@ -598,21 +598,18 @@ type Pricing struct {
 }
 
 type OpenAIModel struct {
-	ID                       string        `json:"id"`
-	Object                   string        `json:"object"`
-	Created                  int64         `json:"created"`
-	OwnedBy                  string        `json:"owned_by"`
-	Name                     string        `json:"name,omitempty"`
-	Description              string        `json:"description,omitempty"`
-	ContextLength            int           `json:"context_length,omitempty"`
-	MaxOutputTokens          int           `json:"max_output_tokens,omitempty"`
-	Modalities               *Modalities   `json:"modalities,omitempty"`
-	Capabilities             *Capabilities `json:"capabilities,omitempty"`
-	Pricing                  *Pricing      `json:"pricing,omitempty"`
-	Icon                     string        `json:"icon,omitempty"`
-	Type                     string        `json:"type,omitempty"`
-	InputModalities          []string      `json:"input_modalities,omitempty"`
-	SupportedReasoningLevels []string      `json:"supported_reasoning_levels,omitempty"`
+	ID          string `json:"id"`
+	Object      string `json:"object"`
+	Created     int64  `json:"created"`
+	OwnedBy     string `json:"owned_by"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	ModelDiscoveryFields
+	Modalities   *Modalities   `json:"modalities,omitempty"`
+	Capabilities *Capabilities `json:"capabilities,omitempty"`
+	Pricing      *Pricing      `json:"pricing,omitempty"`
+	Icon         string        `json:"icon,omitempty"`
+	Type         string        `json:"type,omitempty"`
 }
 
 const (
@@ -661,13 +658,19 @@ func parseOpenAIModelInclude(includeParam string, defaultIncludeAll bool) (map[s
 	return include, needFullData
 }
 
-func convertModelFacadeToOpenAIModel(m biz.ModelFacade) OpenAIModel {
-	return OpenAIModel{
+// convertModelFacadeToOpenAIModel builds the basic model response. withDiscovery
+// adds the model-card discovery fields that requests without include carry.
+func convertModelFacadeToOpenAIModel(m biz.ModelFacade, withDiscovery bool) OpenAIModel {
+	result := OpenAIModel{
 		ID:      m.ID,
 		Object:  openAIModelObjectType,
 		Created: m.Created,
 		OwnedBy: m.OwnedBy,
 	}
+	if withDiscovery {
+		result.ModelDiscoveryFields = modelDiscoveryFields(m.ConfiguredModel)
+	}
+	return result
 }
 
 // convertModelToOpenAIExtended transforms an ent.Model to OpenAIModel with extended metadata fields.
@@ -707,8 +710,22 @@ func convertModelToOpenAIExtended(m *ent.Model, include map[string]bool) OpenAIM
 		}
 	}
 
+	discovery := modelDiscoveryFields(m)
+	if shouldInclude("context_length") {
+		result.ContextLength = discovery.ContextLength
+	}
+	if shouldInclude("max_output_tokens") {
+		result.MaxOutputTokens = discovery.MaxOutputTokens
+	}
+	if shouldInclude("input_modalities") {
+		result.InputModalities = discovery.InputModalities
+	}
+	if shouldInclude("supported_reasoning_levels") {
+		result.SupportedReasoningLevels = discovery.SupportedReasoningLevels
+	}
+
 	if m.ModelCard != nil {
-		// Modalities, Capabilities, ContextLength, MaxOutputTokens, Pricing come from ModelCard
+		// Modalities, Capabilities and Pricing come from ModelCard
 		if shouldInclude("modalities") {
 			input := m.ModelCard.Modalities.Input
 			if input == nil {
@@ -723,9 +740,6 @@ func convertModelToOpenAIExtended(m *ent.Model, include map[string]bool) OpenAIM
 				Output: output,
 			}
 		}
-		if shouldInclude("input_modalities") {
-			result.InputModalities = modelInputModalities(m)
-		}
 		if shouldInclude("capabilities") {
 			caps := Capabilities{
 				Vision:    m.ModelCard.Vision,
@@ -733,15 +747,6 @@ func convertModelToOpenAIExtended(m *ent.Model, include map[string]bool) OpenAIM
 				Reasoning: m.ModelCard.Reasoning.Supported,
 			}
 			result.Capabilities = &caps
-		}
-		if shouldInclude("supported_reasoning_levels") {
-			result.SupportedReasoningLevels = modelReasoningLevels(m)
-		}
-		if shouldInclude("context_length") {
-			result.ContextLength = m.ModelCard.Limit.Context
-		}
-		if shouldInclude("max_output_tokens") {
-			result.MaxOutputTokens = m.ModelCard.Limit.Output
 		}
 		if shouldInclude("pricing") && m.ModelCard.Price != nil && len(m.ModelCard.Price.Items) != 0 {
 			pricing := Pricing{
@@ -769,23 +774,6 @@ func convertModelToOpenAIExtended(m *ent.Model, include map[string]bool) OpenAIM
 		}
 	}
 	return result
-}
-
-// modelInputModalities returns the input modalities recorded on the model card.
-func modelInputModalities(m *ent.Model) []string {
-	if m == nil || m.ModelCard == nil {
-		return nil
-	}
-	return m.ModelCard.Modalities.Input
-}
-
-// modelReasoningLevels returns the model card's reasoning levels only when the
-// card marks reasoning as supported.
-func modelReasoningLevels(m *ent.Model) []string {
-	if m == nil || m.ModelCard == nil || !m.ModelCard.Reasoning.Supported {
-		return nil
-	}
-	return m.ModelCard.ReasoningEfforts
 }
 
 func (handlers *OpenAIHandlers) writeOpenAIInternalError(c *gin.Context, requestID string, err error) {
@@ -846,7 +834,8 @@ func (handlers *OpenAIHandlers) RetrieveModel(c *gin.Context) {
 		return
 	}
 
-	include, needFullData := parseOpenAIModelInclude(c.Query("include"), false)
+	includeParam := c.Query("include")
+	include, needFullData := parseOpenAIModelInclude(includeParam, false)
 
 	models, err := handlers.ModelService.ListEnabledModels(ctx)
 	if err != nil {
@@ -867,7 +856,7 @@ func (handlers *OpenAIHandlers) RetrieveModel(c *gin.Context) {
 	}
 
 	if !needFullData {
-		c.JSON(http.StatusOK, convertModelFacadeToOpenAIModel(visibleModel))
+		c.JSON(http.StatusOK, convertModelFacadeToOpenAIModel(visibleModel, includeParam == ""))
 		return
 	}
 
@@ -884,7 +873,8 @@ func (handlers *OpenAIHandlers) ListModels(c *gin.Context) {
 
 	requestID, _ := contexts.GetRequestID(ctx)
 
-	include, needFullData := parseOpenAIModelInclude(c.Query("include"), handlers.SystemService.ModelSettingsOrDefault(ctx).DefaultModelAPIIncludeAll)
+	includeParam := c.Query("include")
+	include, needFullData := parseOpenAIModelInclude(includeParam, handlers.SystemService.ModelSettingsOrDefault(ctx).DefaultModelAPIIncludeAll)
 
 	var openaiModels []OpenAIModel
 
@@ -909,7 +899,7 @@ func (handlers *OpenAIHandlers) ListModels(c *gin.Context) {
 
 	if !needFullData {
 		openaiModels = lo.Map(visibleModels, func(m biz.ModelFacade, _ int) OpenAIModel {
-			return convertModelFacadeToOpenAIModel(m)
+			return convertModelFacadeToOpenAIModel(m, includeParam == "")
 		})
 	} else {
 		openaiModels = lo.Map(visibleModels, func(m biz.ModelFacade, _ int) OpenAIModel {

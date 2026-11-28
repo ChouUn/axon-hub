@@ -444,7 +444,9 @@ type SystemModelSettings struct {
 	// DefaultModelAPIIncludeAll controls whether GET /v1/models returns extended model
 	// metadata by default when the include query parameter is omitted.
 	// When true, /v1/models behaves like /v1/models?include=all.
-	// When false, /v1/models returns only the basic compatibility fields by default.
+	// When false, /v1/models returns the basic compatibility fields plus the model-card
+	// discovery fields (context_length, max_output_tokens, input_modalities,
+	// supported_reasoning_levels), which requests without include always carry.
 	DefaultModelAPIIncludeAll bool `json:"default_model_api_include_all"`
 
 	// AutoReasoningEffort controls whether model names with reasoning effort suffixes

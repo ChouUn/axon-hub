@@ -320,6 +320,8 @@ func SetupRoutes(server *Server, handlers Handlers, client *ent.Client, services
 		registerGeminiRoutes := func(group *gin.RouterGroup) {
 			group.POST("/models/*action", handlers.Gemini.GenerateContent)
 			group.GET("/models", handlers.Gemini.ListModels)
+			// OMP discovery appends /v1/models to the Gemini inference root.
+			group.GET("/v1/models", handlers.Gemini.ListDiscoveryModels)
 		}
 
 		geminiGroup := server.Group("/gemini/:gemini-api-version",

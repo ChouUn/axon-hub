@@ -593,7 +593,7 @@ AxonHub provides an enhanced `/v1/models` endpoint that lists available models w
 
 ### Response Format (Basic - Default)
 
-With “Return full model info from /v1/models” disabled, omitting `include` returns the basic fields.
+With “Return full model info from /v1/models” disabled, omitting `include` returns the basic fields plus the discovery fields. `GET /v1/models/{model}` ignores this setting and always returns the basic fields plus the discovery fields when `include` is omitted.
 
 ```json
 {
@@ -603,7 +603,11 @@ With “Return full model info from /v1/models” disabled, omitting `include` r
       "id": "gpt-4",
       "object": "model",
       "created": 1686935002,
-      "owned_by": "openai"
+      "owned_by": "configured",
+      "context_length": 8192,
+      "max_output_tokens": 4096,
+      "input_modalities": ["text", "image"],
+      "supported_reasoning_levels": ["low", "high"]
     }
   ]
 }
@@ -614,12 +618,13 @@ With “Return full model info from /v1/models” disabled, omitting `include` r
 - `object` - Always "model"
 - `created` - Unix timestamp of model creation
 - `owned_by` - Organization that owns the model
+- Discovery fields `context_length`, `max_output_tokens`, `input_modalities`, `supported_reasoning_levels` - From the model card, described under [Available Fields for Include](#available-fields-for-include), so clients that cannot send `include`, such as OMP, can discover models. Empty or zero values are omitted.
 
 ### Response Format (Extended)
 
-Use `?include=all` or select individual fields to request extended metadata.
+Use `?include=all` or select individual fields to request extended metadata. Selecting fields returns only the listed extended fields, discovery fields included. Basic fields are always present.
 
-Enable “Return full model info from /v1/models” in model settings to include extended fields in plain list requests. Empty input modality and reasoning level lists are omitted.
+Enable “Return full model info from /v1/models” in model settings to include all extended fields in plain list requests. Empty input modality and reasoning level lists are omitted.
 
 ```json
 {
@@ -748,7 +753,7 @@ for model in models.data:
 
 ### Field Availability Note
 
-> **Note:** Extended fields are only populated if the model has ModelCard data configured in the database. Models without ModelCard data will return `null` for extended fields.
+> **Note:** Extended fields are populated from the model's configuration. Card-derived fields (`context_length`, `max_output_tokens`, `input_modalities`, `supported_reasoning_levels`) are omitted when the model card lacks the value. `modalities`, `capabilities`, and `pricing` are omitted when the model has no ModelCard data.
 
 ## Authentication
 

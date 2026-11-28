@@ -59,12 +59,14 @@ fmt.Println(responseText)
 
 ### Model List
 
-`GET /anthropic/v1/models` attaches discovery fields from the model card to each model, so clients such as OMP can detect input types and reasoning levels:
+`GET /anthropic/v1/models` attaches discovery fields from the model card to each model, so clients such as OMP can detect the context window, output limit, input types, and reasoning levels:
 
+- `context_length` - Maximum tokens in the context window.
+- `max_output_tokens` - Maximum output tokens.
 - `input_modalities` - Input modalities, such as `["text", "image"]`.
 - `supported_reasoning_levels` - Reasoning effort levels, such as `["low", "high", "max"]`. Returned only when the model card marks reasoning as supported.
 
-Empty values are omitted.
+Empty or zero values are omitted. Field names and values match `/v1/models`.
 
 ```json
 {
@@ -75,6 +77,8 @@ Empty values are omitted.
       "type": "model",
       "display_name": "claude-sonnet",
       "created": "2026-01-01T00:00:00Z",
+      "context_length": 200000,
+      "max_output_tokens": 64000,
       "input_modalities": ["text", "image"],
       "supported_reasoning_levels": ["low", "medium", "high"]
     }

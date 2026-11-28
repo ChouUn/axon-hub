@@ -20,6 +20,8 @@ GenerateContent requests also accept `system_instruction`, `inline_data`, and `m
 - `POST /v1beta/models/{model}:generateContent` - Text and multi-modal content generation (alternative)
 - `GET /gemini/v1beta/models` - List available models
 - `GET /v1beta/models` - List available models (alternative)
+- `GET /gemini/v1beta/v1/models` - List available models with discovery fields in the OpenAI shape
+- `GET /v1beta/v1/models` - List available models with discovery fields in the OpenAI shape (alternative)
 
 **Example Request:**
 ```go
@@ -99,6 +101,37 @@ if err != nil {
 if len(response2.Candidates) > 0 {
     text := response2.Candidates[0].Content.Parts[0].Text
     fmt.Println(*text)  // Should contain "Alice"
+}
+```
+
+### Model Discovery List
+
+`GET /gemini/v1beta/models` returns `models[]` in the native Gemini shape. Clients that discover models from an OpenAI list (such as OMP's `openai-models-list`) append `/v1/models` to the Gemini inference root, and `GET /gemini/v1beta/v1/models` returns the same models to them in the OpenAI shape, with discovery fields from the model card on each row:
+
+- `context_length` - Maximum tokens in the context window.
+- `max_output_tokens` - Maximum output tokens.
+- `input_modalities` - Input modalities, such as `["text", "image"]`.
+- `supported_reasoning_levels` - Reasoning effort levels. Returned only when the model card marks reasoning as supported.
+
+Empty or zero values are omitted, and field names and values match `/v1/models` and `/anthropic/v1/models`.
+
+Authentication is the same as for the other Gemini endpoints: `?key=` takes precedence, then request headers, and `Authorization: Bearer <your-api-key>` is also accepted.
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "gemini-2.5-pro",
+      "object": "model",
+      "created": 1767225600,
+      "owned_by": "configured",
+      "context_length": 1048576,
+      "max_output_tokens": 65536,
+      "input_modalities": ["text", "image"],
+      "supported_reasoning_levels": ["low", "medium", "high"]
+    }
+  ]
 }
 ```
 

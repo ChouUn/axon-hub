@@ -307,7 +307,7 @@ func TestOpenAIHandlers_RetrieveModel_ReturnsNotFound(t *testing.T) {
 	require.Contains(t, got.Detail.Message, "missing-model")
 }
 
-func TestOpenAIHandlers_ListModels_UsesBasicFieldsByDefault(t *testing.T) {
+func TestOpenAIHandlers_ListModels_DefaultsToBasicAndDiscoveryFields(t *testing.T) {
 	client, channelSvc, _, router, ctx := setupOpenAIRetrieveTest(t)
 
 	createdAt := time.Unix(1712345698, 0)
@@ -354,24 +354,30 @@ func TestOpenAIHandlers_ListModels_UsesBasicFieldsByDefault(t *testing.T) {
 		Save(ctx)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	// Discovery fields do not depend on default_model_api_include_all, and an
+	// empty include behaves like an omitted one.
+	for _, path := range []string{"/v1/models", "/v1/models?include="} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, http.StatusOK, w.Code, path)
 
-	var got struct {
-		Data []OpenAIModel `json:"data"`
+		var got struct {
+			Data []OpenAIModel `json:"data"`
+		}
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
+		require.Len(t, got.Data, 1, path)
+		require.Equal(t, "gpt-4.1", got.Data[0].ID)
+		require.Empty(t, got.Data[0].Name, path)
+		require.Nil(t, got.Data[0].Capabilities, path)
+		require.Nil(t, got.Data[0].Pricing, path)
+		require.Nil(t, got.Data[0].Modalities, path)
+		require.Equal(t, 200000, got.Data[0].ContextLength, path)
+		require.Equal(t, 8192, got.Data[0].MaxOutputTokens, path)
+		require.Equal(t, []string{"text", "image"}, got.Data[0].InputModalities, path)
+		require.Equal(t, []string{"low", "high"}, got.Data[0].SupportedReasoningLevels, path)
 	}
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
-	require.Len(t, got.Data, 1)
-	require.Equal(t, "gpt-4.1", got.Data[0].ID)
-	require.Empty(t, got.Data[0].Name)
-	require.Nil(t, got.Data[0].Capabilities)
-	require.Nil(t, got.Data[0].Pricing)
-	require.Nil(t, got.Data[0].Modalities)
-	require.Nil(t, got.Data[0].InputModalities)
-	require.Nil(t, got.Data[0].SupportedReasoningLevels)
 
 	for _, tc := range []struct {
 		field    string
@@ -450,27 +456,43 @@ func TestOpenAIHandlers_ListModels_UsesExtendedFieldsWhenConfiguredAsDefault(t *
 		Save(ctx)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	for _, path := range []string{"/v1/models", "/v1/models?include="} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code, path)
+
+		var got struct {
+			Data []OpenAIModel `json:"data"`
+		}
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
+		require.Len(t, got.Data, 1, path)
+		require.Equal(t, "gpt-4.1", got.Data[0].ID)
+		require.Equal(t, "GPT-4.1", got.Data[0].Name, path)
+		require.Equal(t, remark, got.Data[0].Description, path)
+		require.NotNil(t, got.Data[0].Capabilities, path)
+		require.NotNil(t, got.Data[0].Pricing, path)
+		require.NotNil(t, got.Data[0].Modalities, path)
+		require.Equal(t, []string{"text", "image"}, got.Data[0].Modalities.Input)
+		require.Equal(t, []string{"text"}, got.Data[0].Modalities.Output)
+		require.Equal(t, []string{"text", "image"}, got.Data[0].InputModalities, path)
+		require.Equal(t, []string{"low", "high"}, got.Data[0].SupportedReasoningLevels, path)
+	}
+
+	// The setting covers the list only; retrieval keeps basic plus discovery fields.
+	req := httptest.NewRequest(http.MethodGet, "/v1/models/gpt-4.1", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-
 	require.Equal(t, http.StatusOK, w.Code)
-
-	var got struct {
-		Data []OpenAIModel `json:"data"`
-	}
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
-	require.Len(t, got.Data, 1)
-	require.Equal(t, "gpt-4.1", got.Data[0].ID)
-	require.Equal(t, "GPT-4.1", got.Data[0].Name)
-	require.Equal(t, remark, got.Data[0].Description)
-	require.NotNil(t, got.Data[0].Capabilities)
-	require.NotNil(t, got.Data[0].Pricing)
-	require.NotNil(t, got.Data[0].Modalities)
-	require.Equal(t, []string{"text", "image"}, got.Data[0].Modalities.Input)
-	require.Equal(t, []string{"text"}, got.Data[0].Modalities.Output)
-	require.Equal(t, []string{"text", "image"}, got.Data[0].InputModalities)
-	require.Equal(t, []string{"low", "high"}, got.Data[0].SupportedReasoningLevels)
+	var retrieved OpenAIModel
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&retrieved))
+	require.Empty(t, retrieved.Name)
+	require.Nil(t, retrieved.Pricing)
+	require.Equal(t, 200000, retrieved.ContextLength)
+	require.Equal(t, 8192, retrieved.MaxOutputTokens)
+	require.Equal(t, []string{"text", "image"}, retrieved.InputModalities)
+	require.Equal(t, []string{"low", "high"}, retrieved.SupportedReasoningLevels)
 }
 
 func TestAnthropicHandlers_ListModels_ReturnsDiscoveryMetadata(t *testing.T) {
@@ -495,6 +517,7 @@ func TestAnthropicHandlers_ListModels_ReturnsDiscoveryMetadata(t *testing.T) {
 			Reasoning:        objects.ModelCardReasoning{Supported: true},
 			ReasoningEfforts: []string{"low", "high", "max"},
 			Modalities:       objects.ModelCardModalities{Input: []string{"text", "image"}},
+			Limit:            objects.ModelCardLimit{Context: 200000, Output: 64000},
 		}},
 		// Levels stay hidden while the card marks reasoning unsupported.
 		{id: "plain", card: &objects.ModelCard{ReasoningEfforts: []string{"low"}}},
@@ -555,13 +578,156 @@ func TestAnthropicHandlers_ListModels_ReturnsDiscoveryMetadata(t *testing.T) {
 
 	alias := rows["reasoner-alias"]
 	require.NotNil(t, alias)
+	require.JSONEq(t, `200000`, string(alias["context_length"]))
+	require.JSONEq(t, `64000`, string(alias["max_output_tokens"]))
 	require.JSONEq(t, `["text","image"]`, string(alias["input_modalities"]))
 	require.JSONEq(t, `["low","high","max"]`, string(alias["supported_reasoning_levels"]))
 
 	plain := rows["plain"]
 	require.NotNil(t, plain)
-	require.NotContains(t, plain, "input_modalities")
-	require.NotContains(t, plain, "supported_reasoning_levels")
+	for _, field := range []string{"context_length", "max_output_tokens", "input_modalities", "supported_reasoning_levels"} {
+		require.NotContains(t, plain, field)
+	}
+}
+
+func TestModelLists_DiscoveryFieldsMatchAcrossProtocols(t *testing.T) {
+	client, channelSvc, systemSvc, _, ctx := setupOpenAIRetrieveTest(t)
+	ch, err := client.Channel.Create().
+		SetType(channel.TypeOpenai).
+		SetName("Discovery Channel").
+		SetBaseURL("https://api.example.com/v1").
+		SetCredentials(objects.ChannelCredentials{APIKey: "key"}).
+		SetSupportedModels([]string{"full", "no-output"}).
+		SetDefaultTestModel("full").
+		SetStatus(channel.StatusEnabled).
+		Save(ctx)
+	require.NoError(t, err)
+	channelSvc.SetEnabledChannelsForTest([]*biz.Channel{{Channel: ch}})
+
+	for _, fixture := range []struct {
+		id   string
+		card *objects.ModelCard
+	}{
+		{id: "full", card: &objects.ModelCard{
+			Reasoning:        objects.ModelCardReasoning{Supported: true},
+			ReasoningEfforts: []string{"low", "medium", "high", "xhigh"},
+			Modalities:       objects.ModelCardModalities{Input: []string{"text", "image"}, Output: []string{"text"}},
+			Limit:            objects.ModelCardLimit{Context: 1048576, Output: 65536},
+		}},
+		// Without an output limit every list omits max_output_tokens rather than inventing one.
+		{id: "no-output", card: &objects.ModelCard{
+			ReasoningEfforts: []string{"low"},
+			Limit:            objects.ModelCardLimit{Context: 128000},
+		}},
+	} {
+		_, err = client.Model.Create().
+			SetDeveloper("google").
+			SetModelID(fixture.id).
+			SetName(fixture.id).
+			SetType(model.TypeChat).
+			SetGroup("gemini").
+			SetIcon("google").
+			SetModelCard(fixture.card).
+			SetSettings(&objects.ModelSettings{Associations: []*objects.ModelAssociation{{
+				Type:         "channel_model",
+				ChannelModel: &objects.ChannelModelAssociation{ChannelID: ch.ID, ModelID: fixture.id},
+			}}}).
+			SetStatus(model.StatusEnabled).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	apiKey := &ent.APIKey{Profiles: &objects.APIKeyProfiles{
+		ActiveProfile: "mapped",
+		Profiles: []objects.APIKeyProfile{{
+			Name:     "mapped",
+			ModelIDs: []string{"full", "full-alias", "no-output", "no-output-alias"},
+			ModelMappings: []objects.ModelMapping{
+				{From: "full-alias", To: "full"},
+				{From: "no-output-alias", To: "no-output"},
+			},
+		}},
+	}}
+	modelSvc := biz.NewModelService(biz.ModelServiceParams{ChannelService: channelSvc, SystemService: systemSvc, Ent: client})
+	openaiHandlers := &OpenAIHandlers{ModelService: modelSvc, SystemService: systemSvc, EntClient: client}
+	anthropicHandlers := &AnthropicHandlers{ModelService: modelSvc}
+	geminiHandlers := &GeminiHandlers{ModelService: modelSvc}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		requestCtx := authz.WithTestBypass(ent.NewContext(c.Request.Context(), client))
+		c.Request = c.Request.WithContext(contexts.WithAPIKey(requestCtx, apiKey))
+		c.Next()
+	})
+	router.GET("/v1/models", openaiHandlers.ListModels)
+	router.GET("/v1/models/*model", openaiHandlers.RetrieveModel)
+	router.GET("/anthropic/v1/models", anthropicHandlers.ListModels)
+	router.GET("/gemini/v1beta/models", geminiHandlers.ListModels)
+	router.GET("/gemini/v1beta/v1/models", geminiHandlers.ListDiscoveryModels)
+
+	get := func(path string) map[string]json.RawMessage {
+		t.Helper()
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		var body map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		return body
+	}
+	discoveryOf := func(row map[string]json.RawMessage) map[string]string {
+		fields := make(map[string]string)
+		for _, key := range []string{"context_length", "max_output_tokens", "input_modalities", "supported_reasoning_levels"} {
+			if raw, ok := row[key]; ok {
+				fields[key] = string(raw)
+			}
+		}
+		return fields
+	}
+
+	full := map[string]string{
+		"context_length":             "1048576",
+		"max_output_tokens":          "65536",
+		"input_modalities":           `["text","image"]`,
+		"supported_reasoning_levels": `["low","medium","high","xhigh"]`,
+	}
+	noOutput := map[string]string{"context_length": "128000"}
+	want := map[string]map[string]string{
+		"full":            full,
+		"full-alias":      full,
+		"no-output":       noOutput,
+		"no-output-alias": noOutput,
+	}
+	for _, path := range []string{"/v1/models", "/anthropic/v1/models", "/gemini/v1beta/v1/models"} {
+		body := get(path)
+		require.JSONEq(t, `"list"`, string(body["object"]), path)
+		var rows []map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(body["data"], &rows), path)
+		got := make(map[string]map[string]string, len(rows))
+		for _, row := range rows {
+			var id string
+			require.NoError(t, json.Unmarshal(row["id"], &id))
+			got[id] = discoveryOf(row)
+			if path == "/gemini/v1beta/v1/models" {
+				require.JSONEq(t, `"model"`, string(row["object"]), id)
+				require.JSONEq(t, `"configured"`, string(row["owned_by"]), id)
+				require.Contains(t, row, "created", id)
+			}
+		}
+		require.Equal(t, want, got, path)
+	}
+	for id, fields := range want {
+		row := get("/v1/models/" + id)
+		require.Equal(t, fields, discoveryOf(row), id)
+		require.NotContains(t, row, "name", "retrieve without include keeps the other extended fields off")
+	}
+
+	native := get("/gemini/v1beta/models")
+	require.NotContains(t, native, "data")
+	var nativeRows []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(native["models"], &nativeRows))
+	require.Len(t, nativeRows, len(want))
+	for _, row := range nativeRows {
+		require.ElementsMatch(t, []string{"name", "baseModelId", "version", "displayName", "description", "supportedGenerationMethods"}, lo.Keys(row))
+	}
 }
 
 func TestOpenAIHandlers_ListModels_ExtendedModeRespectsAPIKeyProfile(t *testing.T) {
@@ -948,6 +1114,7 @@ func TestPublicModelAPIs_MappedTargetsRequireEnabledRegistration(t *testing.T) {
 	router.GET("/openai/models/*model", openaiHandlers.RetrieveModel)
 	router.GET("/anthropic/models", anthropicHandlers.ListModels)
 	router.GET("/gemini/models", geminiHandlers.ListModels)
+	router.GET("/gemini/v1/models", geminiHandlers.ListDiscoveryModels)
 
 	for _, tc := range []struct {
 		path      string
@@ -959,6 +1126,7 @@ func TestPublicModelAPIs_MappedTargetsRequireEnabledRegistration(t *testing.T) {
 		{path: "/openai/models?include=all", listField: "data", idField: "id", want: []string{"public-alias", "shadow"}},
 		{path: "/anthropic/models", listField: "data", idField: "id", want: []string{"public-alias", "shadow"}},
 		{path: "/gemini/models", listField: "models", idField: "name", want: []string{"models/public-alias", "models/shadow"}},
+		{path: "/gemini/v1/models", listField: "data", idField: "id", want: []string{"public-alias", "shadow"}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			w := httptest.NewRecorder()
