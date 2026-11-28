@@ -23,10 +23,11 @@
 ## 文档
 
 - `.agents/rules/docs.md` 要求的中英文同步：
-  - fork 自有的文档（`docs/index.md`、`docs/reports/` 与 `docs/<模块>/`）不适用。
+  - fork 自有的文档（`docs/index.md`、`docs/reports/`、`docs/tickets/` 与 `docs/<模块>/`）不适用。
   - 上游的文档树 `docs/zh/`、`docs/en/` 仍适用，包括 fork 在其中新增的文件：修改一种语言时 SHOULD 同时修改另一种。
 - 本仓库不使用 OpenSpec：doc-writing 归入 spec 的行为契约 MUST 写在所属功能的文档
   （`docs/<模块>/feats/`）中，并保留已有的 D、R 编号。
+- 其他项目向本 fork 提的需求是 ticket，放在 `docs/tickets/`。写、续写、答复或实施 ticket 前 MUST 先加载 ticket 技能（`.agents/skills/ticket/`）。
 
 ## 部署
 

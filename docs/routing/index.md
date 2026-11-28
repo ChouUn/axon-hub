@@ -10,3 +10,4 @@
 - [健康门控](feats/health-gate.md)
 - [渠道识别档位后缀](feats/reasoning-effort-suffix.md)
 - [请求列表的协议提示](feats/request-protocol-indicator.md)
+- [ticket：OMP 在三条协议线路上从 AxonHub 发现一致的模型元数据](../tickets/omp-model-discovery.md)
